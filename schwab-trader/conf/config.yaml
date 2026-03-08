@@ -1,0 +1,21 @@
+
+# conf/config.yaml
+api:
+  app_key: "YOUR_APP_KEY"
+  app_secret: "YOUR_APP_SECRET"
+  callback_url: "https://127.0.0.1"
+  account_id: "YOUR_ACCOUNT_ID"
+
+tickers:
+  AAPL:
+    buy_below: 140
+    sell_above: 160
+  AMD:
+    buy_below: 50
+    sell_above: 100
+  TSLA:
+    buy_below: 600
+    sell_above: 750
+
+polling_interval: 5
+log_file: "logs/alerts_log.csv"

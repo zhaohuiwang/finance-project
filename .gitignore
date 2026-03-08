@@ -1,0 +1,14 @@
+
+.idea/
+__pycache__/
+*.env
+.venv/
+
+dist/
+schwabdev.egg-info/
+tokens.json
+/build
+/docs/examples/tests
+uv.lock
+
+gitmodules/
