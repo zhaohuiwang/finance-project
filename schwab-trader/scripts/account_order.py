@@ -9,7 +9,7 @@ import json
 from pprint import pprint
 
 from src.schwab_trader.accounts.schwab import client, SchwabAccount
-from src.schwab_trader.accounts.enum import Duration, OrderRequest, OrderType
+from src.schwab_trader.accounts.type_literal import Duration
 from src.schwab_trader.orders.equity import (
     buy_market_dict,
     sell_market_dict,
@@ -69,14 +69,14 @@ order_1 = buy_limit_dict(
     symbol="IREN",
     quantity=1,
     limit_price=10.0,
-    duration=Duration.DAY,
+    duration="DAY",
 )
 
 order_2 = sell_limit_dict(
     symbol="NBIS",
     quantity=1,
     limit_price=100.0,
-    duration=Duration.GOOD_TILL_CANCEL,
+    duration="GOOD_TILL_CANCEL",
 )
 
 order_3 = buy_limit_trigger_sell_limit_dict(
@@ -84,8 +84,8 @@ order_3 = buy_limit_trigger_sell_limit_dict(
     quantity=1,
     buy_limit_price=20,
     sell_limit_price=120,
-    buy_duration=Duration.DAY,
-    sell_duration=Duration.GOOD_TILL_CANCEL,
+    buy_duration="DAY",
+    sell_duration="GOOD_TILL_CANCEL",
 )
 
 order_4 = sell_limit_sell_stoplimit_oco_dict(
@@ -94,7 +94,7 @@ order_4 = sell_limit_sell_stoplimit_oco_dict(
     sell_limit_price=120,  # 45.97
     sell_stop_price=80,  # 37.00
     sell_stoplimit_price=80.20,  # 37.03
-    duration=Duration.DAY,
+    duration="DAY",
 )
 
 order_5 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
@@ -103,27 +103,27 @@ order_5 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
     buy_limit_price=80.0,  # 14.97
     sell_limit_price=98.2,  # 15.27
     sell_stop_price=75.2,  # 11.27
-    buy_duration=Duration.DAY,
-    sell_duration=Duration.GOOD_TILL_CANCEL,
+    buy_duration="DAY",
+    sell_duration="GOOD_TILL_CANCEL",
 )
 
 order_6 = sell_trailing_stop_dict(
     symbol="NBIS",
     quantity=1,
     stop_price_offset=10,  # 10
-    duration=Duration.DAY,
+    duration="DAY",
 )
 
 order_7 = buy_market_dict(
     symbol="THISISADEMO",
     quantity=1,
-    duration=Duration.DAY,
+    duration="DAY",
 )
 
 order_8 = sell_market_dict(
     symbol="THISISADEMO",
     quantity=1,
-    duration=Duration.DAY,
+    duration="DAY",
 )
 
 
