@@ -21,11 +21,12 @@ from db import init_db, log_transaction, save_state, get_last_buy_price, load_st
 load_dotenv()
 console = Console()
 
+
 class TradingBot:
     def __init__(self):
         init_db()
         self.client = schwabdev.Client(
-            os.getenv('app_key'), os.getenv('app_secret'), os.getenv('callback_url')
+            os.getenv("app_key"), os.getenv("app_secret"), os.getenv("callback_url")
         )
         self.streamer = schwabdev.Stream(self.client)
 
@@ -41,21 +42,23 @@ class TradingBot:
         self.daily_start_equity = self.get_account_equity()
         self.today = date.today()
 
-        console.print(f"[bold cyan]Account Equity at start: ${self.daily_start_equity:,.2f}[/bold cyan]")
+        console.print(
+            f"[bold cyan]Account Equity at start: ${self.daily_start_equity:,.2f}[/bold cyan]"
+        )
 
     def _get_account_hash(self):
         accounts = self.client.linked_accounts().json()
         if not accounts:
             raise RuntimeError("No linked accounts found")
-        return accounts[0]['hashValue']
+        return accounts[0]["hashValue"]
 
     # ── ACCOUNT METRICS (for risk checks) ─────────────────────────────────────
     def get_account_equity(self):
         try:
             acc = self.client.account_details(self.account_hash).json()
-            balances = acc.get('securitiesAccount', {}).get('currentBalances', {})
-            equity = balances.get('liquidationValue') or balances.get('equity') or 0.0
-            cash_balance = balances.get('cashBalance') # 
+            balances = acc.get("securitiesAccount", {}).get("currentBalances", {})
+            equity = balances.get("liquidationValue") or balances.get("equity") or 0.0
+            cash_balance = balances.get("cashBalance")  #
             return float(equity)
         except Exception as e:
             console.print(f"[dim red]Equity fetch failed: {e}[/dim red]")
@@ -64,22 +67,26 @@ class TradingBot:
     def get_buying_power(self):
         try:
             acc = self.client.account_details(self.account_hash).json()
-            return float(acc.get('securitiesAccount', {}).get('currentBalances', {}).get('buyingPower', 0))
+            return float(
+                acc.get("securitiesAccount", {})
+                .get("currentBalances", {})
+                .get("buyingPower", 0)
+            )
         except:
             return 0.0
 
     # ── RISK CALCULATIONS ─────────────────────────────────────────────────────
     def calculate_shares(self, symbol, buy_price):
         if buy_price <= 0:
-            return RISK_CONFIG['default_shares']
+            return RISK_CONFIG["default_shares"]
 
         equity = self.get_account_equity()
-        risk_dollars = equity * (RISK_CONFIG['risk_per_trade_pct'] / 100)
-        stop_pct = CONFIG[symbol]['stop_loss_pct'] / 100
+        risk_dollars = equity * (RISK_CONFIG["risk_per_trade_pct"] / 100)
+        stop_pct = CONFIG[symbol]["stop_loss_pct"] / 100
         stop_distance = buy_price * stop_pct
 
         if stop_distance <= 0:
-            return RISK_CONFIG['default_shares']
+            return RISK_CONFIG["default_shares"]
 
         shares = int(risk_dollars / stop_distance)
         return max(1, min(shares, 1000))  # safety cap
@@ -91,28 +98,38 @@ class TradingBot:
 
         # Daily loss limit
         current_equity = self.get_account_equity()
-        daily_pnl_pct = (current_equity - self.daily_start_equity) / self.daily_start_equity * 100
-        if daily_pnl_pct <= -RISK_CONFIG['max_daily_loss_pct']:
-            console.print(f"[bold red]🚨 DAILY LOSS LIMIT HIT ({daily_pnl_pct:.1f}%) — TRADING PAUSED[/bold red]")
+        daily_pnl_pct = (
+            (current_equity - self.daily_start_equity) / self.daily_start_equity * 100
+        )
+        if daily_pnl_pct <= -RISK_CONFIG["max_daily_loss_pct"]:
+            console.print(
+                f"[bold red]🚨 DAILY LOSS LIMIT HIT ({daily_pnl_pct:.1f}%) — TRADING PAUSED[/bold red]"
+            )
             self.trading_paused = True
             return False
 
         # Minimum equity guard
-        if current_equity < RISK_CONFIG['min_account_equity']:
-            console.print(f"[bold red]🚨 ACCOUNT BELOW MIN EQUITY (${current_equity:,.0f}) — TRADING PAUSED[/bold red]")
+        if current_equity < RISK_CONFIG["min_account_equity"]:
+            console.print(
+                f"[bold red]🚨 ACCOUNT BELOW MIN EQUITY (${current_equity:,.0f}) — TRADING PAUSED[/bold red]"
+            )
             self.trading_paused = True
             return False
 
         # Max positions
-        if len(self.holdings) >= RISK_CONFIG['max_positions']:
+        if len(self.holdings) >= RISK_CONFIG["max_positions"]:
             console.print("[yellow]Max positions reached — skipping new buys[/yellow]")
             return False
 
         # Buying power check
         bp = self.get_buying_power()
-        estimated_cost = self.current_prices.get(symbol, 0) * RISK_CONFIG['default_shares']
+        estimated_cost = (
+            self.current_prices.get(symbol, 0) * RISK_CONFIG["default_shares"]
+        )
         if bp < estimated_cost * 1.1:  # 10% buffer
-            console.print(f"[yellow]Insufficient buying power (${bp:,.0f}) — skipping[/yellow]")
+            console.print(
+                f"[yellow]Insufficient buying power (${bp:,.0f}) — skipping[/yellow]"
+            )
             return False
 
         return True
@@ -121,19 +138,19 @@ class TradingBot:
     def unified_receiver(self, message):
         if not isinstance(message, dict):
             return
-        for item in message.get('data', []):
-            service = item.get('service')
-            if service == 'LEVELONE_EQUITIES':
+        for item in message.get("data", []):
+            service = item.get("service")
+            if service == "LEVELONE_EQUITIES":
                 self.handle_price_message(item)
-            elif service in ('ACCT_ACTIVITY', 'USER_ACTIVITY'):
+            elif service in ("ACCT_ACTIVITY", "USER_ACTIVITY"):
                 self.handle_account_activity(item)
 
     def handle_price_message(self, item):
-        for content in item.get('content', []):
-            symbol = content.get('key')
+        for content in item.get("content", []):
+            symbol = content.get("key")
             if symbol in self.current_prices:
                 try:
-                    price = float(content.get('3', 0))
+                    price = float(content.get("3", 0))
                     if price > 0:
                         with self.lock:
                             self.current_prices[symbol] = price
@@ -141,35 +158,49 @@ class TradingBot:
                     pass
 
     def handle_account_activity(self, item):
-        for content in item.get('content', []):
+        for content in item.get("content", []):
             # # We only care about real executions / fills (ignore heartbeats, subscriptions, etc.)
-            if content.get('messageType', '').upper() not in ('EXECUTION', 'FILL', 'ORDER_FILL'):
+            if content.get("messageType", "").upper() not in (
+                "EXECUTION",
+                "FILL",
+                "ORDER_FILL",
+            ):
                 continue
             # Extract symbol from different possible locations in the message
-            symbol = content.get('symbol') or content.get('instrument', {}).get('symbol')
+            symbol = content.get("symbol") or content.get("instrument", {}).get(
+                "symbol"
+            )
             if not symbol or symbol not in SYMBOLS:
-                continue # ignore if not one of our watched stocks
+                continue  # ignore if not one of our watched stocks
 
-            qty = float(content.get('quantity') or content.get('filledQuantity', 0))
-            price = float(content.get('price') or content.get('executionPrice', 0))
-            instr = content.get('instruction', '').upper()
+            qty = float(content.get("quantity") or content.get("filledQuantity", 0))
+            price = float(content.get("price") or content.get("executionPrice", 0))
+            instr = content.get("instruction", "").upper()
 
             with self.lock:
-                if instr in ('SELL', 'SELL_SHORT') and symbol in self.holdings:
+                if instr in ("SELL", "SELL_SHORT") and symbol in self.holdings:
                     del self.holdings[symbol]
                     # Removes the symbol from the internal holdings dictionary, the bot now considers the position flat/closed
-                    log_transaction("SELL (stream)", symbol, qty, price, note="OCO filled")
-                    console.print(f"[yellow bold]Position CLOSED: {symbol} @ ${price:.2f}[/yellow bold]")
+                    log_transaction(
+                        "SELL (stream)", symbol, qty, price, note="OCO filled"
+                    )
+                    console.print(
+                        f"[yellow bold]Position CLOSED: {symbol} @ ${price:.2f}[/yellow bold]"
+                    )
 
-                elif instr in ('BUY', 'BUY_TO_COVER'):
+                elif instr in ("BUY", "BUY_TO_COVER"):
                     self.holdings[symbol] = {
-                        'shares': qty,
-                        'buy_price': price,
-                        'limit_price': None,
-                        'stop_price': None
-                        }
-                    log_transaction("BUY (stream)", symbol, qty, price, note="Fill detected")
-                    console.print(f"[green bold]BUY FILLED: {symbol} @ ${price:.2f}[/green bold]")
+                        "shares": qty,
+                        "buy_price": price,
+                        "limit_price": None,
+                        "stop_price": None,
+                    }
+                    log_transaction(
+                        "BUY (stream)", symbol, qty, price, note="Fill detected"
+                    )
+                    console.print(
+                        f"[green bold]BUY FILLED: {symbol} @ ${price:.2f}[/green bold]"
+                    )
                     self.place_bracket_orders(symbol, price)
                     save_state(symbol, price)
 
@@ -203,47 +234,57 @@ class TradingBot:
     #         })
 
     #     console.print("[bold green]Streaming active — quotes + account activity[/bold green]")
-    
+
     def start_stream(self):
         """
         Subscribes to live quotes for your sumbols, listens to both price updates and order execution events
         """
-        
+
         # Starts the WebSocket connection in the background
         self.streamer.start(receiver=self.unified_receiver)
 
         # Prepares and sends the subscription request for stock quotes
         quote_request = {
             "service": "LEVELONE_EQUITIES",
-            "command": "SUBS",                  # SUBS = subscribe
-            "requestid": "1001",                # any unique string/int per request
-            "SchwabClientCustomerId": "",       # usually left empty or from user principals
+            "command": "SUBS",  # SUBS = subscribe
+            "requestid": "1001",  # any unique string/int per request
+            "SchwabClientCustomerId": "",  # usually left empty or from user principals
             "SchwabClientCorrelId": "corr123",  # can be any string
             "parameters": {
-                "keys": ",".join(SYMBOLS),      # ← symbols here
-                "fields": "0,1,2,3,4,5,6,7,8,9" # symbol, bid, ask, last, etc.
-            }
+                "keys": ",".join(SYMBOLS),  # ← symbols here
+                "fields": "0,1,2,3,4,5,6,7,8,9",  # symbol, bid, ask, last, etc.
+            },
         }
 
         self.streamer.send(quote_request)
-        console.print(f"[green]→ Subscribed to LEVELONE_EQUITIES for {', '.join(SYMBOLS)}[/green]")
+        console.print(
+            f"[green]→ Subscribed to LEVELONE_EQUITIES for {', '.join(SYMBOLS)}[/green]"
+        )
 
         # ── Account Activity Subscription ─────────────────────────────────────────
         # First try the convenience method if it exists
         try:
             acct_req = self.streamer.account_activity(fields="0,1,2,3", command="SUBS")
             self.streamer.send(acct_req)
-            console.print("[green]→ Subscribed to account activity (via convenience)[/green]")
+            console.print(
+                "[green]→ Subscribed to account activity (via convenience)[/green]"
+            )
         except (AttributeError, TypeError):
-            console.print("[yellow]Falling back to manual ACCT_ACTIVITY subscription[/yellow]")
+            console.print(
+                "[yellow]Falling back to manual ACCT_ACTIVITY subscription[/yellow]"
+            )
 
             # Manual version - you may need to fetch subscription keys from user principals
             try:
                 principals = self.client.user_principals().json()
                 # Typically one key for your linked account
-                sub_key = principals.get("streamerSubscriptionKeys", [{}])[0].get("key", "")
+                sub_key = principals.get("streamerSubscriptionKeys", [{}])[0].get(
+                    "key", ""
+                )
                 if not sub_key:
-                    sub_key = self.account_hash  # fallback to account hash sometimes works
+                    sub_key = (
+                        self.account_hash
+                    )  # fallback to account hash sometimes works
             except Exception:
                 sub_key = self.account_hash  # safest fallback
 
@@ -255,14 +296,16 @@ class TradingBot:
                 "SchwabClientCorrelId": "corr456",
                 "parameters": {
                     "keys": sub_key,
-                    "fields": "0,1,2,3"   # subscription key, account, message type, data
-                }
+                    "fields": "0,1,2,3",  # subscription key, account, message type, data
+                },
             }
 
             self.streamer.send(acct_manual)
             console.print("[green]→ Manual ACCT_ACTIVITY subscription sent[/green]")
 
-        console.print("[bold green]Streaming active — quotes + account activity[/bold green]")
+        console.print(
+            "[bold green]Streaming active — quotes + account activity[/bold green]"
+        )
 
     # ── ORDER PLACEMENT (now with dynamic shares) ─────────────────────────────
     def place_buy_order(self, symbol):
@@ -277,17 +320,27 @@ class TradingBot:
             "session": "NORMAL",
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
-            "orderLegCollection": [{
-                "instruction": "BUY",
-                "quantity": qty,
-                "instrument": {"symbol": symbol, "assetType": "EQUITY"}
-            }]
+            "orderLegCollection": [
+                {
+                    "instruction": "BUY",
+                    "quantity": qty,
+                    "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                }
+            ],
         }
 
         try:
             resp = self.client.place_order(self.account_hash, order)
-            log_transaction("BUY_SUBMITTED", symbol, qty, buy_price, note=f"Risk-sized: {qty} shares")
-            console.print(f"[green]BUY SUBMITTED → {qty} shares of {symbol} (risk-controlled)[/green]")
+            log_transaction(
+                "BUY_SUBMITTED",
+                symbol,
+                qty,
+                buy_price,
+                note=f"Risk-sized: {qty} shares",
+            )
+            console.print(
+                f"[green]BUY SUBMITTED → {qty} shares of {symbol} (risk-controlled)[/green]"
+            )
             return True
         except Exception as e:
             console.print(f"[red]Buy failed: {e}[/red]")
@@ -296,9 +349,9 @@ class TradingBot:
     def place_bracket_orders(self, symbol, buy_price):
         # (unchanged from previous version — GTC OCO)
         cfg = CONFIG[symbol]
-        qty = self.holdings[symbol]['shares']
-        limit_price = round(buy_price * (1 + cfg['limit_sell_pct']/100), 2)
-        stop_price  = round(buy_price * (1 - cfg['stop_loss_pct']/100), 2)
+        qty = self.holdings[symbol]["shares"]
+        limit_price = round(buy_price * (1 + cfg["limit_sell_pct"] / 100), 2)
+        stop_price = round(buy_price * (1 - cfg["stop_loss_pct"] / 100), 2)
 
         oco = {
             "orderType": "OCO",
@@ -306,43 +359,58 @@ class TradingBot:
             "duration": "GTC",
             "orderStrategyType": "OCO",
             "childOrderStrategies": [
-                {   # LIMIT SELL
+                {  # LIMIT SELL
                     "orderType": "LIMIT",
                     "session": "NORMAL",
                     "duration": "GTC",
                     "price": str(limit_price),
-                    "orderLegCollection": [{
-                        "instruction": "SELL",
-                        "quantity": qty,
-                        "instrument": {"symbol": symbol, "assetType": "EQUITY"}
-                    }]
+                    "orderLegCollection": [
+                        {
+                            "instruction": "SELL",
+                            "quantity": qty,
+                            "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                        }
+                    ],
                 },
-                {   # STOP LOSS
+                {  # STOP LOSS
                     "orderType": "STOP",
                     "session": "NORMAL",
                     "duration": "GTC",
                     "stopPrice": str(stop_price),
-                    "orderLegCollection": [{
-                        "instruction": "SELL",
-                        "quantity": qty,
-                        "instrument": {"symbol": symbol, "assetType": "EQUITY"}
-                    }]
-                }
-            ]
+                    "orderLegCollection": [
+                        {
+                            "instruction": "SELL",
+                            "quantity": qty,
+                            "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                        }
+                    ],
+                },
+            ],
         }
 
         try:
             self.client.place_order(self.account_hash, oco)
-            log_transaction("OCO_PLACED", symbol, qty, buy_price, "OCO",
-                            f"Limit ${limit_price:.2f} | Stop ${stop_price:.2f}")
+            log_transaction(
+                "OCO_PLACED",
+                symbol,
+                qty,
+                buy_price,
+                "OCO",
+                f"Limit ${limit_price:.2f} | Stop ${stop_price:.2f}",
+            )
             with self.lock:
-                self.holdings[symbol].update({'limit_price': limit_price, 'stop_price': stop_price})
+                self.holdings[symbol].update(
+                    {"limit_price": limit_price, "stop_price": stop_price}
+                )
         except Exception as e:
             console.print(f"[red]OCO failed: {e}[/red]")
 
     # ── MONITOR LOOP + ENHANCED DASHBOARD ─────────────────────────────────────
     def get_dashboard_content(self):
-        """Returns (table, footer_str, equity, daily_pnl_pct)"""
+        """
+        Build dashboard components.
+        Returns: (table object, footer_markup_str, equity, daily_pnl_pct)
+        """
         equity = self.get_account_equity()
         daily_pnl_pct = (
             (equity - self.daily_start_equity) / self.daily_start_equity * 100
@@ -382,10 +450,10 @@ class TradingBot:
         risk_used_pct = (len(self.holdings) / RISK_CONFIG.get('max_positions', 1)) * 100
 
         footer = (
-            f"Equity: ${equity:,.0f}   |   "
-            f"Daily P/L: {daily_pnl_pct:+.1f}%   |   "
+            f"Equity: [bold]${equity:,.0f}[/bold]   |   "
+            f"Daily P/L: [{'green' if daily_pnl_pct >= 0 else 'red'}]{daily_pnl_pct:+.1f}%[/{'green' if daily_pnl_pct >= 0 else 'red'}]   |   "
             f"Risk used: {risk_used_pct:.0f}%   |   "
-            f"{'PAUSED' if self.trading_paused else 'ACTIVE'}"
+            f"{'[bold red]PAUSED[/bold red]' if self.trading_paused else '[bold green]ACTIVE[/bold green]'}"
         )
 
         return table, footer, equity, daily_pnl_pct
@@ -394,90 +462,107 @@ class TradingBot:
     def monitor_loop(self):
         last_state_key = None
 
-        while self.running:
-            time.sleep(5)
+        with Live(
+            Panel("Initializing dashboard...", title="Schwab Trading Bot", border_style="blue"),
+            console=console,
+            refresh_per_second=0.4,
+            screen=True,
+        ) as live:
+            while self.running:
+                time.sleep(5)
 
-            # Daily reset
-            if date.today() != self.today:
-                self.daily_start_equity = self.get_account_equity()
-                self.today = date.today()
-                self.trading_paused = False
+                # Daily reset
+                if date.today() != self.today:
+                    self.daily_start_equity = self.get_account_equity()
+                    self.today = date.today()
+                    self.trading_paused = False
 
-            self.update_holdings_from_api()
+                self.update_holdings_from_api()
 
-            # ───── BUY TRIGGER LOGIC ───── 
-            with self.lock:
-                for sym in SYMBOLS:
-                    if sym in self.holdings and self.holdings[sym].get('shares', 0) > 0:
-                        continue
+                # ─────────────── BUY TRIGGER LOGIC ───────────────
+                with self.lock:
+                    for sym in SYMBOLS:
+                        if sym in self.holdings and self.holdings[sym].get('shares', 0) > 0:
+                            continue
 
-                    current_price = self.current_prices.get(sym)
-                    if current_price is None or current_price <= 0:
-                        continue
+                        current_price = self.current_prices.get(sym)
+                        if current_price is None or current_price <= 0:
+                            continue
 
-                    cfg = CONFIG.get(sym, {})
-                    target = cfg.get('buy_target_price', float('inf'))
-                    drop_pct = cfg.get('buy_drop_pct', 50.0)
-                    last_buy_price = get_last_buy_price(sym) # from db/state
+                        cfg = CONFIG.get(sym, {})
+                        target = cfg.get('buy_target_price', float('inf'))
+                        drop_pct = cfg.get('buy_drop_pct', 5.0)
+                        last_buy = get_last_buy_price(sym)
 
-                    trigger = False
-                    reason = ""
-                    # 1. Absolute price target hit
-                    if current_price <= target:
-                        trigger = True
-                        reason = f"hit absolute target ${target:.2f}"
-                        
-                    # 2. Percentage drop from last buy
-                    if last_buy_price and current_price <= last_buy_price * (1 - drop_pct / 100):
-                        trigger = True
-                        reason = f"dropped ≥{drop_pct}% from last buy"
+                        trigger = False
+                        reason = ""
 
-                    if trigger and self.risk_checks_pass(sym):
-                        console.print(f"[bold red]BUY TRIGGER {sym}: {reason} @ ${current_price:.2f}[/bold red]")
-                        self.place_buy_order(sym)
-                        self.holdings[sym] = {
-                            'shares': self.calculate_shares(sym, current_price),
-                            'buy_price': current_price,
-                            'limit_price': None,
-                            'stop_price': None
-                        }
+                        if current_price <= target:
+                            trigger = True
+                            reason = f"hit absolute target ${target:.2f}"
 
-            # ─────  Dashboard ───── 
-            table, footer, equity, daily_pnl = self.get_dashboard_content()
+                        if last_buy and current_price <= last_buy * (1 - drop_pct / 100):
+                            trigger = True
+                            reason += " & " if reason else ""
+                            reason += f"dropped ≥{drop_pct}% from last buy (${last_buy:.2f})"
 
-            state_key = (
-                tuple((sym, self.current_prices.get(sym), self.holdings.get(sym, {}).get('shares', 0))
-                    for sym in SYMBOLS),
-                round(equity, 2),
-                round(daily_pnl, 2),
-                self.trading_paused,
-                len(self.holdings)
-            )
+                        if trigger and self.risk_checks_pass(sym):
+                            console.print(f"[bold red]BUY TRIGGER {sym}: {reason} @ ${current_price:.2f}[/bold red]")
+                            self.place_buy_order(sym)
+                            self.holdings[sym] = {
+                                'shares': self.calculate_shares(sym, current_price),
+                                'buy_price': current_price,
+                                'limit_price': None,
+                                'stop_price': None
+                            }
 
-            if state_key != last_state_key:
-                console.clear()
-                current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                title = f"Schwab Trading Bot — {current_time}"
-                if self.trading_paused:
-                    title += "   (PAUSED)"
+                # ─────────────── Dashboard update ───────────────
+                table, footer, equity, daily_pnl = self.get_dashboard_content()
 
-                console.rule(title, style="blue")
-                console.print(table)
-                console.print(f"\n{footer}")
-                console.rule(style="dim")
-                last_state_key = state_key
-    
-    
+                state_key = (
+                    tuple(
+                        (sym,
+                        self.current_prices.get(sym),
+                        self.holdings.get(sym, {}).get('shares', 0))
+                        for sym in SYMBOLS
+                    ),
+                    round(equity, 2),
+                    round(daily_pnl, 2),
+                    self.trading_paused,
+                    len(self.holdings)
+                )
+
+                if state_key != last_state_key:
+                    title = f"Schwab Trading Bot — {datetime.now():%Y-%m-%d %H:%M:%S}"
+                    if self.trading_paused:
+                        title += "   [bold red](PAUSED)[/bold red]"
+
+                    live.update(
+                        Panel(
+                            table,                       # ← Table object directly → renders as table
+                            subtitle=footer,             # ← markup string as subtitle
+                            title=title,
+                            border_style="red" if self.trading_paused else "blue",
+                            padding=(1, 2)
+                        )
+                    )
+                    last_state_key = state_key
+
     def update_holdings_from_api(self):
         # (same as previous version)
         try:
-            pos = self.client.account_details(self.account_hash, fields="positions").json()
-            positions = pos.get('securitiesAccount', {}).get('positions', [])
+            pos = self.client.account_details(
+                self.account_hash, fields="positions"
+            ).json()
+            positions = pos.get("securitiesAccount", {}).get("positions", [])
             new_h = {}
             for p in positions:
-                sym = p['instrument']['symbol']
-                if sym in SYMBOLS and float(p.get('longQuantity', 0)) > 0:
-                    new_h[sym] = {'shares': float(p['longQuantity']), 'buy_price': p.get('averagePrice', 0)}
+                sym = p["instrument"]["symbol"]
+                if sym in SYMBOLS and float(p.get("longQuantity", 0)) > 0:
+                    new_h[sym] = {
+                        "shares": float(p["longQuantity"]),
+                        "buy_price": p.get("averagePrice", 0),
+                    }
             with self.lock:
                 self.holdings = new_h
         except:
@@ -488,23 +573,24 @@ class TradingBot:
         self.streamer.stop()
         console.print("[red]Bot stopped.[/red]")
 
+
 # ────────────────────────────────────────────────
 if __name__ == "__main__":
-    
+
     bot = TradingBot()
     bot.start_stream()
 
     threading.Thread(target=bot.monitor_loop, daemon=True).start()
 
-    console.print("\n[bold green]Bot running with FULL RISK MANAGEMENT. Press Ctrl+C to stop.[/bold green]\n")
+    console.print(
+        "\n[bold green]Bot running with FULL RISK MANAGEMENT. Press Ctrl+C to stop.[/bold green]\n"
+    )
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         bot.stop()
-        
-        
-        
+
 
 """
 handle_account_activity() and monitor_loop() — work closely together to implement the full order lifecycle (submit → fill detection → place protective orders → detect close → repeat).

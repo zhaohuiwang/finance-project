@@ -1,4 +1,3 @@
-
 import os
 import time
 
@@ -11,20 +10,19 @@ from datetime import datetime, time as dt_time
 from src.schwab_trader.accounts.schwab import client
 from filelock import FileLock, Timeout
 
-
 logger = logging.getLogger(__name__)
 # ---------------- CONFIG ----------------
 ACCOUNT_Number = "29308909"
 
-POLL_INTERVAL         = 10   # 
-PROFIT_REPORT_INTERVAL= 3600
+POLL_INTERVAL = 10  #
+PROFIT_REPORT_INTERVAL = 3600
 
 EASTERN = pytz.timezone("US/Eastern")
-MARKET_OPEN  = dt_time(9, 30)
+MARKET_OPEN = dt_time(9, 30)
 MARKET_CLOSE = dt_time(16, 0)
 
-PROFIT_MARGIN   = 0.05   # 5%
-REENTRY_MARGIN  = 0.02   # 2% below last sell
+PROFIT_MARGIN = 0.05  # 5%
+REENTRY_MARGIN = 0.02  # 2% below last sell
 STOP_LOSS_THRESHOLD = 0.05  # 5% below buy fill
 LOG_FILE = Path("trades.log.csv")
 LOCK_FILE = LOG_FILE.with_suffix(LOG_FILE.suffix + ".lock")  # e.g. trades.log.csv.lock
@@ -34,11 +32,11 @@ LOCK_FILE = LOG_FILE.with_suffix(LOG_FILE.suffix + ".lock")  # e.g. trades.log.c
 symbols = {
     "USAR": {
         "qty": 1,
-        "state": "INIT",               # ← starts by trying to SELL (assumes you hold shares)
+        "state": "INIT",  # ← starts by trying to SELL (assumes you hold shares)
         "entry_order_id": None,
         "last_buy": None,
         "last_sell": None,
-        "buy_price": None
+        "buy_price": None,
     },
     "ACHR": {
         "qty": 1,
@@ -46,8 +44,8 @@ symbols = {
         "entry_order_id": None,
         "last_buy": None,
         "last_sell": None,
-        "buy_price": None
-    }
+        "buy_price": None,
+    },
 }
 # "INIT" is short for "Initialized"
 
@@ -79,12 +77,12 @@ def _initialize_from_existing_file() -> None:
 def log_trade(**kwargs) -> None:
     """
     Completely dynamic, thread-safe, process-safe CSV logger.
-    
+
     - Accepts any key=value pairs.
     - Columns appear in order of first appearance.
     - Survives bot restarts (reads existing header).
     - Uses FileLock to prevent corruption from concurrent writes (threads or processes).
-    
+
     Example:
         log_trade(timestamp="2026-03-07 19:45:12", symbol="AAPL", action="BUY", price=178.45, quantity=150)
     """
@@ -116,16 +114,18 @@ def log_trade(**kwargs) -> None:
                 writer.writerow(row)
 
     except Timeout:
-        print(f"Warning: Could not acquire lock for {LOG_FILE} after 10s – skipping log entry")
+        print(
+            f"Warning: Could not acquire lock for {LOG_FILE} after 10s – skipping log entry"
+        )
         # Or raise, log elsewhere, queue for retry, etc. – up to you
     except Exception as e:
         print(f"Error writing to log: {e}")
 
 
-def extract_fill_prices(order_json, aggregate='first'):
+def extract_fill_prices(order_json, aggregate="first"):
     """
     Return executed fill price(s).
-    
+
     aggregate:
     - 'first'    → first fillPrice found (simple default)
     - 'average'  → volume-weighted average if quantities present
@@ -150,9 +150,9 @@ def extract_fill_prices(order_json, aggregate='first'):
                     continue
 
     if fills:
-        if aggregate == 'all':
+        if aggregate == "all":
             return fills
-        elif aggregate == 'average' and quantities:
+        elif aggregate == "average" and quantities:
             total_qty = sum(quantities)
             return sum(f * q for f, q in zip(fills, quantities)) / total_qty
         else:
@@ -167,6 +167,7 @@ def extract_fill_prices(order_json, aggregate='first'):
             pass
 
     return None
+
 
 def print_profit_summary():
     if not os.path.isfile(LOG_FILE):
@@ -190,29 +191,38 @@ def print_profit_summary():
         print(f"{sym}: ${profit:.2f}")
     print("----------------------\n")
 
+
 def get_account_hash(account_number: str):
-    """" Return the account hashValue (str) for the given account number """
+    """ " Return the account hashValue (str) for the given account number"""
     response = client.linked_accounts()
     data = response.json()
     account_hash = next(
-        (item["hashValue"] for item in data if item["accountNumber"] == account_number), None
+        (item["hashValue"] for item in data if item["accountNumber"] == account_number),
+        None,
     )
     return account_hash
 
+
 def safe_extract_price(order_obj):
-    if not order_obj: return None
+    if not order_obj:
+        return None
     if "price" in order_obj and order_obj["price"] is not None:
-        try: return float(order_obj["price"])
-        except: pass
+        try:
+            return float(order_obj["price"])
+        except:
+            pass
     if "executionLegs" in order_obj:
         for leg in order_obj["executionLegs"]:
             if leg.get("fillPrice"):
-                try: return float(leg["fillPrice"])
-                except: pass
+                try:
+                    return float(leg["fillPrice"])
+                except:
+                    pass
     return None
 
+
 def place_order(account_hash, order_payload):
-    """ Place an order and return the order ID """
+    """Place an order and return the order ID"""
     r = client.place_order(account_hash, order_payload)
     if r.status_code not in (200, 201):
         raise Exception(f"Order failed: {r.status_code} - {r.text}")
@@ -221,8 +231,9 @@ def place_order(account_hash, order_payload):
         raise Exception("No location header in response")
     return loc.split("/")[-1]  # order ID
 
+
 def get_order_status(account_hash, order_id):
-    """ Possible status value: 'WORKING', 'FILLED', 'AWAITING_PARENT_ORDER', """
+    """Possible status value: 'WORKING', 'FILLED', 'AWAITING_PARENT_ORDER',"""
     if not order_id:
         return None
     try:
@@ -231,13 +242,15 @@ def get_order_status(account_hash, order_id):
     except:
         return None
 
+
 def get_filled_price(account_hash, order_id):
-    """ Available through ["orderActivityCollection"][list_index]["executionLegs"]["price"], if an order has not been filled, ["orderActivityCollection"] is not available. """
+    """Available through ["orderActivityCollection"][list_index]["executionLegs"]["price"], if an order has not been filled, ["orderActivityCollection"] is not available."""
     try:
         detail = client.get_order(account_hash, order_id).json()
         return safe_extract_price(detail)
     except:
         return None
+
 
 # ---------------- BRACKET BUY HELPER ----------------
 def place_buy_limit_with_bracket(symbol, qty, limit_buy_price):
@@ -246,7 +259,7 @@ def place_buy_limit_with_bracket(symbol, qty, limit_buy_price):
     """
     buy_price = round(limit_buy_price, 2)
     profit_price = round(buy_price * (1 + PROFIT_MARGIN), 2)
-    stop_price  = round(buy_price * (1 - STOP_LOSS_THRESHOLD), 2)
+    stop_price = round(buy_price * (1 - STOP_LOSS_THRESHOLD), 2)
 
     payload = {
         "session": "NORMAL",
@@ -258,7 +271,7 @@ def place_buy_limit_with_bracket(symbol, qty, limit_buy_price):
             {
                 "instruction": "BUY",
                 "quantity": qty,
-                "instrument": {"symbol": symbol, "assetType": "EQUITY"}
+                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
             }
         ],
         "childOrderStrategies": [
@@ -276,9 +289,9 @@ def place_buy_limit_with_bracket(symbol, qty, limit_buy_price):
                             {
                                 "instruction": "SELL",
                                 "quantity": qty,
-                                "instrument": {"symbol": symbol, "assetType": "EQUITY"}
+                                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
                             }
-                        ]
+                        ],
                     },
                     # Stop loss: SELL STOP
                     {
@@ -291,25 +304,27 @@ def place_buy_limit_with_bracket(symbol, qty, limit_buy_price):
                             {
                                 "instruction": "SELL",
                                 "quantity": qty,
-                                "instrument": {"symbol": symbol, "assetType": "EQUITY"}
+                                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
                             }
-                        ]
-                    }
-                ]
+                        ],
+                    },
+                ],
             }
-        ]
+        ],
     }
 
-    print(f"{symbol} → Placing BUY LIMIT @ {buy_price:.2f} + bracket "
-          f"(profit @ {profit_price:.2f} | stop @ {stop_price:.2f})")
+    print(
+        f"{symbol} → Placing BUY LIMIT @ {buy_price:.2f} + bracket "
+        f"(profit @ {profit_price:.2f} | stop @ {stop_price:.2f})"
+    )
     return place_order(payload)
+
 
 # ---------------- MAIN LOOP ----------------
 def run_bot():
-    
+
     account_hash = get_account_hash(ACCOUNT_Number)
-    
-            
+
     cycle = 1
     last_report = time.time()
 
@@ -339,11 +354,13 @@ def run_bot():
                         "duration": "DAY",
                         "orderType": "MARKET",
                         "orderStrategyType": "SINGLE",
-                        "orderLegCollection": [{
-                            "instruction": "SELL",
-                            "quantity": data["qty"],
-                            "instrument": {"symbol": symbol, "assetType": "EQUITY"}
-                        }]
+                        "orderLegCollection": [
+                            {
+                                "instruction": "SELL",
+                                "quantity": data["qty"],
+                                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                            }
+                        ],
                     }
                     data["entry_order_id"] = place_order(sell_payload)
                     data["state"] = "WAITING_SELL_FILL"
@@ -366,7 +383,9 @@ def run_bot():
                     if status == "FILLED":
                         buy_price = get_filled_price(entry_order_id)
                         log_trade(symbol, cycle, "BUY LIMIT + BRACKET ENTRY", buy_price)
-                        print(f"{symbol} Buy filled @ {buy_price:.2f} — bracket active!")
+                        print(
+                            f"{symbol} Buy filled @ {buy_price:.2f} — bracket active!"
+                        )
                         data["buy_price"] = buy_price
                         data["last_buy"] = buy_price
                         data["state"] = "POSITION_HELD_WITH_BRACKET"
@@ -390,13 +409,10 @@ def run_bot():
 
         time.sleep(POLL_INTERVAL)
 
+
 if __name__ == "__main__":
     print("Bracket-order bot starting...")
     run_bot()
-    
-    
-
-
 
 
 # import schwabdev
@@ -565,7 +581,7 @@ if __name__ == "__main__":
 #         if time.time() - last_report > PROFIT_REPORT_INTERVAL:
 #             print_profit_summary()
 #             last_report = time.time()
-            
+
 #         if not (MARKET_OPEN <= now_time <= MARKET_CLOSE):
 #             print(f"Market closed ({now_time.strftime('%H:%M')}) — waiting 60s")
 #             time.sleep(60)
@@ -647,8 +663,8 @@ if __name__ == "__main__":
 # if __name__ == "__main__":
 #     print("Bot starting...")
 #     run_bot()
-    
-    
+
+
 def get_price(client, symbol: str, price_type: str = "last") -> float | None:
     """
     Retrieve a price for a given symbol from the broker quote API.
@@ -703,23 +719,16 @@ def get_price(client, symbol: str, price_type: str = "last") -> float | None:
 
         if price_type == "ask":
             price = (
-                quote.get("askPrice")
-                or quote.get("lastPrice")
-                or quote.get("close")
+                quote.get("askPrice") or quote.get("lastPrice") or quote.get("close")
             )
 
         elif price_type == "bid":
             price = (
-                quote.get("bidPrice")
-                or quote.get("lastPrice")
-                or quote.get("close")
+                quote.get("bidPrice") or quote.get("lastPrice") or quote.get("close")
             )
 
         elif price_type == "last":
-            price = (
-                quote.get("lastPrice")
-                or quote.get("close")
-            )
+            price = quote.get("lastPrice") or quote.get("close")
 
         else:
             raise ValueError(f"Unsupported price_type: {price_type}")

@@ -1,10 +1,7 @@
-
 """
 Some example scripts to pull data from trading_bot.db
 
 """
-
-
 
 # Show all transactions (simple print)
 import sqlite3
@@ -25,8 +22,10 @@ print("Recent Transactions:")
 print("-" * 80)
 for row in cursor.fetchall():
     ts, action, symbol, shares, price, order_type, note = row
-    print(f"{ts} | {action:8} | {symbol:6} | {shares:>6} | ${price:>7.2f} | {order_type:8} | {note}")
-    
+    print(
+        f"{ts} | {action:8} | {symbol:6} | {shares:>6} | ${price:>7.2f} | {order_type:8} | {note}"
+    )
+
 conn.close()
 
 
@@ -50,21 +49,25 @@ cursor.execute("""
 print("Position Summary by Symbol:")
 print("-" * 70)
 
-data = defaultdict(lambda: {'buy_shares': 0, 'buy_avg': 0, 'sell_shares': 0, 'sell_avg': 0})
+data = defaultdict(
+    lambda: {"buy_shares": 0, "buy_avg": 0, "sell_shares": 0, "sell_avg": 0}
+)
 
 for symbol, action, total_shares, avg_price in cursor.fetchall():
     if "BUY" in action:
-        data[symbol]['buy_shares'] += total_shares
-        data[symbol]['buy_avg'] = avg_price  # simplistic – real avg needs weighted
+        data[symbol]["buy_shares"] += total_shares
+        data[symbol]["buy_avg"] = avg_price  # simplistic – real avg needs weighted
     elif "SELL" in action:
-        data[symbol]['sell_shares'] += total_shares
-        data[symbol]['sell_avg'] = avg_price
+        data[symbol]["sell_shares"] += total_shares
+        data[symbol]["sell_avg"] = avg_price
 
 for symbol, vals in data.items():
-    net_shares = vals['buy_shares'] - vals['sell_shares']
-    print(f"{symbol:6} | Bought: {vals['buy_shares']:>6.1f} @ ${vals['buy_avg']:>6.2f} "
-          f"| Sold: {vals['sell_shares']:>6.1f} @ ${vals['sell_avg']:>6.2f} "
-          f"| Net: {net_shares:+8.1f}")
+    net_shares = vals["buy_shares"] - vals["sell_shares"]
+    print(
+        f"{symbol:6} | Bought: {vals['buy_shares']:>6.1f} @ ${vals['buy_avg']:>6.2f} "
+        f"| Sold: {vals['sell_shares']:>6.1f} @ ${vals['sell_avg']:>6.2f} "
+        f"| Net: {net_shares:+8.1f}"
+    )
 
 conn.close()
 
@@ -72,6 +75,7 @@ conn.close()
 import sqlite3
 
 DB_FILE = "trading_bot.db"
+
 
 def calculate_realized_pl():
     conn = sqlite3.connect(DB_FILE)
@@ -100,10 +104,13 @@ def calculate_realized_pl():
                         buy_price = positions[symbol].pop(0)  # FIFO
                         pl = (price - buy_price) * 1  # per share
                         total_pl += pl
-                        print(f"Closed {symbol}: Bought ${buy_price:.2f} → Sold ${price:.2f} = ${pl:+.2f}")
+                        print(
+                            f"Closed {symbol}: Bought ${buy_price:.2f} → Sold ${price:.2f} = ${pl:+.2f}"
+                        )
 
     conn.close()
     print(f"\nTotal Realized P/L: ${total_pl:,.2f}")
+
 
 calculate_realized_pl()
 
@@ -153,7 +160,7 @@ for row in cursor.fetchall():
         last[:10] if last else "-",
         f"{bought:,.1f}",
         f"{sold:,.1f}",
-        f"[bold {net_style}]{net:+,.1f}[/bold {net_style}]"
+        f"[bold {net_style}]{net:+,.1f}[/bold {net_style}]",
     )
 
 console.print(table)
@@ -174,7 +181,7 @@ cursor.execute("SELECT * FROM transactions ORDER BY timestamp DESC")
 headers = [desc[0] for desc in cursor.description]
 rows = cursor.fetchall()
 
-with open(EXPORT_FILE, 'w', newline='', encoding='utf-8') as f:
+with open(EXPORT_FILE, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(headers)
     writer.writerows(rows)
@@ -182,4 +189,3 @@ with open(EXPORT_FILE, 'w', newline='', encoding='utf-8') as f:
 print(f"Exported {len(rows)} transactions to: {EXPORT_FILE}")
 
 conn.close()
-

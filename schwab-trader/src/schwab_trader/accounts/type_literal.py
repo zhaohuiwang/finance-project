@@ -1,6 +1,4 @@
-
-
-from typing import Literal # TypedDict
+from typing import Literal  # TypedDict
 
 Session = Literal["NORMAL", "AM", "PM", "SEAMLESS"]
 

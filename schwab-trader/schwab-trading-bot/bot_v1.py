@@ -335,9 +335,10 @@ class TradingBot:
 
     # ── MONITOR LOOP + ENHANCED DASHBOARD ─────────────────────────────────────
     # Approach I - new table every 10 second specified by time.sleep(10)
+# ── MONITOR LOOP + ENHANCED DASHBOARD ─────────────────────────────────────
     def monitor_loop(self):
         while self.running:
-            time.sleep(10) # terminal dashboard table update frequency
+            time.sleep(10)
 
             # Daily reset
             if date.today() != self.today:
@@ -385,125 +386,125 @@ class TradingBot:
                 console.print(table)
                 console.print(f"[bold]Account: ${equity:,.0f} | Daily P/L: {daily_pnl:+.1f}% | "
                               f"Risk Used: {risk_used:.0f}% | Status: {'PAUSED' if self.trading_paused else 'ACTIVE'}[/bold]")
-    # Approach II - Track a simple "state hash" or version number. This is lightweight, reliable and doesn't require deep comparison of all data.
-    def monitor_loop(self):
-        last_state_hash = None          # or use a counter / timestamp
+    # # Approach II - Track a simple "state hash" or version number. This is lightweight, reliable and doesn't require deep comparison of all data.
+    # def monitor_loop(self):
+    #     last_state_hash = None          # or use a counter / timestamp
 
-        while self.running:
-            time.sleep(10)              # still check every ~10s
+    #     while self.running:
+    #         time.sleep(10)              # still check every ~10s
 
-            # Daily reset (keep as-is)
-            if date.today() != self.today:
-                self.daily_start_equity = self.get_account_equity()
-                self.today = date.today()
-                self.trading_paused = False
-                console.print("[cyan]New trading day — reset[/cyan]")
+    #         # Daily reset (keep as-is)
+    #         if date.today() != self.today:
+    #             self.daily_start_equity = self.get_account_equity()
+    #             self.today = date.today()
+    #             self.trading_paused = False
+    #             console.print("[cyan]New trading day — reset[/cyan]")
 
-            self.update_holdings_from_api()
+    #         self.update_holdings_from_api()
 
 
-            # ── BUY TRIGGER LOGIC ───────────────────────────────────────────────
-            with self.lock:
-                for sym in SYMBOLS:
-                    if sym in self.holdings and self.holdings[sym].get('shares', 0) > 0:
-                        continue
+    #         # ── BUY TRIGGER LOGIC ───────────────────────────────────────────────
+    #         with self.lock:
+    #             for sym in SYMBOLS:
+    #                 if sym in self.holdings and self.holdings[sym].get('shares', 0) > 0:
+    #                     continue
 
-                    current_price = self.current_prices.get(sym)
-                    if current_price is None or current_price <= 0:
-                        continue
+    #                 current_price = self.current_prices.get(sym)
+    #                 if current_price is None or current_price <= 0:
+    #                     continue
 
-                    cfg = CONFIG.get(sym, {})
-                    target = cfg.get('buy_target_price', float('inf'))
-                    drop_pct = cfg.get('buy_drop_pct', 50.0)
-                    last_buy_price = get_last_buy_price(sym) # from db/state
+    #                 cfg = CONFIG.get(sym, {})
+    #                 target = cfg.get('buy_target_price', float('inf'))
+    #                 drop_pct = cfg.get('buy_drop_pct', 50.0)
+    #                 last_buy_price = get_last_buy_price(sym) # from db/state
 
-                    trigger = False
-                    reason = ""
-                    # 1. Absolute price target hit
-                    if current_price <= target:
-                        trigger = True
-                        reason = f"hit absolute target ${target:.2f}"
+    #                 trigger = False
+    #                 reason = ""
+    #                 # 1. Absolute price target hit
+    #                 if current_price <= target:
+    #                     trigger = True
+    #                     reason = f"hit absolute target ${target:.2f}"
                         
-                    # 2. Percentage drop from last buy
-                    if last_buy_price and current_price <= last_buy_price * (1 - drop_pct / 100):
-                        trigger = True
-                        reason = f"dropped ≥{drop_pct}% from last buy"
+    #                 # 2. Percentage drop from last buy
+    #                 if last_buy_price and current_price <= last_buy_price * (1 - drop_pct / 100):
+    #                     trigger = True
+    #                     reason = f"dropped ≥{drop_pct}% from last buy"
 
-                    if trigger and self.risk_checks_pass(sym):
-                        console.print(f"[bold red]BUY TRIGGER {sym}: {reason} @ ${current_price:.2f}[/bold red]")
-                        self.place_buy_order(sym)
-                        self.holdings[sym] = {
-                            'shares': self.calculate_shares(sym, current_price),
-                            'buy_price': current_price,
-                            'limit_price': None,
-                            'stop_price': None
-                        }
+    #                 if trigger and self.risk_checks_pass(sym):
+    #                     console.print(f"[bold red]BUY TRIGGER {sym}: {reason} @ ${current_price:.2f}[/bold red]")
+    #                     self.place_buy_order(sym)
+    #                     self.holdings[sym] = {
+    #                         'shares': self.calculate_shares(sym, current_price),
+    #                         'buy_price': current_price,
+    #                         'limit_price': None,
+    #                         'stop_price': None
+    #                     }
 
-            # Build current view data
-            current_view = {}
-            equity = self.get_account_equity()
-            daily_pnl = (equity - self.daily_start_equity) / self.daily_start_equity * 100 if self.daily_start_equity > 0 else 0
+    #         # Build current view data
+    #         current_view = {}
+    #         equity = self.get_account_equity()
+    #         daily_pnl = (equity - self.daily_start_equity) / self.daily_start_equity * 100 if self.daily_start_equity > 0 else 0
 
-            with self.lock:
-                for sym in SYMBOLS:
-                    price = self.current_prices.get(sym)
-                    h = self.holdings.get(sym, {})
-                    shares = h.get('shares', 0)
-                    buy_p = h.get('buy_price')
-                    pl_pct = ((price - buy_p) / buy_p * 100) if price and buy_p and buy_p > 0 else 0.0
+    #         with self.lock:
+    #             for sym in SYMBOLS:
+    #                 price = self.current_prices.get(sym)
+    #                 h = self.holdings.get(sym, {})
+    #                 shares = h.get('shares', 0)
+    #                 buy_p = h.get('buy_price')
+    #                 pl_pct = ((price - buy_p) / buy_p * 100) if price and buy_p and buy_p > 0 else 0.0
 
-                    current_view[sym] = {
-                        'price': price,
-                        'shares': shares,
-                        'buy_price': buy_p,
-                        'pl_pct': pl_pct,
-                        'status': "HOLDING" if shares > 0 else "WATCHING"
-                    }
+    #                 current_view[sym] = {
+    #                     'price': price,
+    #                     'shares': shares,
+    #                     'buy_price': buy_p,
+    #                     'pl_pct': pl_pct,
+    #                     'status': "HOLDING" if shares > 0 else "WATCHING"
+    #                 }
 
-            # Compute a simple hash / fingerprint of the view
-            view_str = str(sorted(current_view.items())) + f"|{equity:.2f}|{daily_pnl:.2f}"
-            current_hash = hash(view_str)   # or use hashlib.md5(view_str.encode()).hexdigest()
+    #         # Compute a simple hash / fingerprint of the view
+    #         view_str = str(sorted(current_view.items())) + f"|{equity:.2f}|{daily_pnl:.2f}"
+    #         current_hash = hash(view_str)   # or use hashlib.md5(view_str.encode()).hexdigest()
 
-            # Only redraw if something changed
-            if current_hash != last_state_hash:
-                last_state_hash = current_hash
+    #         # Only redraw if something changed
+    #         if current_hash != last_state_hash:
+    #             last_state_hash = current_hash
 
-                # Build and print table
-                table = Table(title=f"Bot Dashboard ─ {datetime.now().strftime('%H:%M:%S')}")
-                table.add_column("Symbol", style="cyan")
-                table.add_column("Price", justify="right")
-                table.add_column("Position", justify="right")
-                table.add_column("Avg Buy", justify="right")
-                table.add_column("P/L %", justify="right")
-                table.add_column("Status")
+    #             # Build and print table
+    #             table = Table(title=f"Bot Dashboard ─ {datetime.now().strftime('%H:%M:%S')}")
+    #             table.add_column("Symbol", style="cyan")
+    #             table.add_column("Price", justify="right")
+    #             table.add_column("Position", justify="right")
+    #             table.add_column("Avg Buy", justify="right")
+    #             table.add_column("P/L %", justify="right")
+    #             table.add_column("Status")
 
-                with self.lock:
-                    for sym in SYMBOLS:
-                        v = current_view[sym]
-                        price_str = f"${v['price']:.2f}" if v['price'] is not None else "—"
-                        buy_str   = f"${v['buy_price']:.2f}" if v['buy_price'] else "—"
-                        pl_str    = f"{v['pl_pct']:+.1f}%" if v['pl_pct'] != 0 else "+0.0%"
+    #             with self.lock:
+    #                 for sym in SYMBOLS:
+    #                     v = current_view[sym]
+    #                     price_str = f"${v['price']:.2f}" if v['price'] is not None else "—"
+    #                     buy_str   = f"${v['buy_price']:.2f}" if v['buy_price'] else "—"
+    #                     pl_str    = f"{v['pl_pct']:+.1f}%" if v['pl_pct'] != 0 else "+0.0%"
 
-                        table.add_row(
-                            sym,
-                            price_str,
-                            f"{v['shares']:.1f}",
-                            buy_str,
-                            pl_str,
-                            v['status']
-                        )
+    #                     table.add_row(
+    #                         sym,
+    #                         price_str,
+    #                         f"{v['shares']:.1f}",
+    #                         buy_str,
+    #                         pl_str,
+    #                         v['status']
+    #                     )
 
-                # Risk footer
-                risk_used_pct = (len(self.holdings) / RISK_CONFIG['max_positions']) * 100
-                footer = (f"Equity: ${equity:,.0f} | Daily: {daily_pnl:+.1f}% | "
-                          f"Risk: {risk_used_pct:.0f}% | {'PAUSED' if self.trading_paused else 'ACTIVE'}")
+    #             # Risk footer
+    #             risk_used_pct = (len(self.holdings) / RISK_CONFIG['max_positions']) * 100
+    #             footer = (f"Equity: ${equity:,.0f} | Daily: {daily_pnl:+.1f}% | "
+    #                       f"Risk: {risk_used_pct:.0f}% | {'PAUSED' if self.trading_paused else 'ACTIVE'}")
 
-                console.clear()                     # ← optional: cleaner look
-                console.print(table)
-                console.print(f"[bold]{footer}[/bold]")
+    #             console.clear()                     # ← optional: cleaner look
+    #             console.print(table)
+    #             console.print(f"[bold]{footer}[/bold]")
 
-                # Optional: also log change reason in debug mode
-                # console.print("[dim](table updated)[/dim]")    
+    #             # Optional: also log change reason in debug mode
+    #             # console.print("[dim](table updated)[/dim]")    
 
     def update_holdings_from_api(self):
         # (same as previous version)

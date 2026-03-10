@@ -233,18 +233,17 @@ order_ids = [
 # Examine an order details - the 1st in the list
 orders = client.order_details(
     accountHash=hashValue,
-    #orderId=order_ids[0],
-    orderId='1005645558838',
-    ).json()
+    # orderId=order_ids[0],
+    orderId="1005645558838",
+).json()
 
 
 # Cancel an order
 status_code, date = cancel_order(
     client=client,
     accountHash=hashValue,
-    #order_id=order_ids[0],
-    order_id='1005645558909',
-    
+    # order_id=order_ids[0],
+    order_id="1005645558909",
 )
 
 if status_code == 200:
