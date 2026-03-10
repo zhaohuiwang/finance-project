@@ -14,15 +14,16 @@ from filelock import FileLock, Timeout
 
 logger = logging.getLogger(__name__)
 # ---------------- CONFIG ----------------
+ACCOUNT_Number = "29308909"
 
-POLL_INTERVAL         = 10   # now slower since less polling needed
+POLL_INTERVAL         = 10   # 
 PROFIT_REPORT_INTERVAL= 3600
 
 EASTERN = pytz.timezone("US/Eastern")
 MARKET_OPEN  = dt_time(9, 30)
 MARKET_CLOSE = dt_time(16, 0)
 
-PROFIT_MARGIN   = 0.03   # 3%
+PROFIT_MARGIN   = 0.05   # 5%
 REENTRY_MARGIN  = 0.02   # 2% below last sell
 STOP_LOSS_THRESHOLD = 0.05  # 5% below buy fill
 LOG_FILE = Path("trades.log.csv")
@@ -31,10 +32,22 @@ LOCK_FILE = LOG_FILE.with_suffix(LOG_FILE.suffix + ".lock")  # e.g. trades.log.c
 
 
 symbols = {
-    "AAPL": {"qty": 1, "state": "INIT", "entry_order_id": None,
-             "last_buy": None, "last_sell": None, "buy_price": None},
-    "TSLA": {"qty": 1, "state": "INIT", "entry_order_id": None,
-             "last_buy": None, "last_sell": None, "buy_price": None}
+    "USAR": {
+        "qty": 1,
+        "state": "INIT",               # ← starts by trying to SELL (assumes you hold shares)
+        "entry_order_id": None,
+        "last_buy": None,
+        "last_sell": None,
+        "buy_price": None
+    },
+    "ACHR": {
+        "qty": 1,
+        "state": "INIT",
+        "entry_order_id": None,
+        "last_buy": None,
+        "last_sell": None,
+        "buy_price": None
+    }
 }
 # "INIT" is short for "Initialized"
 
@@ -177,8 +190,30 @@ def print_profit_summary():
         print(f"{sym}: ${profit:.2f}")
     print("----------------------\n")
 
-def place_order(order_payload):
-    r = client.place_order(ACCOUNT_HASH, order_payload)
+def get_account_hash(account_number: str):
+    """" Return the account hashValue (str) for the given account number """
+    response = client.linked_accounts()
+    data = response.json()
+    account_hash = next(
+        (item["hashValue"] for item in data if item["accountNumber"] == account_number), None
+    )
+    return account_hash
+
+def safe_extract_price(order_obj):
+    if not order_obj: return None
+    if "price" in order_obj and order_obj["price"] is not None:
+        try: return float(order_obj["price"])
+        except: pass
+    if "executionLegs" in order_obj:
+        for leg in order_obj["executionLegs"]:
+            if leg.get("fillPrice"):
+                try: return float(leg["fillPrice"])
+                except: pass
+    return None
+
+def place_order(account_hash, order_payload):
+    """ Place an order and return the order ID """
+    r = client.place_order(account_hash, order_payload)
     if r.status_code not in (200, 201):
         raise Exception(f"Order failed: {r.status_code} - {r.text}")
     loc = r.headers.get("location")
@@ -186,18 +221,20 @@ def place_order(order_payload):
         raise Exception("No location header in response")
     return loc.split("/")[-1]  # order ID
 
-def get_order_status(order_id):
+def get_order_status(account_hash, order_id):
+    """ Possible status value: 'WORKING', 'FILLED', 'AWAITING_PARENT_ORDER', """
     if not order_id:
         return None
     try:
-        resp = client.get_order(ACCOUNT_HASH, order_id)
+        resp = client.order_details(account_hash, order_id)
         return resp.json().get("status")
     except:
         return None
 
-def get_filled_price(order_id):
+def get_filled_price(account_hash, order_id):
+    """ Available through ["orderActivityCollection"][list_index]["executionLegs"]["price"], if an order has not been filled, ["orderActivityCollection"] is not available. """
     try:
-        detail = client.get_order(ACCOUNT_HASH, order_id).json()
+        detail = client.get_order(account_hash, order_id).json()
         return safe_extract_price(detail)
     except:
         return None
@@ -269,6 +306,10 @@ def place_buy_limit_with_bracket(symbol, qty, limit_buy_price):
 
 # ---------------- MAIN LOOP ----------------
 def run_bot():
+    
+    account_hash = get_account_hash(ACCOUNT_Number)
+    
+            
     cycle = 1
     last_report = time.time()
 
@@ -608,3 +649,83 @@ if __name__ == "__main__":
 #     run_bot()
     
     
+def get_price(client, symbol: str, price_type: str = "last") -> float | None:
+    """
+    Retrieve a price for a given symbol from the broker quote API.
+
+    This function requests quote data for the specified symbol and returns
+    a selected price type. If the preferred price is unavailable, fallback
+    fields are used to provide the closest available value.
+
+    Price selection logic:
+        - "ask": askPrice → lastPrice → close
+        - "bid": bidPrice → lastPrice → close
+        - "last": lastPrice → close
+
+    Args:
+        client: Broker API client instance used to request quotes.
+        symbol (str): The ticker symbol to query (e.g., "AAPL").
+        price_type (str, optional): The type of price to retrieve.
+            Supported values are:
+                - "ask"  : best available ask price
+                - "bid"  : best available bid price
+                - "last" : last traded price
+            Defaults to "last".
+
+    Returns:
+        float | None: The requested price as a float if available,
+        otherwise None if the quote data is missing or invalid.
+
+    Raises:
+        ValueError: If an unsupported price_type is provided.
+
+    Notes:
+        - This function gracefully handles missing quote fields.
+        - It converts returned price values to float.
+        - Network or API errors are caught and logged, returning None.
+
+    Example:
+        >>> price = get_price(client, "AAPL", "ask")
+        >>> if price:
+        ...     print(f"Current ask price: {price}")
+    """
+    try:
+        resp = client.quote(symbol)
+        resp.raise_for_status()
+
+        payload = resp.json()
+        symbol_data = payload.get(symbol)
+
+        if not symbol_data:
+            return None
+
+        quote = symbol_data.get("quote", {})
+
+        if price_type == "ask":
+            price = (
+                quote.get("askPrice")
+                or quote.get("lastPrice")
+                or quote.get("close")
+            )
+
+        elif price_type == "bid":
+            price = (
+                quote.get("bidPrice")
+                or quote.get("lastPrice")
+                or quote.get("close")
+            )
+
+        elif price_type == "last":
+            price = (
+                quote.get("lastPrice")
+                or quote.get("close")
+            )
+
+        else:
+            raise ValueError(f"Unsupported price_type: {price_type}")
+
+        return float(price) if price else None
+
+    except Exception as e:
+        print(f"Quote failed for {symbol}: {e}")
+        return None

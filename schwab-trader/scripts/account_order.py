@@ -66,9 +66,9 @@ print(json.dumps(data, indent=4))
 
 # create an order configuration dictionary
 order_1 = buy_limit_dict(
-    symbol="IREN",
+    symbol="ACHR",
     quantity=1,
-    limit_price=10.0,
+    limit_price=6.2,
     duration="DAY",
 )
 
@@ -183,11 +183,11 @@ status_code, date, order_id = place_order(
 
 from_time, to_time = get_utc_time_range(
     # to_time= datetime.datetime(2026, 3, 6, 10, 0)
-    offset=datetime.timedelta(days=1, minutes=20)
+    offset=datetime.timedelta(days=0, hours=0, minutes=20)
 )
 # or simply
 from_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
-    days=0, hours=0, minutes=5
+    days=0, hours=2, minutes=5
 )
 to_time = datetime.datetime.now(datetime.timezone.utc)
 
@@ -199,11 +199,11 @@ orders = client.account_orders(
 ).json()
 print(orders)
 
-orders_all_account = client.account_orders_all(
-    fromEnteredTime=from_time,
-    toEnteredTime=to_time,
-).json()
-print(orders_all_account)
+# orders_all_account = client.account_orders_all(
+#     fromEnteredTime=from_time,
+#     toEnteredTime=to_time,
+# ).json()
+# print(orders_all_account)
 
 # status string Enum: [ AWAITING_PARENT_ORDER, AWAITING_CONDITION, AWAITING_STOP_CONDITION, AWAITING_MANUAL_REVIEW, ACCEPTED, AWAITING_UR_OUT, PENDING_ACTIVATION, QUEUED, WORKING, REJECTED, PENDING_CANCEL, CANCELED, PENDING_REPLACE, REPLACED, FILLED, EXPIRED, NEW, AWAITING_RELEASE_TIME, PENDING_ACKNOWLEDGEMENT, PENDING_RECALL, UNKNOWN ]
 
@@ -212,7 +212,7 @@ print(orders_all_account)
 iter_result = list(
     iter_keys_path_tuple(
         data=orders,
-        keys=["orderId", "enteredTime", "status"],
+        keys=["orderId", "enteredTime", "status", "price"],
         predicate=lambda d: d.get("cancelable") is True,
         root_name="orders",
     )
@@ -231,13 +231,22 @@ order_ids = [
 ]
 
 # Examine an order details - the 1st in the list
-orders = client.order_details(accountHash=hashValue, orderId=order_ids[0]).json()
+orders = client.order_details(
+    accountHash=hashValue,
+    #orderId=order_ids[0],
+    orderId='1005645558838',
+    ).json()
 
 
 # Cancel an order
 status_code, date = cancel_order(
-    client=client, accountHash=hashValue, order_id=order_ids[0]
+    client=client,
+    accountHash=hashValue,
+    #order_id=order_ids[0],
+    order_id='1005645558909',
+    
 )
+
 if status_code == 200:
     order_ids.pop(0)  # cancellation succeed, remove it (the 1st) from the list
 
