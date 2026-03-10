@@ -165,6 +165,9 @@ git init
 git submodule add git@github.com:tylerebowers/Schwabdev.git github-lib/schwabdev
 git submodule add git@github.com:Lumiwealth/lumibot.git github-lib/lumibot
 git submodule update --init
+cd github-lib/schwabdev
+git branch
+git switch main  # when necessary
 cd schwab-trader
 uv init
 vim pyproject.toml
