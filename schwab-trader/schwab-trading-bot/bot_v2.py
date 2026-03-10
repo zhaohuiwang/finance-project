@@ -136,35 +136,73 @@ class TradingBot:
 
     # ── STREAM HANDLERS (unchanged from last version) ─────────────────────────
     def unified_receiver(self, message):
+        if isinstance(message, str):
+            try:
+                message = json.loads(message)
+            except json.JSONDecodeError:
+                return
+
         if not isinstance(message, dict):
             return
-        for item in message.get("data", []):
-            service = item.get("service")
+
+        if "response" in message:
+            return
+
+        data_list = message.get("data", [])
+        if not data_list:
+            return
+
+        for data_item in data_list:
+            service = data_item.get("service")
+            if not service:
+                continue
+
             if service == "LEVELONE_EQUITIES":
-                self.handle_price_message(item)
+                self.handle_price_message(data_item)
             elif service in ("ACCT_ACTIVITY", "USER_ACTIVITY"):
-                self.handle_account_activity(item)
+                self.handle_account_activity(data_item)
 
     def handle_price_message(self, item):
-        for content in item.get("content", []):
+        content_list = item.get("content", [])
+        if not content_list:
+            return
+
+        for content in content_list:
             symbol = content.get("key")
-            if symbol in self.current_prices:
+            if symbol not in self.current_prices:
+                continue
+
+            last_str = content.get("3")
+            if last_str is not None:
                 try:
-                    price = float(content.get("3", 0))
-                    if price > 0:
+                    last_price = float(last_str)
+                    if last_price > 0:
                         with self.lock:
-                            self.current_prices[symbol] = price
-                except:
+                            self.current_prices[symbol] = last_price
+                except (ValueError, TypeError):
                     pass
 
+            # Optional fallback to mid bid/ask if last price is missing
+            # (uncomment if you want it)
+            # else:
+            #     bid = content.get('1')
+            #     ask = content.get('2')
+            #     if bid is not None and ask is not None:
+            #         try:
+            #             mid = (float(bid) + float(ask)) / 2
+            #             if mid > 0:
+            #                 with self.lock:
+            #                     self.current_prices[symbol] = mid
+            #         except:
+            #             pass
+
     def handle_account_activity(self, item):
-        for content in item.get("content", []):
-            # # We only care about real executions / fills (ignore heartbeats, subscriptions, etc.)
-            if content.get("messageType", "").upper() not in (
-                "EXECUTION",
-                "FILL",
-                "ORDER_FILL",
-            ):
+        content_list = item.get("content", [])
+        for content in content_list:
+            # We only care about real executions / fills (ignore heartbeats, subscriptions, etc.)
+            msg_type = content.get("messageType", "").upper()
+
+            if msg_type not in ("EXECUTION", "FILL", "ORDER_FILL"):
                 continue
             # Extract symbol from different possible locations in the message
             symbol = content.get("symbol") or content.get("instrument", {}).get(
@@ -173,22 +211,31 @@ class TradingBot:
             if not symbol or symbol not in SYMBOLS:
                 continue  # ignore if not one of our watched stocks
 
-            qty = float(content.get("quantity") or content.get("filledQuantity", 0))
-            price = float(content.get("price") or content.get("executionPrice", 0))
-            instr = content.get("instruction", "").upper()
+            qty_str = content.get("quantity") or content.get("filledQuantity", "0")
+            price_str = content.get("price") or content.get("executionPrice", "0")
+
+            try:
+                qty = float(qty_str)
+                price = float(price_str)
+            except (ValueError, TypeError):
+                continue
+
+            instruction = content.get("instruction", "").upper()
 
             with self.lock:
-                if instr in ("SELL", "SELL_SHORT") and symbol in self.holdings:
-                    del self.holdings[symbol]
-                    # Removes the symbol from the internal holdings dictionary, the bot now considers the position flat/closed
-                    log_transaction(
-                        "SELL (stream)", symbol, qty, price, note="OCO filled"
-                    )
-                    console.print(
-                        f"[yellow bold]Position CLOSED: {symbol} @ ${price:.2f}[/yellow bold]"
-                    )
+                if instruction in ("SELL", "SELL_SHORT"):
+                    if symbol in self.holdings:
+                        del self.holdings[symbol]
+                        # Removes the symbol from the internal holdings dictionary, the bot now considers the position flat/closed
+                        log_transaction(
+                            "SELL (detected via stream)",
+                            symbol,
+                            qty,
+                            price,
+                            note="OCO fill via ACCT_ACTIVITY",
+                        )
 
-                elif instr in ("BUY", "BUY_TO_COVER"):
+                elif instruction in ("BUY", "BUY_TO_COVER"):
                     self.holdings[symbol] = {
                         "shares": qty,
                         "buy_price": price,
@@ -196,10 +243,11 @@ class TradingBot:
                         "stop_price": None,
                     }
                     log_transaction(
-                        "BUY (stream)", symbol, qty, price, note="Fill detected"
-                    )
-                    console.print(
-                        f"[green bold]BUY FILLED: {symbol} @ ${price:.2f}[/green bold]"
+                        "BUY (detected via stream)",
+                        symbol,
+                        qty,
+                        price,
+                        note="Initial buy fill via ACCT_ACTIVITY",
                     )
                     self.place_bracket_orders(symbol, price)
                     save_state(symbol, price)
@@ -414,7 +462,8 @@ class TradingBot:
         equity = self.get_account_equity()
         daily_pnl_pct = (
             (equity - self.daily_start_equity) / self.daily_start_equity * 100
-            if self.daily_start_equity > 0 else 0.0
+            if self.daily_start_equity > 0
+            else 0.0
         )
 
         table = Table(expand=True, show_header=True, header_style="bold magenta")
@@ -427,15 +476,19 @@ class TradingBot:
 
         with self.lock:
             for sym in SYMBOLS:
-                price   = self.current_prices.get(sym)
-                h       = self.holdings.get(sym, {})
-                shares  = h.get('shares', 0)
-                buy_p   = h.get('buy_price', None)
-                pl_pct  = ((price - buy_p) / buy_p * 100) if price and buy_p and buy_p > 0 else 0.0
+                price = self.current_prices.get(sym)
+                h = self.holdings.get(sym, {})
+                shares = h.get("shares", 0)
+                buy_p = h.get("buy_price", None)
+                pl_pct = (
+                    ((price - buy_p) / buy_p * 100)
+                    if price and buy_p and buy_p > 0
+                    else 0.0
+                )
 
                 price_str = f"${price:,.2f}" if price is not None else "—"
-                buy_str   = f"${buy_p:,.2f}" if buy_p is not None else "—"
-                pl_str    = f"{pl_pct:+.1f}%" if abs(pl_pct) > 0.01 else "+0.0%"
+                buy_str = f"${buy_p:,.2f}" if buy_p is not None else "—"
+                pl_str = f"{pl_pct:+.1f}%" if abs(pl_pct) > 0.01 else "+0.0%"
 
                 status_style = "green" if shares > 0 else "grey70"
                 table.add_row(
@@ -444,10 +497,10 @@ class TradingBot:
                     f"{shares:.1f}",
                     buy_str,
                     pl_str,
-                    f"[{status_style}]{'HOLDING' if shares > 0 else 'WATCHING'}[/{status_style}]"
+                    f"[{status_style}]{'HOLDING' if shares > 0 else 'WATCHING'}[/{status_style}]",
                 )
 
-        risk_used_pct = (len(self.holdings) / RISK_CONFIG.get('max_positions', 1)) * 100
+        risk_used_pct = (len(self.holdings) / RISK_CONFIG.get("max_positions", 1)) * 100
 
         footer = (
             f"Equity: [bold]${equity:,.0f}[/bold]   |   "
@@ -458,12 +511,15 @@ class TradingBot:
 
         return table, footer, equity, daily_pnl_pct
 
-
     def monitor_loop(self):
         last_state_key = None
 
         with Live(
-            Panel("Initializing dashboard...", title="Schwab Trading Bot", border_style="blue"),
+            Panel(
+                "Initializing dashboard...",
+                title="Schwab Trading Bot",
+                border_style="blue",
+            ),
             console=console,
             refresh_per_second=0.4,
             screen=True,
@@ -482,7 +538,10 @@ class TradingBot:
                 # ─────────────── BUY TRIGGER LOGIC ───────────────
                 with self.lock:
                     for sym in SYMBOLS:
-                        if sym in self.holdings and self.holdings[sym].get('shares', 0) > 0:
+                        if (
+                            sym in self.holdings
+                            and self.holdings[sym].get("shares", 0) > 0
+                        ):
                             continue
 
                         current_price = self.current_prices.get(sym)
@@ -490,8 +549,8 @@ class TradingBot:
                             continue
 
                         cfg = CONFIG.get(sym, {})
-                        target = cfg.get('buy_target_price', float('inf'))
-                        drop_pct = cfg.get('buy_drop_pct', 5.0)
+                        target = cfg.get("buy_target_price", float("inf"))
+                        drop_pct = cfg.get("buy_drop_pct", 5.0)
                         last_buy = get_last_buy_price(sym)
 
                         trigger = False
@@ -501,19 +560,25 @@ class TradingBot:
                             trigger = True
                             reason = f"hit absolute target ${target:.2f}"
 
-                        if last_buy and current_price <= last_buy * (1 - drop_pct / 100):
+                        if last_buy and current_price <= last_buy * (
+                            1 - drop_pct / 100
+                        ):
                             trigger = True
                             reason += " & " if reason else ""
-                            reason += f"dropped ≥{drop_pct}% from last buy (${last_buy:.2f})"
+                            reason += (
+                                f"dropped ≥{drop_pct}% from last buy (${last_buy:.2f})"
+                            )
 
                         if trigger and self.risk_checks_pass(sym):
-                            console.print(f"[bold red]BUY TRIGGER {sym}: {reason} @ ${current_price:.2f}[/bold red]")
+                            console.print(
+                                f"[bold red]BUY TRIGGER {sym}: {reason} @ ${current_price:.2f}[/bold red]"
+                            )
                             self.place_buy_order(sym)
                             self.holdings[sym] = {
-                                'shares': self.calculate_shares(sym, current_price),
-                                'buy_price': current_price,
-                                'limit_price': None,
-                                'stop_price': None
+                                "shares": self.calculate_shares(sym, current_price),
+                                "buy_price": current_price,
+                                "limit_price": None,
+                                "stop_price": None,
                             }
 
                 # ─────────────── Dashboard update ───────────────
@@ -521,15 +586,17 @@ class TradingBot:
 
                 state_key = (
                     tuple(
-                        (sym,
-                        self.current_prices.get(sym),
-                        self.holdings.get(sym, {}).get('shares', 0))
+                        (
+                            sym,
+                            self.current_prices.get(sym),
+                            self.holdings.get(sym, {}).get("shares", 0),
+                        )
                         for sym in SYMBOLS
                     ),
                     round(equity, 2),
                     round(daily_pnl, 2),
                     self.trading_paused,
-                    len(self.holdings)
+                    len(self.holdings),
                 )
 
                 if state_key != last_state_key:
@@ -539,11 +606,11 @@ class TradingBot:
 
                     live.update(
                         Panel(
-                            table,                       # ← Table object directly → renders as table
-                            subtitle=footer,             # ← markup string as subtitle
+                            table,  # ← Table object directly → renders as table
+                            subtitle=footer,  # ← markup string as subtitle
                             title=title,
                             border_style="red" if self.trading_paused else "blue",
-                            padding=(1, 2)
+                            padding=(1, 2),
                         )
                     )
                     last_state_key = state_key
