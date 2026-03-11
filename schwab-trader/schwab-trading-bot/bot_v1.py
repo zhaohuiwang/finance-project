@@ -1,6 +1,12 @@
 # bot.py
 import json
 import time
+
+from rich.live import Live
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
 import threading
 from datetime import datetime, date
 import schwabdev
@@ -14,6 +20,8 @@ from db import init_db, log_transaction, save_state, get_last_buy_price, load_st
 
 load_dotenv()
 console = Console()
+
+CACHE_TTL_SECONDS = 45  # refresh every ~45 seconds or 60, 90
 
 
 class TradingBot:
@@ -32,8 +40,13 @@ class TradingBot:
         self.trading_paused = False
         self.account_hash = self._get_account_hash()
 
+        self._equity_cache = None
+        self._equity_cache_time = 0
+        self._buying_power_cache = None
+        self._buying_power_cache_time = 0
+
         # Daily risk tracking
-        self.daily_start_equity = self.get_account_equity()
+        self.daily_start_equity, _ = self.get_account_snapshot()
         self.today = date.today()
 
         console.print(
@@ -47,51 +60,82 @@ class TradingBot:
         return accounts[0]["hashValue"]
 
     # ── ACCOUNT METRICS (for risk checks) ─────────────────────────────────────
-    def get_account_equity(self):
+
+    def get_account_snapshot(self):
+        now = time.time()
+        if (
+            self._equity_cache is not None
+            and self._buying_power_cache is not None
+            and (now - self._equity_cache_time) < CACHE_TTL_SECONDS
+        ):
+            return self._equity_cache, self._buying_power_cache
+
         try:
             acc = self.client.account_details(self.account_hash).json()
             balances = acc.get("securitiesAccount", {}).get("currentBalances", {})
-            equity = balances.get("liquidationValue") or balances.get("equity") or 0.0
-            cash_balance = balances.get("cashBalance")  #
-            return float(equity)
-        except Exception as e:
-            console.print(f"[dim red]Equity fetch failed: {e}[/dim red]")
-            return 10000.0  # safe fallback
 
-    def get_buying_power(self):
-        try:
-            acc = self.client.account_details(self.account_hash).json()
-            return float(
-                acc.get("securitiesAccount", {})
-                .get("currentBalances", {})
-                .get("buyingPower", 0)
+            cb = float(balances.get("cashBalance", 0) or 0.0)
+            equity = float(
+                balances.get("liquidationValue") or balances.get("equity") or 0.0
             )
-        except:
-            return 0.0
+            bp = float(balances.get("buyingPower", 0) or 0.0)
+            bp_non_mt = float(balances.get("buyingPowerNonMarginableTrade", 0) or 0.0)
+            bp_dt = float(balances.get("dayTradingBuyingPower", 0) or 0.0)
+
+            self._equity_cache = equity
+            self._equity_cache_time = now
+            self._buying_power_cache = bp
+            self._buying_power_cache_time = now
+
+            return equity, bp
+        except Exception as e:
+            console.print(f"[dim red]Account snapshot failed: {e}[/dim red]")
+            return (
+                self._equity_cache if self._equity_cache is not None else 10000.0,
+                (
+                    self._buying_power_cache
+                    if self._buying_power_cache is not None
+                    else 0.0
+                ),
+            )
 
     # ── RISK CALCULATIONS ─────────────────────────────────────────────────────
     def calculate_shares(self, symbol, buy_price):
-        if buy_price <= 0:
-            return RISK_CONFIG["default_shares"]
+        cfg = CONFIG.get(symbol, {})
+        fixed = cfg.get("fixed_shares", 0)
 
-        equity = self.get_account_equity()
-        risk_dollars = equity * (RISK_CONFIG["risk_per_trade_pct"] / 100)
-        stop_pct = CONFIG[symbol]["stop_loss_pct"] / 100
-        stop_distance = buy_price * stop_pct
+        if fixed > 0:
+            # Manual / fixed mode takes priority
+            shares = fixed
+            console.print(
+                f"[cyan]Using fixed quantity for {symbol}: {shares} shares[/cyan]"
+            )
+        else:
+            # Fall back to risk-based sizing
+            if buy_price <= 0:
+                shares = RISK_CONFIG["default_shares"]
+            else:
+                equity, _ = self.get_account_snapshot()
+                risk_dollars = equity * (RISK_CONFIG["risk_per_trade_pct"] / 100)
+                stop_pct = cfg.get("stop_loss_pct", 5.0) / 100
+                stop_distance = buy_price * stop_pct
 
-        if stop_distance <= 0:
-            return RISK_CONFIG["default_shares"]
+                if stop_distance <= 0:
+                    shares = RISK_CONFIG["default_shares"]
+                else:
+                    shares = int(risk_dollars / stop_distance)
+                    shares = max(1, min(shares, 1000))  # safety bounds
 
-        shares = int(risk_dollars / stop_distance)
-        return max(1, min(shares, 1000))  # safety cap
+        return shares
 
     def risk_checks_pass(self, symbol):
         """All pre-trade risk validations"""
+        equity, bp = self.get_account_snapshot()
         if self.trading_paused:
             return False
 
         # Daily loss limit
-        current_equity = self.get_account_equity()
+        current_equity, _ = self.get_account_snapshot()
         daily_pnl_pct = (
             (current_equity - self.daily_start_equity) / self.daily_start_equity * 100
         )
@@ -245,37 +289,6 @@ class TradingBot:
                     )
                     self.place_bracket_orders(symbol, price)
                     save_state(symbol, price)
-
-    # def start_stream(self):
-    #     self.streamer.start(receiver=self.unified_receiver)
-
-    #     # Quotes
-    #     self.streamer.send(
-    #         self.streamer.level_one_equities(
-    #             symbols=",".join(SYMBOLS),
-    #             fields="0,1,2,3,4,5,6,7,8,9",
-    #             command="SUBS"
-    #         )
-    #     )
-
-    #     # Account activity
-    #     try:
-    #         self.streamer.send(
-    #             self.streamer.account_activity(fields="0,1,2,3", command="SUBS")
-    #         )
-    #         console.print("[green]→ Subscribed to account activity[/green]")
-    #     except AttributeError:
-    #         console.print("[yellow]Warning: falling back to manual ACCT_ACTIVITY subscription[/yellow]")
-    #         # Fetch keys first (add this)
-    #         principals = self.client.user_principals().json()
-    #         sub_keys = principals.get('streamerSubscriptionKeys', {}).get('keys', [{}])[0].get('key', '')
-    #         self.streamer.send({
-    #             "service": "ACCT_ACTIVITY",
-    #             "command": "SUBS",
-    #             "parameters": {"keys": sub_keys, "fields": "0,1,2,3"}
-    #         })
-
-    #     console.print("[bold green]Streaming active — quotes + account activity[/bold green]")
 
     def start_stream(self):
         """
@@ -456,7 +469,7 @@ class TradingBot:
 
             # Daily reset
             if date.today() != self.today:
-                self.daily_start_equity = self.get_account_equity()
+                self.daily_start_equity, _ = self.get_account_snapshot()
                 self.today = date.today()
                 self.trading_paused = False
                 console.print("[cyan]New trading day — daily loss counter reset[/cyan]")
@@ -464,7 +477,7 @@ class TradingBot:
             self.update_holdings_from_api()
 
             with self.lock:
-                equity = self.get_account_equity()
+                equity, _ = self.get_account_snapshot()
                 daily_pnl = (
                     (equity - self.daily_start_equity) / self.daily_start_equity * 100
                 )
@@ -526,7 +539,7 @@ class TradingBot:
 
     #         # Daily reset (keep as-is)
     #         if date.today() != self.today:
-    #             self.daily_start_equity = self.get_account_equity()
+    #             self.daily_start_equity, _ = self.get_account_snapshot()
     #             self.today = date.today()
     #             self.trading_paused = False
     #             console.print("[cyan]New trading day — reset[/cyan]")
@@ -572,7 +585,7 @@ class TradingBot:
 
     #         # Build current view data
     #         current_view = {}
-    #         equity = self.get_account_equity()
+    #         equity, _ = self.get_account_snapshot()
     #         daily_pnl = (equity - self.daily_start_equity) / self.daily_start_equity * 100 if self.daily_start_equity > 0 else 0
 
     #         with self.lock:
@@ -664,6 +677,7 @@ class TradingBot:
 
 # ────────────────────────────────────────────────
 if __name__ == "__main__":
+
     bot = TradingBot()
     bot.start_stream()
 
@@ -677,3 +691,16 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         bot.stop()
+
+
+"""
+handle_account_activity() and monitor_loop() — work closely together to implement the full order lifecycle (submit → fill detection → place protective orders → detect close → repeat).
+
+monitor_loop() slow, periodic decision maker (every 5-10 seconds, looks at prices, decides whether to act)
+handle_account_activity() fast, event-driven reactor (runs as soon as Schwab sends a message, usually within <1 second of fill)
+
+monitor_loop() responsibility is to watch prices continuous and decide when to buy once trigger conditions are met.
+
+handle_account_activity() responsibility is to listen real-time execution reports (ACCT_ACTIVITY message, async in background thread) from Schwab and react after an order is filled (OCO bracket after buy filled)
+
+"""
