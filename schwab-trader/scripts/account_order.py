@@ -89,17 +89,17 @@ order_3 = buy_limit_trigger_sell_limit_dict(
 )
 
 order_4 = sell_limit_sell_stoplimit_oco_dict(
-    symbol="NBIS",
-    quantity=1,
-    sell_limit_price=120,  # 45.97
-    sell_stop_price=80,  # 37.00
-    sell_stoplimit_price=80.20,  # 37.03
+    symbol="IREN",
+    quantity=380,
+    sell_limit_price=45,  # 45.97
+    sell_stop_price=40,  # 37.00
+    sell_stoplimit_price=39.8,  # 37.03
     duration="DAY",
 )
 
 order_5 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
     symbol="NBIS",
-    quantity=1,
+    quantity=2,
     buy_limit_price=80.0,  # 14.97
     sell_limit_price=98.2,  # 15.27
     sell_stop_price=75.2,  # 11.27
@@ -128,14 +128,12 @@ order_8 = sell_market_dict(
 
 
 # submit an order
-order = order_5
+order = order_4
 
 
 status_code, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
-)
-
-# status_code 201 >>> success
+) # status_code 201 >>> success
 
 # ========================================================================
 # Place an option order

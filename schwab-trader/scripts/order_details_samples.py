@@ -1,3 +1,10 @@
+
+# After you place a sell_limit_sell_stoplimit_oco order
+# thinkorswim app > order history > view thinkLog notes on order > "TA_zhwang22gmailcom1753933248 SELL -380 IREN @45.00 LMT OCO #1005667584230"
+# "TA_zhwang22gmailcom1753933248 SELL -380 IREN @39.80 STPLMT 40.00 OCO #1005667584230"
+
+
+
 order = sell_limit_dict(
     symbol="NBIS",
     quantity=1,
