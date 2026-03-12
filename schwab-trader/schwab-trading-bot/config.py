@@ -10,27 +10,31 @@ SYMBOLS = ["ACHR", "NBIS", "IREN", "USAR"]
 CONFIG = {
     "ACHR": {
         "buy_target_price": 6.0,  # ← change this based on current price
+        "limit_sell_price": 15,
         "buy_drop_pct": 5.0,  # % drop from last buy price to rebuy
         "limit_sell_pct": 8.0,  # take-profit % above buy price
         "stop_loss_pct": 5.0,  # stop-loss % below buy price
         "fixed_shares": 10,  # ← 0: risk-based | > 0, fixed manual quantity
     },
-    # "NBIS": {
-    #     "buy_target_price": 32.0,
-    #     "buy_drop_pct": 7.0,
-    #     "limit_sell_pct": 15.0,
-    #     "stop_loss_pct": 8.0,
-    #     "fixed_shares": 10,
-    # },
+    "NBIS": {
+        "buy_target_price": 32.0,
+        "limit_sell_price": 140,
+        "buy_drop_pct": 7.0,
+        "limit_sell_pct": 15.0,
+        "stop_loss_pct": 8.0,
+        "fixed_shares": 10,
+    },
     "IREN": {
-        "buy_target_price": 41.5,
+        "buy_target_price": 1.1,
+        "limit_sell_price": 65,
         "buy_drop_pct": 1.0,
-        "limit_sell_pct": 41.6,
+        "limit_sell_pct": 41.2,
         "stop_loss_pct": 2.0,
         "fixed_shares": 2,
     },
     "USAR": {
         "buy_target_price": 18.0,
+        "limit_sell_price": 40,
         "buy_drop_pct": 5.0,
         "limit_sell_pct": 10.0,
         "stop_loss_pct": 5.0,
@@ -46,6 +50,7 @@ RISK_CONFIG = {
     "max_positions": 4,  # never hold more than 4 symbols at once
     "min_account_equity": 5000.0,  # emergency stop if account drops below this
     "max_daily_loss_pct": 3.0,  # auto-pause buying after 3% daily loss
+    "default_shares": 1
 }
 
 

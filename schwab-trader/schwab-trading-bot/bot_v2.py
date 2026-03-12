@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.columns import Columns
 
-from config import SYMBOLS, CONFIG, RISK_CONFIG
+from config import CONFIG, RISK_CONFIG
 from db import init_db, log_transaction, save_state, get_last_buy_price, load_state
 import dash
 from dash import dcc, html, dash_table, Input, Output, State
@@ -36,9 +36,14 @@ class TradingBot:
             os.getenv("app_key"), os.getenv("app_secret"), os.getenv("callback_url")
         )
         self.streamer = schwabdev.Stream(self.client)
+        
+        self._symbols = CONFIG.keys()
 
-        self.current_prices = {sym: None for sym in SYMBOLS}
+        self.current_prices = {sym: None for sym in self._symbols}
         self.holdings = {}
+        self.last_holdings_sync = time.time()
+        self.HOLDINGS_SYNC_INTERVAL = 300 # 5 minutes
+        
         self.state = load_state()
         self.lock = (
             threading.Lock()
@@ -54,6 +59,11 @@ class TradingBot:
         self._cash_balance = None
         self._day_trading_bp = None
         self._non_marginable_bp = None
+        
+        # Open orders cache
+        self._open_orders_cache = None
+        self._open_orders_cache_time = None
+        self.OPEN_ORDERS_CACHE_TTL = 45     # seconds, 30–90 is a good range
 
         # Daily risk tracking
         self.daily_start_equity = self.get_account_snapshot()["equity"]
@@ -69,6 +79,9 @@ class TradingBot:
             raise RuntimeError("No linked accounts found")
         return accounts[0]["hashValue"]
 
+    def invalidate_open_orders_cache(self):
+        self._open_orders_cache = None
+        self._open_orders_cache_time = 0
     # ── ACCOUNT METRICS (for risk checks) ─────────────────────────────────────
 
     def get_account_snapshot(self):
@@ -194,6 +207,13 @@ class TradingBot:
         - orders with childOrderStrategies (brackets)
         Returns flattened list of dicts suitable for table display.
         """
+        
+        now = time.time()
+
+        # Return cached result if still fresh
+        if (self._open_orders_cache is not None and
+            now - self._open_orders_cache_time < self.OPEN_ORDERS_CACHE_TTL):
+            return self._open_orders_cache
 
         from_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
             days=30, hours=0, minutes=0
@@ -230,12 +250,17 @@ class TradingBot:
                         "duration": order.get("duration", "N/A"),
                     }
                 )
+                
+            # Update cache
+            self._open_orders_cache = displayed
+            self._open_orders_cache_time = now
 
             return displayed
 
         except Exception as e:
             console.print(f"[red]Failed to fetch open orders: {str(e)}[/red]")
-            return []
+            # Return last known good cache if available, otherwise empty
+            return self._open_orders_cache or []
 
     # ── RISK CALCULATIONS ─────────────────────────────────────────────────────
     def calculate_shares(self, symbol, buy_price):
@@ -386,7 +411,7 @@ class TradingBot:
             symbol = content.get("symbol") or content.get("instrument", {}).get(
                 "symbol"
             )
-            if not symbol or symbol not in SYMBOLS:
+            if not symbol or symbol not in self._symbols:
                 continue  # ignore if not one of our watched stocks
 
             qty_str = content.get("quantity") or content.get("filledQuantity", "0")
@@ -429,78 +454,103 @@ class TradingBot:
                     )
                     self.place_bracket_orders(symbol, price)
                     save_state(symbol, price)
+                    
+                # Force authoritative sync after any fill
+                self.force_sync_holdings()
+                # After any BUY or SELL fill, invalidate the cache
+                self.invalidate_open_orders_cache()
 
+    # def start_stream(self):
+    #     """
+    #     Subscribes to live quotes for your sumbols, listens to both price updates and order execution events
+    #     """
+
+    #     # Starts the WebSocket connection in the background
+    #     self.streamer.start(receiver=self.unified_receiver)
+
+    #     # Prepares and sends the subscription request for stock quotes
+    #     quote_request = {
+    #         "service": "LEVELONE_EQUITIES",
+    #         "command": "SUBS",  # SUBS = subscribe
+    #         "requestid": "1001",  # any unique string/int per request
+    #         "SchwabClientCustomerId": "",  # usually left empty or from user principals
+    #         "SchwabClientCorrelId": "corr123",  # can be any string
+    #         "parameters": {
+    #             "keys": ",".join(self._symbols),
+    #             "fields": "0,1,2,3,4,5,6,7,8,9",  # symbol, bid, ask, last, etc.
+    #         },
+    #     }
+
+    #     self.streamer.send(quote_request)
+    #     console.print(
+    #         f"[green]→ Subscribed to LEVELONE_EQUITIES for {', '.join(self._symbols)}[/green]"
+    #     )
+
+    #     # ── Account Activity Subscription ─────────────────────────────────────────
+    #     # First try the convenience method if it exists
+    #     try:
+    #         acct_req = self.streamer.account_activity(fields="0,1,2,3", command="SUBS")
+    #         self.streamer.send(acct_req)
+    #         console.print(
+    #             "[green]→ Subscribed to account activity (via convenience)[/green]"
+    #         )
+    #     except (AttributeError, TypeError):
+    #         console.print(
+    #             "[yellow]Falling back to manual ACCT_ACTIVITY subscription[/yellow]"
+    #         )
+
+    #         # Manual version - you may need to fetch subscription keys from user principals
+    #         try:
+    #             principals = self.client.user_principals().json()
+    #             # Typically one key for your linked account
+    #             sub_key = principals.get("streamerSubscriptionKeys", [{}])[0].get(
+    #                 "key", ""
+    #             )
+    #             if not sub_key:
+    #                 sub_key = (
+    #                     self.account_hash
+    #                 )  # fallback to account hash sometimes works
+    #         except Exception:
+    #             sub_key = self.account_hash  # safest fallback
+
+    #         acct_manual = {
+    #             "service": "ACCT_ACTIVITY",
+    #             "command": "SUBS",
+    #             "requestid": "1002",
+    #             "SchwabClientCustomerId": "",
+    #             "SchwabClientCorrelId": "corr456",
+    #             "parameters": {
+    #                 "keys": sub_key,
+    #                 "fields": "0,1,2,3",  # subscription key, account, message type, data
+    #             },
+    #         }
+
+    #         self.streamer.send(acct_manual)
+    #         console.print("[green]→ Manual ACCT_ACTIVITY subscription sent[/green]")
+
+    #     console.print(
+    #         "[bold green]Streaming active — quotes + account activity[/bold green]"
+    #     )
+    
     def start_stream(self):
-        """
-        Subscribes to live quotes for your sumbols, listens to both price updates and order execution events
-        """
-
-        # Starts the WebSocket connection in the background
         self.streamer.start(receiver=self.unified_receiver)
 
-        # Prepares and sends the subscription request for stock quotes
-        quote_request = {
-            "service": "LEVELONE_EQUITIES",
-            "command": "SUBS",  # SUBS = subscribe
-            "requestid": "1001",  # any unique string/int per request
-            "SchwabClientCustomerId": "",  # usually left empty or from user principals
-            "SchwabClientCorrelId": "corr123",  # can be any string
-            "parameters": {
-                "keys": ",".join(SYMBOLS),  # ← symbols here
-                "fields": "0,1,2,3,4,5,6,7,8,9",  # symbol, bid, ask, last, etc.
-            },
-        }
-
-        self.streamer.send(quote_request)
-        console.print(
-            f"[green]→ Subscribed to LEVELONE_EQUITIES for {', '.join(SYMBOLS)}[/green]"
-        )
-
-        # ── Account Activity Subscription ─────────────────────────────────────────
-        # First try the convenience method if it exists
-        try:
-            acct_req = self.streamer.account_activity(fields="0,1,2,3", command="SUBS")
-            self.streamer.send(acct_req)
-            console.print(
-                "[green]→ Subscribed to account activity (via convenience)[/green]"
+        # Quotes
+        self.streamer.send(
+            self.streamer.level_one_equities(
+                ",".join(self._symbols),
+                "0,1,2,3,4,5,6,7,8"   # 3 = last price
             )
-        except (AttributeError, TypeError):
-            console.print(
-                "[yellow]Falling back to manual ACCT_ACTIVITY subscription[/yellow]"
-            )
-
-            # Manual version - you may need to fetch subscription keys from user principals
-            try:
-                principals = self.client.user_principals().json()
-                # Typically one key for your linked account
-                sub_key = principals.get("streamerSubscriptionKeys", [{}])[0].get(
-                    "key", ""
-                )
-                if not sub_key:
-                    sub_key = (
-                        self.account_hash
-                    )  # fallback to account hash sometimes works
-            except Exception:
-                sub_key = self.account_hash  # safest fallback
-
-            acct_manual = {
-                "service": "ACCT_ACTIVITY",
-                "command": "SUBS",
-                "requestid": "1002",
-                "SchwabClientCustomerId": "",
-                "SchwabClientCorrelId": "corr456",
-                "parameters": {
-                    "keys": sub_key,
-                    "fields": "0,1,2,3",  # subscription key, account, message type, data
-                },
-            }
-
-            self.streamer.send(acct_manual)
-            console.print("[green]→ Manual ACCT_ACTIVITY subscription sent[/green]")
-
-        console.print(
-            "[bold green]Streaming active — quotes + account activity[/bold green]"
         )
+        console.print(f"[green]→ Subscribed to LEVELONE_EQUITIES for {self._symbols}[/green]")
+
+        # Account activity (convenience method handles subkey automatically)
+        self.streamer.send(
+            self.streamer.account_activity("Account Activity", "0,1,2,3")
+        )
+        console.print("[green]→ Subscribed to ACCT_ACTIVITY (fills, executions)[/green]")
+
+        console.print("[bold green]Streaming active — quotes + account activity[/bold green]")
 
     # ── ORDER PLACEMENT (now with dynamic shares) ─────────────────────────────
     def place_buy_order(self, symbol):
@@ -536,6 +586,8 @@ class TradingBot:
             console.print(
                 f"[green]BUY SUBMITTED → {qty} shares of {symbol} (risk-controlled)[/green]"
             )
+            self.invalidate_open_orders_cache()   # invalidate the cache after order
+           
             return True
         except Exception as e:
             console.print(f"[red]Buy failed: {e}[/red]")
@@ -585,6 +637,9 @@ class TradingBot:
 
         try:
             self.client.place_order(self.account_hash, oco)
+            console.print("[green]OCO placed[/green]")
+            self.invalidate_open_orders_cache()  # Invalidate the cache after order
+
             log_transaction(
                 "OCO_PLACED",
                 symbol,
@@ -601,7 +656,6 @@ class TradingBot:
             console.print(f"[red]OCO failed: {e}[/red]")
 
     def update_holdings_from_api(self):
-        # (same as previous version)
         try:
             pos = self.client.account_details(
                 self.account_hash, fields="positions"
@@ -610,7 +664,7 @@ class TradingBot:
             new_h = {}
             for p in positions:
                 sym = p["instrument"]["symbol"]
-                if sym in SYMBOLS and float(p.get("longQuantity", 0)) > 0:
+                if sym in self._symbols and float(p.get("longQuantity", 0)) > 0:
                     new_h[sym] = {
                         "shares": float(p["longQuantity"]),
                         "buy_price": p.get("averagePrice", 0),
@@ -619,6 +673,11 @@ class TradingBot:
                 self.holdings = new_h
         except:
             pass
+        
+    def force_sync_holdings(self):
+        """Call after any trade fill for instant accuracy."""
+        self.update_holdings_from_api()
+        self.last_holdings_sync = time.time()
 
     def stop(self):
         self.running = False
@@ -644,7 +703,7 @@ class TradingBot:
         table.add_column("Status")
 
         with self.lock:
-            for sym in SYMBOLS:
+            for sym in self._symbols:
                 price = self.current_prices.get(sym)
                 h = self.holdings.get(sym, {})
                 shares = h.get("shares", 0)
@@ -720,16 +779,20 @@ class TradingBot:
             while self.running:
                 time.sleep(6)
 
-                if datetime.date.today() != self.today:
+                if datetime.date.today() != self.today: # in case of overnight runs
                     self.daily_start_equity = self.get_account_snapshot()["equity"]
                     self.today = datetime.date.today()
                     self.trading_paused = False
 
-                self.update_holdings_from_api()
+                # only sync after HOLDINGS_SYNC_INTERVAL
+                now = time.time()
+                if now - self.last_holdings_sync > self.HOLDINGS_SYNC_INTERVAL:
+                    self.update_holdings_from_api()
+                    self.last_holdings_sync = now
 
                 with self.lock:
                     view = {}
-                    for sym in SYMBOLS:
+                    for sym in self._symbols:
                         p = self.current_prices.get(sym)
                         h = self.holdings.get(sym, {})
                         view[sym] = (p, h.get("shares", 0), h.get("buy_price"))
@@ -746,7 +809,7 @@ class TradingBot:
                     live.update(self.make_dashboard())
 
                     # Buy logic (only when changed or periodically)
-                    for sym in SYMBOLS:
+                    for sym in self._symbols:
                         if (
                             sym in self.holdings
                             and self.holdings[sym].get("shares", 0) > 0
@@ -889,12 +952,10 @@ app.layout = dbc.Container(
 )
 def update_dashboard(n):
     try:
-        snapshot = bot.get_account_snapshot()
-
         # Positions
         positions_data = []
         with bot.lock:
-            for sym in SYMBOLS:
+            for sym in bot._symbols:
                 price = bot.current_prices.get(sym)
                 h = bot.holdings.get(sym, {})
                 shares = h.get("shares", 0)
@@ -932,8 +993,10 @@ def update_dashboard(n):
                     "Duration": o.get("duration", "—"),
                 }
             )
-
+        
         # Account Summary
+        snapshot = bot.get_account_snapshot()
+        
         account_data = [
             {"Metric": "Equity(Net Liq)", "Value": f"${snapshot['equity']:,.2f}"},
             {
