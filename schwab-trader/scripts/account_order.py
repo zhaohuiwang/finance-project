@@ -134,7 +134,7 @@ order = order_5
 
 status_code, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
-) # status_code 201 >>> success
+)  # status_code 201 >>> success
 
 # ========================================================================
 # Place an option order
@@ -194,12 +194,14 @@ orders = client.account_orders(
     hashValue,
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
-    #status='WORKING',
+    # status='WORKING',
 ).json()
 
 print(json.dumps(orders, indent=4))
 
-orders_flat = [o for root in orders for o in iter_orders_filtered(root, cancelable_only=True)]
+orders_flat = [
+    o for root in orders for o in iter_orders_filtered(root, cancelable_only=True)
+]
 
 print(json.dumps(orders_flat, indent=4))
 
@@ -226,7 +228,7 @@ iter_result = list(
             # "quantity",
             # "orderType",
             # "duration"
-            ],
+        ],
         predicate=lambda d: d.get("cancelable") is True,
         root_name="orders",
     )

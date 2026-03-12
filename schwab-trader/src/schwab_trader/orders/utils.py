@@ -260,7 +260,7 @@ to_iso_utc = lambda dt: dt.astimezone(timezone.utc).isoformat(timespec="millisec
 def iter_orders_filtered(order, cancelable_only=False):
     """
     Yield flattened order records from a Schwab/TD Ameritrade order tree.
-    
+
     Parameters
     ----------
     order : dict
@@ -268,7 +268,7 @@ def iter_orders_filtered(order, cancelable_only=False):
     cancelable_only : bool, default False
         If True, yields only orders with cancelable=True.
         If False, yields all orders.
-    
+
     Yields
     ------
     dict
@@ -280,7 +280,7 @@ def iter_orders_filtered(order, cancelable_only=False):
             - legs: list of dicts with instruction, symbol, quantity
     Example: where orders is a list of orders from client.account_orders().json()
     orders_flat_cancelable = [o for root in orders for o in iter_orders_filtered(root, cancelable_only=True)]
-    
+
     """
     # Skip non-cancelable orders if requested
     if cancelable_only and not order.get("cancelable", False):
@@ -298,18 +298,20 @@ def iter_orders_filtered(order, cancelable_only=False):
         # merge all legs
         legs = []
         for leg in order["orderLegCollection"]:
-            legs.append({
-                "instruction": leg["instruction"],
-                "symbol": leg["instrument"]["symbol"],
-                "quantity": leg["quantity"]
-            })
+            legs.append(
+                {
+                    "instruction": leg["instruction"],
+                    "symbol": leg["instrument"]["symbol"],
+                    "quantity": leg["quantity"],
+                }
+            )
 
         extracted = {
             "orderId": order.get("orderId"),
             "orderType": order.get("orderType"),
             "duration": order.get("duration"),
             "price": price_value,
-            "legs": legs
+            "legs": legs,
         }
 
         yield extracted
@@ -317,7 +319,6 @@ def iter_orders_filtered(order, cancelable_only=False):
     # recurse into child orders
     for child in order.get("childOrderStrategies", []):
         yield from iter_orders_filtered(child, cancelable_only=cancelable_only)
-
 
 
 class TimeUtil:

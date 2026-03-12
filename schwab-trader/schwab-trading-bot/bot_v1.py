@@ -22,6 +22,7 @@ console = Console()
 
 CACHE_TTL_SECONDS = 60
 
+
 class TradingBot:
     def __init__(self):
         init_db()
@@ -33,7 +34,9 @@ class TradingBot:
         self.current_prices = {sym: None for sym in SYMBOLS}
         self.holdings = {}
         self.state = load_state()
-        self.lock = threading.Lock() # ensures only one thread can execute a critical section at a time
+        self.lock = (
+            threading.Lock()
+        )  # ensures only one thread can execute a critical section at a time
         self.running = True
         self.trading_paused = False
         self.account_hash = self._get_account_hash()
@@ -96,12 +99,11 @@ class TradingBot:
                     else 0.0
                 ),
             )
-            
-    
+
     def iter_orders_filtered(self, order, cancelable_only=False):
         """
         Yield flattened order records from a Schwab/TD Ameritrade order tree.
-        
+
         Parameters
         ----------
         order : dict
@@ -109,7 +111,7 @@ class TradingBot:
         cancelable_only : bool, default False
             If True, yields only orders with cancelable=True.
             If False, yields all orders.
-        
+
         Yields
         ------
         dict
@@ -136,18 +138,20 @@ class TradingBot:
             # merge all legs
             legs = []
             for leg in order["orderLegCollection"]:
-                legs.append({
-                    "instruction": leg["instruction"],
-                    "symbol": leg["instrument"]["symbol"],
-                    "quantity": leg["quantity"]
-                })
+                legs.append(
+                    {
+                        "instruction": leg["instruction"],
+                        "symbol": leg["instrument"]["symbol"],
+                        "quantity": leg["quantity"],
+                    }
+                )
 
             extracted = {
                 "orderId": order.get("orderId"),
                 "orderType": order.get("orderType"),
                 "duration": order.get("duration"),
                 "price": price_value,
-                "legs": legs
+                "legs": legs,
             }
 
             yield extracted
@@ -156,8 +160,6 @@ class TradingBot:
         for child in order.get("childOrderStrategies", []):
             yield from self.iter_orders_filtered(child, cancelable_only=cancelable_only)
 
-
-            
     def get_open_orders(self):
         """
         Fetch open orders using client.account_orders() and handle both:
@@ -177,24 +179,30 @@ class TradingBot:
                 self.account_hash,
                 fromEnteredTime=from_time,
                 toEnteredTime=to_time,
-                #status='WORKING',
-                )
+                # status='WORKING',
+            )
             orders = response.json()
 
-            orders_flat_cancelable = [o for root in orders for o in self.iter_orders_filtered(root, cancelable_only=True)]
+            orders_flat_cancelable = [
+                o
+                for root in orders
+                for o in self.iter_orders_filtered(root, cancelable_only=True)
+            ]
 
             displayed = []
 
             for order in orders_flat_cancelable:
-                displayed.append({
-                    'orderId': order.get('orderId', 'N/A'),
-                    'symbol': order.get('legs')[0].get('symbol'),
-                    'quantity': order.get('legs')[0].get('quantity', 0),
-                    'price': order.get('price'),
-                    'instruction': order.get('legs')[0].get('instruction', 'N/A'),
-                    'type': order.get('orderType', 'N/A'),
-                    'duration': order.get('duration', 'N/A'),
-                })
+                displayed.append(
+                    {
+                        "orderId": order.get("orderId", "N/A"),
+                        "symbol": order.get("legs")[0].get("symbol"),
+                        "quantity": order.get("legs")[0].get("quantity", 0),
+                        "price": order.get("price"),
+                        "instruction": order.get("legs")[0].get("instruction", "N/A"),
+                        "type": order.get("orderType", "N/A"),
+                        "duration": order.get("duration", "N/A"),
+                    }
+                )
 
             return displayed
 
@@ -588,13 +596,17 @@ class TradingBot:
         self.streamer.stop()
         console.print("[red]Bot stopped.[/red]")
 
-
     def make_dashboard(self):
         equity, _ = self.get_account_snapshot()
-        daily_pnl = ((equity - self.daily_start_equity) / self.daily_start_equity * 100
-                     if self.daily_start_equity > 0 else 0)
+        daily_pnl = (
+            (equity - self.daily_start_equity) / self.daily_start_equity * 100
+            if self.daily_start_equity > 0
+            else 0
+        )
 
-        table = Table(title=f"Schwab Bot ─ {datetime.datetime.now().strftime('%H:%M:%S')}")
+        table = Table(
+            title=f"Schwab Bot ─ {datetime.datetime.now().strftime('%H:%M:%S')}"
+        )
         table.add_column("Symbol", style="cyan")
         table.add_column("Price", justify="right")
         table.add_column("Position", justify="right")
@@ -617,12 +629,14 @@ class TradingBot:
                     f"{shares:,.0f}",
                     f"${buy_p:,.2f}" if buy_p else "—",
                     f"{pl:+.1f}%",
-                    status
+                    status,
                 )
 
         risk_used = len(self.holdings) / RISK_CONFIG["max_positions"] * 100
-        footer = (f"Equity: ${equity:,.0f} | Daily: {daily_pnl:+.1f}% | "
-                  f"Risk: {risk_used:.0f}% | {'PAUSED' if self.trading_paused else 'ACTIVE'}")
+        footer = (
+            f"Equity: ${equity:,.0f} | Daily: {daily_pnl:+.1f}% | "
+            f"Risk: {risk_used:.0f}% | {'PAUSED' if self.trading_paused else 'ACTIVE'}"
+        )
 
         orders = self.get_open_orders()
         ord_table = Table(title="Open Orders")
@@ -645,14 +659,14 @@ class TradingBot:
                     str(o["price"] or "—"),
                     o["instruction"],
                     o["type"],
-                    o["duration"]
+                    o["duration"],
                 )
 
         return Panel(
             Columns([table, ord_table]),
             title="Dashboard",
             subtitle=footer,
-            border_style="blue"
+            border_style="blue",
         )
 
     def monitor_loop(self):
@@ -689,18 +703,32 @@ class TradingBot:
 
                     # Buy logic (only when changed or periodically)
                     for sym in SYMBOLS:
-                        if sym in self.holdings and self.holdings[sym].get("shares", 0) > 0:
+                        if (
+                            sym in self.holdings
+                            and self.holdings[sym].get("shares", 0) > 0
+                        ):
                             continue
                         price = self.current_prices.get(sym)
                         if not price:
                             continue
                         cfg = CONFIG[sym]
                         last_buy = get_last_buy_price(sym)
-                        trigger = (price <= cfg.get("buy_target_price", float("inf"))) or \
-                                  (last_buy and price <= last_buy * (1 - cfg["buy_drop_pct"]/100))
-                        if trigger and not self.trading_paused and self.risk_checks_pass(sym):
-                            console.print(f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]")
+                        trigger = (
+                            price <= cfg.get("buy_target_price", float("inf"))
+                        ) or (
+                            last_buy
+                            and price <= last_buy * (1 - cfg["buy_drop_pct"] / 100)
+                        )
+                        if (
+                            trigger
+                            and not self.trading_paused
+                            and self.risk_checks_pass(sym)
+                        ):
+                            console.print(
+                                f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]"
+                            )
                             self.place_buy_order(sym)
+
 
 if __name__ == "__main__":
     bot = TradingBot()
@@ -713,7 +741,6 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         bot.stop()
-
 
 
 """
