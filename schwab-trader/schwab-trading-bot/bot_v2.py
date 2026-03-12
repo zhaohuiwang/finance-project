@@ -905,6 +905,12 @@ app = dash.Dash(
     assets_folder="assets",
 )
 
+app = dash.Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.DARKLY],
+    assets_folder="assets",
+)
+
 app.layout = dbc.Container(
     [
         dbc.Row(
@@ -913,7 +919,8 @@ app.layout = dbc.Container(
             ],
             className="mb-4",
         ),
-        # Positions - full width
+        
+        # Positions - full width (unchanged)
         html.H4("Positions", className="mt-4 mb-2"),
         dash_table.DataTable(
             id="positions-table",
@@ -939,7 +946,8 @@ app.layout = dbc.Container(
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
         ),
-        # Open Orders - full width
+        
+        # Open Orders - full width (unchanged)
         html.H4("Open Orders", className="mt-5 mb-2"),
         dash_table.DataTable(
             id="orders-table",
@@ -966,37 +974,50 @@ app.layout = dbc.Container(
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
         ),
-        # Account Summary - full width
-        html.H4("Account Summary", className="mt-5 mb-2"),
-        dash_table.DataTable(
-            id="account-summary-table",
-            columns=[
-                {"name": "Metric", "id": "Metric"},
-                {"name": "Value", "id": "Value"},
-            ],
-            style_table={
-                "overflowX": "auto",
-                "maxWidth": "100%",
-                "width": "100%",
-            },
-            style_cell={"textAlign": "left"},
-            style_header={
-                "backgroundColor": "#2c3e50",
-                "color": "white",
-                "fontWeight": "bold",
-            },
-            style_data={
-                "color": "white",
-                "backgroundColor": "#212529",
-            },
+        
+        # ── Account Summary - now half width ────────────────────────────────
+        dbc.Row(
+            dbc.Col(
+                [
+                    html.H4("Account Summary", className="mt-5 mb-2"),
+                    dash_table.DataTable(
+                        id="account-summary-table",
+                        columns=[
+                            {"name": "Metric", "id": "Metric"},
+                            {"name": "Value", "id": "Value"},
+                        ],
+                        style_table={
+                            "overflowX": "auto",
+                            "maxWidth": "100%",
+                            "width": "100%",           # ← fills the column
+                        },
+                        style_cell={"textAlign": "left"},
+                        style_header={
+                            "backgroundColor": "#2c3e50",
+                            "color": "white",
+                            "fontWeight": "bold",
+                        },
+                        style_data={
+                            "color": "white",
+                            "backgroundColor": "#212529",
+                        },
+                    ),
+                ],
+                width=6,          # ← this is the key change: half width
+                lg=6,
+                md=12,            # full width on smaller screens
+                xs=12,
+            ),
+            className="mb-4",     # adds some bottom margin
         ),
+        
         # Footer
         html.Div(id="status-footer", className="mt-5 text-center"),
         dcc.Interval(id="interval-component", interval=8 * 1000, n_intervals=0),
     ],
     fluid=True,
     className="p-4",
-)  # or fluid=False if you prefer fixed width
+)
 
 
 # ── FIXED CALLBACK (this is what was breaking your account-summary table) ─────
