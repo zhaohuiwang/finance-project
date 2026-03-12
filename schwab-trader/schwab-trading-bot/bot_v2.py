@@ -1,19 +1,18 @@
 # bot.py
 import json
 import time
-
-from rich.live import Live
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
-
 import threading
-from datetime import datetime, date
+import datetime
 import schwabdev
 from dotenv import load_dotenv
 import os
-from rich.console import Console
+import hashlib
+
+from rich.live import Live
 from rich.table import Table
+from rich.console import Console
+from rich.panel import Panel
+from rich.columns import Columns
 
 from config import SYMBOLS, CONFIG, RISK_CONFIG
 from db import init_db, log_transaction, save_state, get_last_buy_price, load_state
@@ -21,8 +20,17 @@ from db import init_db, log_transaction, save_state, get_last_buy_price, load_st
 load_dotenv()
 console = Console()
 
-CACHE_TTL_SECONDS = 45  # refresh every ~45 seconds or 60, 90
+import dash
+from dash import dcc, html, dash_table, Input, Output, State
+import dash_bootstrap_components as dbc
+from dash.exceptions import PreventUpdate
 
+import threading
+import time
+import pandas as pd
+
+
+CACHE_TTL_SECONDS = 60
 
 class TradingBot:
     def __init__(self):
@@ -35,7 +43,7 @@ class TradingBot:
         self.current_prices = {sym: None for sym in SYMBOLS}
         self.holdings = {}
         self.state = load_state()
-        self.lock = threading.Lock()
+        self.lock = threading.Lock() # ensures only one thread can execute a critical section at a time
         self.running = True
         self.trading_paused = False
         self.account_hash = self._get_account_hash()
@@ -47,7 +55,7 @@ class TradingBot:
 
         # Daily risk tracking
         self.daily_start_equity, _ = self.get_account_snapshot()
-        self.today = date.today()
+        self.today = datetime.date.today()
 
         console.print(
             f"[bold cyan]Account Equity at start: ${self.daily_start_equity:,.2f}[/bold cyan]"
@@ -98,6 +106,111 @@ class TradingBot:
                     else 0.0
                 ),
             )
+            
+    
+    def iter_orders_filtered(self, order, cancelable_only=False):
+        """
+        Yield flattened order records from a Schwab/TD Ameritrade order tree.
+        
+        Parameters
+        ----------
+        order : dict
+            Single order dictionary (can contain childOrderStrategies)
+        cancelable_only : bool, default False
+            If True, yields only orders with cancelable=True.
+            If False, yields all orders.
+        
+        Yields
+        ------
+        dict
+            Flattened order info with:
+                - orderId
+                - orderType
+                - duration
+                - price
+                - legs: list of dicts with instruction, symbol, quantity
+        """
+        # Skip non-cancelable orders if requested
+        if cancelable_only and not order.get("cancelable", False):
+            return
+
+        if "orderLegCollection" in order:
+            # find price (price, stopPrice, etc.)
+            price_value = order.get("price")
+            if price_value is None:
+                for k, v in order.items():
+                    if "price" in k.lower():
+                        price_value = v
+                        break
+
+            # merge all legs
+            legs = []
+            for leg in order["orderLegCollection"]:
+                legs.append({
+                    "instruction": leg["instruction"],
+                    "symbol": leg["instrument"]["symbol"],
+                    "quantity": leg["quantity"]
+                })
+
+            extracted = {
+                "orderId": order.get("orderId"),
+                "orderType": order.get("orderType"),
+                "duration": order.get("duration"),
+                "price": price_value,
+                "legs": legs
+            }
+
+            yield extracted
+
+        # recurse into child orders
+        for child in order.get("childOrderStrategies", []):
+            yield from self.iter_orders_filtered(child, cancelable_only=cancelable_only)
+
+
+            
+    def get_open_orders(self):
+        """
+        Fetch open orders using client.account_orders() and handle both:
+        - Simple SINGLE orders
+        - orders with childOrderStrategies (brackets)
+        Returns flattened list of dicts suitable for table display.
+        """
+
+        from_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+            days=30, hours=0, minutes=0
+        )
+        to_time = datetime.datetime.now(datetime.timezone.utc)
+
+        try:
+            # Use your confirmed method name
+            response = self.client.account_orders(
+                self.account_hash,
+                fromEnteredTime=from_time,
+                toEnteredTime=to_time,
+                #status='WORKING',
+                )
+            orders = response.json()
+
+            orders_flat_cancelable = [o for root in orders for o in self.iter_orders_filtered(root, cancelable_only=True)]
+
+            displayed = []
+
+            for order in orders_flat_cancelable:
+                displayed.append({
+                    'orderId': order.get('orderId', 'N/A'),
+                    'symbol': order.get('legs')[0].get('symbol'),
+                    'quantity': order.get('legs')[0].get('quantity', 0),
+                    'price': order.get('price'),
+                    'instruction': order.get('legs')[0].get('instruction', 'N/A'),
+                    'type': order.get('orderType', 'N/A'),
+                    'duration': order.get('duration', 'N/A'),
+                })
+
+            return displayed
+
+        except Exception as e:
+            console.print(f"[red]Failed to fetch open orders: {str(e)}[/red]")
+            return []
 
     # ── RISK CALCULATIONS ─────────────────────────────────────────────────────
     def calculate_shares(self, symbol, buy_price):
@@ -460,168 +573,6 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]OCO failed: {e}[/red]")
 
-    # ── MONITOR LOOP + ENHANCED DASHBOARD ─────────────────────────────────────
-    def get_dashboard_content(self):
-        """
-        Build dashboard components.
-        Returns: (table object, footer_markup_str, equity, daily_pnl_pct)
-        """
-        equity, _ = self.get_account_snapshot()
-        daily_pnl_pct = (
-            (equity - self.daily_start_equity) / self.daily_start_equity * 100
-            if self.daily_start_equity > 0
-            else 0.0
-        )
-
-        table = Table(expand=True, show_header=True, header_style="bold magenta")
-        table.add_column("Symbol", style="cyan", justify="left")
-        table.add_column("Price", justify="right")
-        table.add_column("Position", justify="right")
-        table.add_column("Avg Buy", justify="right")
-        table.add_column("P/L %", justify="right")
-        table.add_column("Status", justify="left")
-
-        with self.lock:
-            for sym in SYMBOLS:
-                price = self.current_prices.get(sym)
-                h = self.holdings.get(sym, {})
-                shares = h.get("shares", 0)
-                buy_p = h.get("buy_price", None)
-                pl_pct = (
-                    ((price - buy_p) / buy_p * 100)
-                    if price and buy_p and buy_p > 0
-                    else 0.0
-                )
-
-                price_str = f"${price:,.2f}" if price is not None else "—"
-                buy_str = f"${buy_p:,.2f}" if buy_p is not None else "—"
-                pl_str = f"{pl_pct:+.1f}%" if abs(pl_pct) > 0.01 else "+0.0%"
-
-                status_style = "green" if shares > 0 else "grey70"
-                table.add_row(
-                    sym,
-                    price_str,
-                    f"{shares:.1f}",
-                    buy_str,
-                    pl_str,
-                    f"[{status_style}]{'HOLDING' if shares > 0 else 'WATCHING'}[/{status_style}]",
-                )
-
-        risk_used_pct = (len(self.holdings) / RISK_CONFIG.get("max_positions", 1)) * 100
-
-        footer = (
-            f"Equity: [bold]${equity:,.0f}[/bold]   |   "
-            f"Daily P/L: [{'green' if daily_pnl_pct >= 0 else 'red'}]{daily_pnl_pct:+.1f}%[/{'green' if daily_pnl_pct >= 0 else 'red'}]   |   "
-            f"Risk used: {risk_used_pct:.0f}%   |   "
-            f"{'[bold red]PAUSED[/bold red]' if self.trading_paused else '[bold green]ACTIVE[/bold green]'}"
-        )
-
-        return table, footer, equity, daily_pnl_pct
-
-    def monitor_loop(self):
-        last_state_key = None
-
-        with Live(
-            Panel(
-                "Initializing dashboard...",
-                title="Schwab Trading Bot",
-                border_style="blue",
-            ),
-            console=console,
-            refresh_per_second=0.4,
-            screen=True,
-        ) as live:
-            while self.running:
-                time.sleep(5)
-
-                # Daily reset
-                if date.today() != self.today:
-                    self.daily_start_equity, _ = self.get_account_snapshot()
-                    self.today = date.today()
-                    self.trading_paused = False
-
-                self.update_holdings_from_api()
-
-                # ─────────────── BUY TRIGGER LOGIC ───────────────
-                with self.lock:
-                    for sym in SYMBOLS:
-                        if (
-                            sym in self.holdings
-                            and self.holdings[sym].get("shares", 0) > 0
-                        ):
-                            continue
-
-                        current_price = self.current_prices.get(sym)
-                        if current_price is None or current_price <= 0:
-                            continue
-
-                        cfg = CONFIG.get(sym, {})
-                        target = cfg.get("buy_target_price", float("inf"))
-                        drop_pct = cfg.get("buy_drop_pct", 5.0)
-                        last_buy = get_last_buy_price(sym)
-
-                        trigger = False
-                        reason = ""
-
-                        if current_price <= target:
-                            trigger = True
-                            reason = f"hit absolute target ${target:.2f}"
-
-                        if last_buy and current_price <= last_buy * (
-                            1 - drop_pct / 100
-                        ):
-                            trigger = True
-                            reason += " & " if reason else ""
-                            reason += (
-                                f"dropped ≥{drop_pct}% from last buy (${last_buy:.2f})"
-                            )
-
-                        if trigger and self.risk_checks_pass(sym):
-                            console.print(
-                                f"[bold red]BUY TRIGGER {sym}: {reason} @ ${current_price:.2f}[/bold red]"
-                            )
-                            self.place_buy_order(sym)
-                            self.holdings[sym] = {
-                                "shares": self.calculate_shares(sym, current_price),
-                                "buy_price": current_price,
-                                "limit_price": None,
-                                "stop_price": None,
-                            }
-
-                # ─────────────── Dashboard update ───────────────
-                table, footer, equity, daily_pnl = self.get_dashboard_content()
-
-                state_key = (
-                    tuple(
-                        (
-                            sym,
-                            self.current_prices.get(sym),
-                            self.holdings.get(sym, {}).get("shares", 0),
-                        )
-                        for sym in SYMBOLS
-                    ),
-                    round(equity, 2),
-                    round(daily_pnl, 2),
-                    self.trading_paused,
-                    len(self.holdings),
-                )
-
-                if state_key != last_state_key:
-                    title = f"Schwab Trading Bot — {datetime.now():%Y-%m-%d %H:%M:%S}"
-                    if self.trading_paused:
-                        title += "   [bold red](PAUSED)[/bold red]"
-
-                    live.update(
-                        Panel(
-                            table,  # ← Table object directly → renders as table
-                            subtitle=footer,  # ← markup string as subtitle
-                            title=title,
-                            border_style="red" if self.trading_paused else "blue",
-                            padding=(1, 2),
-                        )
-                    )
-                    last_state_key = state_key
-
     def update_holdings_from_api(self):
         # (same as previous version)
         try:
@@ -648,32 +599,248 @@ class TradingBot:
         console.print("[red]Bot stopped.[/red]")
 
 
-# ────────────────────────────────────────────────
-if __name__ == "__main__":
+    def make_dashboard(self):
+        equity, _ = self.get_account_snapshot()
+        daily_pnl = ((equity - self.daily_start_equity) / self.daily_start_equity * 100
+                     if self.daily_start_equity > 0 else 0)
 
-    bot = TradingBot()
+        table = Table(title=f"Schwab Bot ─ {datetime.datetime.now().strftime('%H:%M:%S')}")
+        table.add_column("Symbol", style="cyan")
+        table.add_column("Price", justify="right")
+        table.add_column("Position", justify="right")
+        table.add_column("Avg Buy", justify="right")
+        table.add_column("P/L %", justify="right")
+        table.add_column("Status")
+
+        with self.lock:
+            for sym in SYMBOLS:
+                price = self.current_prices.get(sym)
+                h = self.holdings.get(sym, {})
+                shares = h.get("shares", 0)
+                buy_p = h.get("buy_price")
+                pl = ((price - buy_p) / buy_p * 100) if price and buy_p else 0
+
+                status = "HOLDING" if shares > 0 else "WATCHING"
+                table.add_row(
+                    sym,
+                    f"${price:,.2f}" if price else "—",
+                    f"{shares:,.0f}",
+                    f"${buy_p:,.2f}" if buy_p else "—",
+                    f"{pl:+.1f}%",
+                    status
+                )
+
+        risk_used = len(self.holdings) / RISK_CONFIG["max_positions"] * 100
+        footer = (f"Equity: ${equity:,.0f} | Daily: {daily_pnl:+.1f}% | "
+                  f"Risk: {risk_used:.0f}% | {'PAUSED' if self.trading_paused else 'ACTIVE'}")
+
+        orders = self.get_open_orders()
+        ord_table = Table(title="Open Orders")
+        ord_table.add_column("ID", style="dim")
+        ord_table.add_column("Sym")
+        ord_table.add_column("Qty", justify="right")
+        ord_table.add_column("Price")
+        ord_table.add_column("Side")
+        ord_table.add_column("Type")
+        ord_table.add_column("Dur")
+
+        if not orders:
+            ord_table.add_row("—", "No open orders", "—", "—", "—", "—", "—")
+        else:
+            for o in orders[:8]:  # limit clutter
+                ord_table.add_row(
+                    str(o["orderId"]),
+                    o["symbol"],
+                    str(o["quantity"]),
+                    str(o["price"] or "—"),
+                    o["instruction"],
+                    o["type"],
+                    o["duration"]
+                )
+
+        return Panel(
+            Columns([table, ord_table]),
+            title="Dashboard",
+            subtitle=footer,
+            border_style="blue"
+        )
+
+    def monitor_loop(self):
+        last_hash = None
+
+        with Live(console=console, refresh_per_second=4, screen=True) as live:
+            while self.running:
+                time.sleep(6)
+
+                if datetime.date.today() != self.today:
+                    self.daily_start_equity, _ = self.get_account_snapshot()
+                    self.today = datetime.date.today()
+                    self.trading_paused = False
+
+                self.update_holdings_from_api()
+
+                with self.lock:
+                    view = {}
+                    for sym in SYMBOLS:
+                        p = self.current_prices.get(sym)
+                        h = self.holdings.get(sym, {})
+                        view[sym] = (p, h.get("shares", 0), h.get("buy_price"))
+
+                    view["equity"] = self.get_account_snapshot()[0]
+                    view["paused"] = self.trading_paused
+                    view["orders"] = len(self.get_open_orders())
+
+                state_str = str(sorted(view.items()))
+                current_hash = hashlib.md5(state_str.encode()).hexdigest()
+
+                if current_hash != last_hash:
+                    last_hash = current_hash
+                    live.update(self.make_dashboard())
+
+                    # Buy logic (only when changed or periodically)
+                    for sym in SYMBOLS:
+                        if sym in self.holdings and self.holdings[sym].get("shares", 0) > 0:
+                            continue
+                        price = self.current_prices.get(sym)
+                        if not price:
+                            continue
+                        cfg = CONFIG[sym]
+                        last_buy = get_last_buy_price(sym)
+                        trigger = (price <= cfg.get("buy_target_price", float("inf"))) or \
+                                  (last_buy and price <= last_buy * (1 - cfg["buy_drop_pct"]/100))
+                        if trigger and not self.trading_paused and self.risk_checks_pass(sym):
+                            console.print(f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]")
+                            self.place_buy_order(sym)
+                            
+                            
+                            
+                            
+                            
+
+bot = TradingBot()          # your class instance
+
+# ── Dash app ────────────────────────────────────────────────────────────────
+app = dash.Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.DARKLY], # SLATE, CYBORG or FLATLY, etc
+    assets_folder='assets',
+    )
+
+
+# Layout
+app.layout = dbc.Container([
+    dbc.Row([
+        dbc.Col(html.H2("Schwab Trading Bot Dashboard"), width=12),
+    ], className="mb-4"),
+
+    dbc.Row([
+        dbc.Col([
+            html.H4("Positions"),
+            dash_table.DataTable(
+                id='positions-table',
+                columns=[{"name": i, "id": i} for i in ["Symbol", "Price", "Shares", "Avg Buy", "P/L %", "Status"]],
+                style_table={'overflowX': 'auto'},
+                style_cell={'textAlign': 'left'},
+                style_data_conditional=[
+                    {'if': {'filter_query': '{P/L %} > 0'}, 'color': 'lime'},
+                    {'if': {'filter_query': '{P/L %} < 0'}, 'color': 'tomato'},
+                ]
+            ),
+        ], width=6),
+
+        dbc.Col([
+            html.H4("Open Orders"),
+            dash_table.DataTable(
+                id='orders-table',
+                columns=[{"name": i, "id": i} for i in ["ID", "Symbol", "Qty", "Price", "Side", "Type", "Duration"]],
+                style_table={'overflowX': 'auto'},
+            ),
+        ], width=6),
+    ]),
+
+    # Footer status
+    html.Div(id='status-footer', className="mt-4 text-center"),
+
+    # Hidden interval – triggers update every 8 seconds
+    dcc.Interval(id='interval-component', interval=8*1000, n_intervals=0),
+
+    # Store for debug / state if needed
+    dcc.Store(id='bot-state-store'),
+], fluid=True, className="p-4")
+
+
+# ── Callback: update tables every interval ────────────────────────────────
+@app.callback(
+    [
+        Output('positions-table', 'data'),
+        Output('orders-table',   'data'),
+        Output('status-footer',  'children'),
+    ],
+    Input('interval-component', 'n_intervals')
+)
+def update_dashboard(n):
+    # You can add a manual refresh button later if you want
+
+    # Get latest data from your bot instance
+    equity, _ = bot.get_account_snapshot()
+    daily_pnl = ((equity - bot.daily_start_equity) / bot.daily_start_equity * 100
+                 if bot.daily_start_equity > 0 else 0)
+
+    # Positions table
+    positions_data = []
+    with bot.lock:
+        for sym in SYMBOLS:
+            price = bot.current_prices.get(sym)
+            h = bot.holdings.get(sym, {})
+            shares = h.get('shares', 0)
+            buy_p = h.get('buy_price')
+            pl = round((price - buy_p) / buy_p * 100, 1) if price and buy_p and buy_p > 0 else 0
+
+            positions_data.append({
+                "Symbol": sym,
+                "Price": f"${price:,.2f}" if price else "—",
+                "Shares": shares,
+                "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
+                "P/L %": f"{pl:+.1f}%",
+                "Status": "HOLDING" if shares > 0 else "WATCHING"
+            })
+
+    # Open orders table
+    orders_list = bot.get_open_orders()  # your existing method
+    orders_data = [
+        {
+            "ID": o["orderId"],
+            "Symbol": o["symbol"],
+            "Qty": o["quantity"],
+            "Price": o.get("price", "—"),
+            "Side": o["instruction"],
+            "Type": o["type"],
+            "Duration": o["duration"]
+        }
+        for o in orders_list
+    ]
+
+    # Status line
+    risk_used = len(bot.holdings) / RISK_CONFIG["max_positions"] * 100
+    status_text = (
+        f"Equity: ${equity:,.0f}  |  Daily P/L: {daily_pnl:+.1f}%  |  "
+        f"Risk Used: {risk_used:.0f}%  |  {'PAUSED' if bot.trading_paused else 'ACTIVE'}"
+    )
+
+    return positions_data, orders_data, status_text
+
+
+# ── Main ────────────────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    # Start your streaming + background logic in daemon threads
     bot.start_stream()
 
-    threading.Thread(target=bot.monitor_loop, daemon=True).start()
+    monitor_thread = threading.Thread(target=bot.monitor_loop, daemon=True)
+    monitor_thread.start()
 
-    console.print(
-        "\n[bold green]Bot running with FULL RISK MANAGEMENT. Press Ctrl+C to stop.[/bold green]\n"
-    )
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        bot.stop()
+    # Optional: keep some console logging
+    print("Dashboard starting → open http://127.0.0.1:8050/")
+    print("Streaming + bot logic running in background...")
 
-
-"""
-handle_account_activity() and monitor_loop() — work closely together to implement the full order lifecycle (submit → fill detection → place protective orders → detect close → repeat).
-
-monitor_loop() slow, periodic decision maker (every 5-10 seconds, looks at prices, decides whether to act)
-handle_account_activity() fast, event-driven reactor (runs as soon as Schwab sends a message, usually within <1 second of fill)
-
-monitor_loop() responsibility is to watch prices continuous and decide when to buy once trigger conditions are met.
-
-handle_account_activity() responsibility is to listen real-time execution reports (ACCT_ACTIVITY message, async in background thread) from Schwab and react after an order is filled (OCO bracket after buy filled)
-
-"""
+    # Start Dash server (blocks main thread)
+    app.run(debug=True, use_reloader=False)   # use_reloader=False → avoids double thread start

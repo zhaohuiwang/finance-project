@@ -15,19 +15,19 @@ CONFIG = {
         "stop_loss_pct": 5.0,  # stop-loss % below buy price
         "fixed_shares": 10,  # ← 0: risk-based | > 0, fixed manual quantity
     },
+    # "NBIS": {
+    #     "buy_target_price": 32.0,
+    #     "buy_drop_pct": 7.0,
+    #     "limit_sell_pct": 15.0,
+    #     "stop_loss_pct": 8.0,
+    #     "fixed_shares": 10,
+    # },
     "IREN": {
-        "buy_target_price": 32.0,
-        "buy_drop_pct": 7.0,
-        "limit_sell_pct": 15.0,
-        "stop_loss_pct": 8.0,
-        "fixed_shares": 10,
-    },
-    "NBIS": {
-        "buy_target_price": 85.0,
-        "buy_drop_pct": 6.0,
-        "limit_sell_pct": 12.0,
-        "stop_loss_pct": 7.0,
-        "fixed_shares": 10,
+        "buy_target_price": 41.5,
+        "buy_drop_pct": 1.0,
+        "limit_sell_pct": 41.6,
+        "stop_loss_pct": 2.0,
+        "fixed_shares": 2,
     },
     "USAR": {
         "buy_target_price": 18.0,

@@ -31,6 +31,7 @@ from src.schwab_trader.orders.utils import (
     cancel_order,
     get_utc_time_range,
     iter_keys_path_tuple,
+    iter_orders_filtered,
 )
 
 # Specified an accout number, instiate a client, the client will fetch the matching account hashValue for later identification
@@ -68,7 +69,7 @@ print(json.dumps(data, indent=4))
 order_1 = buy_limit_dict(
     symbol="ACHR",
     quantity=1,
-    limit_price=6.2,
+    limit_price=0.2,
     duration="DAY",
 )
 
@@ -128,7 +129,7 @@ order_8 = sell_market_dict(
 
 
 # submit an order
-order = order_4
+order = order_5
 
 
 status_code, date, order_id = place_order(
@@ -181,7 +182,7 @@ status_code, date, order_id = place_order(
 
 from_time, to_time = get_utc_time_range(
     # to_time= datetime.datetime(2026, 3, 6, 10, 0)
-    offset=datetime.timedelta(days=0, hours=0, minutes=20)
+    offset=datetime.timedelta(days=1, hours=1, minutes=5)
 )
 # or simply
 from_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
@@ -193,9 +194,15 @@ orders = client.account_orders(
     hashValue,
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
-    # status='PENDING_ACTIVATION'
+    #status='WORKING',
 ).json()
-print(orders)
+
+print(json.dumps(orders, indent=4))
+
+orders_flat = [o for root in orders for o in iter_orders_filtered(root, cancelable_only=True)]
+
+print(json.dumps(orders_flat, indent=4))
+
 
 # orders_all_account = client.account_orders_all(
 #     fromEnteredTime=from_time,
@@ -210,7 +217,16 @@ print(orders)
 iter_result = list(
     iter_keys_path_tuple(
         data=orders,
-        keys=["orderId", "enteredTime", "status", "price"],
+        keys=[
+            "orderId",
+            # "symbol",
+            # "instruction",
+            # "status",
+            # "price",
+            # "quantity",
+            # "orderType",
+            # "duration"
+            ],
         predicate=lambda d: d.get("cancelable") is True,
         root_name="orders",
     )

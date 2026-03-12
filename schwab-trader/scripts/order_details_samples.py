@@ -392,3 +392,164 @@ print(json.dumps(order, indent=4))
 
 # If you cancel "1005644251905", all others are cancelled too
 # If yoy cancel any of the other three (1005644251906 > 1005644251908, 1005644251907 they are actually two orders), all the childorder are cancelled but not the "1005644251905".
+
+
+[
+    {
+        "session": "NORMAL",
+        "duration": "DAY",
+        "orderType": "LIMIT",
+        "complexOrderStrategyType": "NONE",
+        "quantity": 2.0,
+        "filledQuantity": 0.0,
+        "remainingQuantity": 2.0,
+        "requestedDestination": "AUTO",
+        "destinationLinkName": "AutoRoute",
+        "price": 80.0,
+        "orderLegCollection": [
+            {
+                "orderLegType": "EQUITY",
+                "legId": 1,
+                "instrument": {
+                    "assetType": "EQUITY",
+                    "cusip": "N97284108",
+                    "symbol": "NBIS",
+                    "instrumentId": 4339891
+                },
+                "instruction": "BUY",
+                "positionEffect": "OPENING",
+                "quantity": 2.0
+            }
+        ],
+        "orderStrategyType": "TRIGGER",
+        "orderId": 1005675641156,
+        "cancelable": true,
+        "editable": false,
+        "status": "PENDING_ACTIVATION",
+        "enteredTime": "2026-03-11T20:12:15+0000",
+        "tag": "TA_zhwang22gmailcom1753933248",
+        "accountNumber": 29308909,
+        "childOrderStrategies": [
+            {
+                "orderStrategyType": "OCO",
+                "orderId": 1005675641157,
+                "cancelable": true,
+                "editable": false,
+                "status": "AWAITING_PARENT_ORDER",
+                "enteredTime": "2026-03-11T20:12:15+0000",
+                "tag": "TA_zhwang22gmailcom1753933248",
+                "accountNumber": 29308909,
+                "childOrderStrategies": [
+                    {
+                        "session": "NORMAL",
+                        "duration": "GOOD_TILL_CANCEL",
+                        "orderType": "LIMIT",
+                        "complexOrderStrategyType": "NONE",
+                        "quantity": 2.0,
+                        "filledQuantity": 0.0,
+                        "remainingQuantity": 2.0,
+                        "requestedDestination": "AUTO",
+                        "destinationLinkName": "AutoRoute",
+                        "price": 98.2,
+                        "orderLegCollection": [
+                            {
+                                "orderLegType": "EQUITY",
+                                "legId": 1,
+                                "instrument": {
+                                    "assetType": "EQUITY",
+                                    "cusip": "N97284108",
+                                    "symbol": "NBIS",
+                                    "instrumentId": 4339891
+                                },
+                                "instruction": "SELL",
+                                "positionEffect": "CLOSING",
+                                "quantity": 2.0
+                            }
+                        ],
+                        "orderStrategyType": "SINGLE",
+                        "orderId": 1005675641158,
+                        "cancelable": true,
+                        "editable": false,
+                        "status": "AWAITING_PARENT_ORDER",
+                        "enteredTime": "2026-03-11T20:12:15+0000",
+                        "tag": "TA_zhwang22gmailcom1753933248",
+                        "accountNumber": 29308909
+                    },
+                    {
+                        "session": "NORMAL",
+                        "duration": "GOOD_TILL_CANCEL",
+                        "orderType": "STOP",
+                        "complexOrderStrategyType": "NONE",
+                        "quantity": 2.0,
+                        "filledQuantity": 0.0,
+                        "remainingQuantity": 2.0,
+                        "requestedDestination": "AUTO",
+                        "destinationLinkName": "AutoRoute",
+                        "stopPrice": 75.2,
+                        "stopType": "STANDARD",
+                        "orderLegCollection": [
+                            {
+                                "orderLegType": "EQUITY",
+                                "legId": 1,
+                                "instrument": {
+                                    "assetType": "EQUITY",
+                                    "cusip": "N97284108",
+                                    "symbol": "NBIS",
+                                    "instrumentId": 4339891
+                                },
+                                "instruction": "SELL",
+                                "positionEffect": "CLOSING",
+                                "quantity": 2.0
+                            }
+                        ],
+                        "orderStrategyType": "SINGLE",
+                        "orderId": 1005675641159,
+                        "cancelable": true,
+                        "editable": false,
+                        "status": "AWAITING_PARENT_ORDER",
+                        "enteredTime": "2026-03-11T20:12:15+0000",
+                        "tag": "TA_zhwang22gmailcom1753933248",
+                        "accountNumber": 29308909
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "session": "NORMAL",
+        "duration": "DAY",
+        "orderType": "LIMIT",
+        "complexOrderStrategyType": "NONE",
+        "quantity": 1.0,
+        "filledQuantity": 0.0,
+        "remainingQuantity": 1.0,
+        "requestedDestination": "AUTO",
+        "destinationLinkName": "AutoRoute",
+        "price": 0.2,
+        "orderLegCollection": [
+            {
+                "orderLegType": "EQUITY",
+                "legId": 1,
+                "instrument": {
+                    "assetType": "EQUITY",
+                    "cusip": "03945R102",
+                    "symbol": "ACHR",
+                    "instrumentId": 154587181
+                },
+                "instruction": "BUY",
+                "positionEffect": "OPENING",
+                "quantity": 1.0
+            }
+        ],
+        "orderStrategyType": "SINGLE",
+        "orderId": 1005675641153,
+        "cancelable": true,
+        "editable": true,
+        "status": "PENDING_ACTIVATION",
+        "enteredTime": "2026-03-11T20:12:07+0000",
+        "tag": "TA_zhwang22gmailcom1753933248",
+        "accountNumber": 29308909
+    },
+
+
+]
