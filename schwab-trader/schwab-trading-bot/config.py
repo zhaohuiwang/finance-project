@@ -1,11 +1,7 @@
 # config.py
-# =============================================================
-# 1. Which stocks the bot watches
-# =============================================================
-SYMBOLS = ["ACHR", "NBIS", "IREN", "USAR"]
 
 # =============================================================
-# 2. Per-symbol strategy settings
+# 1. Per-symbol strategy settings
 # =============================================================
 CONFIG = {
     "ACHR": {
@@ -43,7 +39,7 @@ CONFIG = {
 }
 
 # =============================================================
-# 3. Overall risk management (applies to the whole account)
+# 2. Overall risk management (applies to the whole account)
 # =============================================================
 RISK_CONFIG = {
     "risk_per_trade_pct": 1.0,  # 1% of total account equity risked per trade
@@ -84,34 +80,3 @@ max_positions   2-3 Never go above 4    Max number of stocks you can hold at the
 min_account_equity  $5,000 or whatever you can lose Set to 20% of your total capital    Hard floor — bot stops trading if account drops below this
 max_daily_loss_pct  2.0-3.0   Great safety net    Auto-pauses new buys if you lose this much in one day
 """
-
-
-def get_account_snapshot(self):
-    now = time.time()
-    if (
-        self._equity_cache is not None
-        and self._buying_power_cache is not None
-        and (now - self._equity_cache_time) < CACHE_TTL_SECONDS
-    ):
-        return self._equity_cache, self._buying_power_cache
-
-    try:
-        acc = self.client.account_details(self.account_hash).json()
-        balances = acc.get("securitiesAccount", {}).get("currentBalances", {})
-        equity = float(
-            balances.get("liquidationValue") or balances.get("equity") or 0.0
-        )
-        bp = float(balances.get("buyingPower") or 0.0)
-
-        self._equity_cache = equity
-        self._equity_cache_time = now
-        self._buying_power_cache = bp
-        self._buying_power_cache_time = now
-
-        return equity, bp
-    except Exception as e:
-        console.print(f"[dim red]Account snapshot failed: {e}[/dim red]")
-        return (
-            self._equity_cache if self._equity_cache is not None else 10000.0,
-            self._buying_power_cache if self._buying_power_cache is not None else 0.0,
-        )
