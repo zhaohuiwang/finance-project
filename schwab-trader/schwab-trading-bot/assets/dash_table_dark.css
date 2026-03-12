@@ -1,0 +1,31 @@
+
+/* Force readable text in dark mode for dash_table */
+.dash-spreadsheet-container .dash-spreadsheet-inner table {
+    color: white !important;
+    background-color: #212529 !important;
+}
+
+.dash-spreadsheet-container .dash-spreadsheet-inner th,
+.dash-spreadsheet-container .dash-spreadsheet-inner td {
+    color: white !important;
+    background-color: #2c3e50 !important;   /* darker cells */
+    border-color: #495057 !important;
+}
+
+/* Header */
+.dash-spreadsheet-container .dash-spreadsheet-inner th {
+    background-color: #1a2533 !important;
+}
+
+/* Selected / active cell */
+.dash-spreadsheet td.cell--selected,
+.dash-spreadsheet td.focused {
+    background-color: #495057 !important;
+    color: white !important;
+    border: 2px solid #0d6efd !important;
+}
+
+/* Hover row (optional) */
+.dash-spreadsheet-container tr:hover td {
+    background-color: #343a40 !important;
+}
