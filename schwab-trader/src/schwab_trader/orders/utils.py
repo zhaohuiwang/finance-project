@@ -3,6 +3,10 @@ from datetime import datetime, timezone
 from collections.abc import Callable, Iterator, Iterable
 from dotenv import load_dotenv
 
+
+from typing import  Any
+import datetime
+
 from src.schwab_trader.accounts.schwab import client
 
 
@@ -320,6 +324,123 @@ def iter_orders_filtered(order, cancelable_only=False):
     for child in order.get("childOrderStrategies", []):
         yield from iter_orders_filtered(child, cancelable_only=cancelable_only)
 
+
+def extract_final_executions(
+    hashValue: str,
+    status: str | None,
+    fromEnteredTime: Any,
+    toEnteredTime: Any,
+) -> list[dict[str, Any]]:
+    """
+    Fetches orders for an account and extracts executed trade legs, including nested orders,
+    returning a flat list with execution details, order type, and hierarchy notes.
+
+    Args:
+        hashValue (str): Account identifier/hash to fetch orders for.
+        status (str | None): Filter orders by status (e.g., 'FILLED', 'CANCELED'); use None for no filter.
+        fromEnteredTime (Any): Start of order entry time range (typically ISO string or datetime).
+        toEnteredTime (Any): End of order entry time range (typically ISO string or datetime).
+
+    Returns:
+        List[Dict[str, Any]]: List of dictionaries, each representing an executed leg with:
+            - 'orderId': ID of the order
+            - 'symbol': traded instrument symbol
+            - 'side': 'BUY' or 'SELL'
+            - 'orderType': e.g., 'MARKET', 'LIMIT'
+            - 'price': execution price
+            - 'quantity': executed quantity
+            - 'time': execution timestamp as datetime
+            - 'status': order status
+            - 'note': 'simple' for top-level orders, or 'child_of_<parentId>' for nested orders
+
+    Example:
+        >>> extract_final_executions("abc123", "FILLED", "2026-01-01T00:00:00Z", "2026-01-31T23:59:59Z")
+        [
+            {
+                'orderId': 12345,
+                'symbol': 'AAPL',
+                'side': 'BUY',
+                'orderType': 'LIMIT',
+                'price': 150.0,
+                'quantity': 10,
+                'time': datetime(...),
+                'status': 'FILLED',
+                'note': 'simple'
+            },
+            {
+                'orderId': 12346,
+                'symbol': 'AAPL',
+                'side': 'SELL',
+                'orderType': 'MARKET',
+                'price': 151.0,
+                'quantity': 5,
+                'time': datetime(...),
+                'status': 'FILLED',
+                'note': 'child_of_12345'
+            }
+        ]
+    """
+    orders = client.account_orders(
+        accountHash=hashValue,
+        fromEnteredTime=fromEnteredTime,
+        toEnteredTime=toEnteredTime,
+        status=status,
+    ).json()
+
+    results: list[dict[str, Any]] = []
+
+    def parse_orders(order_list: list[dict[str, Any]], parent_id: int | None = None) -> None:
+        for order in order_list:
+            order_id = order.get("orderId")
+            status = order.get("status")
+            order_type = order.get("orderType")
+
+            note = "simple" if parent_id is None else f"child_of_{parent_id}"
+
+            # Map legId → instrument info
+            leg_map = {}
+            for leg in order.get("orderLegCollection", []):
+                leg_map[leg["legId"]] = {
+                    "symbol": leg["instrument"]["symbol"],
+                    "instruction": leg["instruction"],
+                }
+
+            for activity in order.get("orderActivityCollection", []):
+                if activity.get("activityType") != "EXECUTION":
+                    continue
+
+                for exec_leg in activity.get("executionLegs", []):
+                    leg_id = exec_leg.get("legId")
+                    leg_info = leg_map.get(leg_id, {})
+
+                    instruction = leg_info.get("instruction", "")
+                    side = "BUY" if instruction.startswith("BUY") else "SELL"
+
+                    results.append(
+                        {
+                            "orderId": order_id,
+                            "symbol": leg_info.get("symbol"),
+                            "side": side,
+                            "orderType": order_type,
+                            "price": exec_leg.get("price"),
+                            "quantity": exec_leg.get("quantity"),
+                            "time": dt.datetime.fromisoformat(
+                                exec_leg["time"].replace("Z", "+00:00")
+                            )
+                            if exec_leg.get("time")
+                            else None,
+                            "status": status,
+                            "note": note,
+                        }
+                    )
+
+            # recurse nested orders
+            if "childOrderStrategies" in order:
+                parse_orders(order["childOrderStrategies"], parent_id=order_id)
+
+    parse_orders(orders)
+
+    return results
 
 class TimeUtil:
     """

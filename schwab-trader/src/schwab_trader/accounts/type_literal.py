@@ -1,6 +1,10 @@
 from typing import Literal  # TypedDict
 
 Session = Literal["NORMAL", "AM", "PM", "SEAMLESS"]
+# NORMAL    Regular hours order
+# AM        Pre-market buy/sell
+# PM        After-hours (4–8 pm ET)
+# SEAMLESS  24/5 overnight continuous
 
 Duration = Literal[
     "DAY",

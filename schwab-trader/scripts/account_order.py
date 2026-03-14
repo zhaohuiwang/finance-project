@@ -63,6 +63,12 @@ print(json.dumps(data, indent=4))
 
 # ========================================================================
 # Place an equity order
+
+# Session:
+# NORMAL    Regular hours order
+# AM        Pre-market buy/sell
+# PM        After-hours (4–8 pm ET)
+# SEAMLESS  24/5 overnight continuous
 # ========================================================================
 
 # create an order configuration dictionary
@@ -70,14 +76,16 @@ order_1 = buy_limit_dict(
     symbol="ACHR",
     quantity=1,
     limit_price=0.2,
+    session="NORMAL",
     duration="DAY",
 )
 
 order_2 = sell_limit_dict(
-    symbol="NBIS",
-    quantity=1,
-    limit_price=100.0,
-    duration="GOOD_TILL_CANCEL",
+    symbol="IREN",
+    quantity=388,
+    limit_price=44.4,
+    session="NORMAL",
+    duration="DAY",
 )
 
 order_3 = buy_limit_trigger_sell_limit_dict(
@@ -85,6 +93,8 @@ order_3 = buy_limit_trigger_sell_limit_dict(
     quantity=1,
     buy_limit_price=20,
     sell_limit_price=120,
+    session_buy="NORMAL",
+    session_sell="NORMAL",
     buy_duration="DAY",
     sell_duration="GOOD_TILL_CANCEL",
 )
@@ -95,6 +105,8 @@ order_4 = sell_limit_sell_stoplimit_oco_dict(
     sell_limit_price=45,  # 45.97
     sell_stop_price=40,  # 37.00
     sell_stoplimit_price=39.8,  # 37.03
+    session_sell_limit="NORMAL",
+    session_sell_stoplimit="NORMAL",
     duration="DAY",
 )
 
@@ -104,6 +116,9 @@ order_5 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
     buy_limit_price=80.0,  # 14.97
     sell_limit_price=98.2,  # 15.27
     sell_stop_price=75.2,  # 11.27
+    session_buy_limit="NORMAL",
+    session_sell_limit="NORMAL",
+    session_sell_stop="NORMAL",
     buy_duration="DAY",
     sell_duration="GOOD_TILL_CANCEL",
 )
@@ -112,24 +127,27 @@ order_6 = sell_trailing_stop_dict(
     symbol="NBIS",
     quantity=1,
     stop_price_offset=10,  # 10
+    session="NORMAL",
     duration="DAY",
 )
 
 order_7 = buy_market_dict(
     symbol="THISISADEMO",
     quantity=1,
+    session="NORMAL",
     duration="DAY",
 )
 
 order_8 = sell_market_dict(
     symbol="THISISADEMO",
     quantity=1,
+    session="NORMAL",
     duration="DAY",
 )
 
 
 # submit an order
-order = order_5
+order = order_2
 
 
 status_code, date, order_id = place_order(
@@ -182,7 +200,7 @@ status_code, date, order_id = place_order(
 
 from_time, to_time = get_utc_time_range(
     # to_time= datetime.datetime(2026, 3, 6, 10, 0)
-    offset=datetime.timedelta(days=1, hours=1, minutes=5)
+    offset=datetime.timedelta(days=100, hours=1, minutes=5)
 )
 # or simply
 from_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
@@ -195,9 +213,16 @@ orders = client.account_orders(
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
     # status='WORKING',
+    # status="FILLED"
 ).json()
 
 print(json.dumps(orders, indent=4))
+
+import json
+
+with open("orders.json", "w") as f:
+    json.dump(orders[70:-1], f, indent=4)
+
 
 orders_flat = [
     o for root in orders for o in iter_orders_filtered(root, cancelable_only=True)
@@ -221,15 +246,15 @@ iter_result = list(
         data=orders,
         keys=[
             "orderId",
-            # "symbol",
+            "symbol",
             # "instruction",
             # "status",
-            # "price",
-            # "quantity",
+            "price",
+            "quantity",
             # "orderType",
             # "duration"
         ],
-        predicate=lambda d: d.get("cancelable") is True,
+        # predicate=lambda d: d.get("cancelable") is True,
         root_name="orders",
     )
 )

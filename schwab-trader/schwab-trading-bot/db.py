@@ -1,78 +1,107 @@
 # db.py
-import sqlite3
-import os
-from datetime import datetime
-import json
 
-DB_FILE = "trading_bot.db"
+import sqlite3
+import datetime
+import json
+from pathlib import Path
+
+DB_PATH = Path("logs/trading.db")
+DB_PATH.parent.mkdir(exist_ok=True)
 
 
 def init_db():
-    if not os.path.exists(DB_FILE):
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("""
-            CREATE TABLE transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                action TEXT,
-                symbol TEXT,
-                shares REAL,
-                price REAL,
-                order_type TEXT,
-                note TEXT
-            )
-        """)
-        c.execute("""
-            CREATE TABLE state (
-                symbol TEXT PRIMARY KEY,
-                last_buy_price REAL,
-                last_buy_time TEXT
-            )
-        """)
-        conn.commit()
-        conn.close()
-
-
-def log_transaction(action, symbol, shares, price, order_type="MARKET", note=""):
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    ts = datetime.now().isoformat()
-    c.execute(
-        """
-        INSERT INTO transactions (timestamp, action, symbol, shares, price, order_type, note)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """,
-        (ts, action, symbol, shares, price, order_type, note),
-    )
+    c.execute("""CREATE TABLE IF NOT EXISTS transactions (
+                    action       TEXT NOT NULL,
+                    symbol       TEXT,
+                    qty          REAL,
+                    price        REAL,
+                    order_id     TEXT,
+                    order_status TEXT,
+                    note         TEXT,
+                    ts           TEXT NOT NULL
+                )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS state (
+                    symbol TEXT PRIMARY KEY,
+                    last_buy_price REAL,
+                    last_buy_qty REAL,
+                    last_buy_time TEXT)""")
     conn.commit()
     conn.close()
-    print(f"LOGGED [{ts}] {action} {shares} {symbol} @ ${price:.2f}  ({note})")
 
 
-def save_state(symbol, last_buy_price):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute(
+def log_transaction(
+    action: str,
+    symbol: str,
+    qty: float,
+    price: float,
+    order_id: str,
+    order_status: str,
+    note: str,
+    ts: datetime,
+):
+    conn = sqlite3.connect(DB_PATH)
+    ts = datetime.datetime.now().isoformat()
+    conn.execute(
         """
-        INSERT OR REPLACE INTO state (symbol, last_buy_price, last_buy_time)
-        VALUES (?, ?, ?)
+        INSERT INTO transactions 
+        (action, symbol, qty, price, order_id, order_status, note, ts)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """,
-        (symbol, last_buy_price, datetime.now().isoformat()),
+        (action, symbol, qty, price, order_id, order_status, note, ts),
     )
     conn.commit()
     conn.close()
 
 
-def load_state():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT symbol, last_buy_price FROM state")
-    rows = c.fetchall()
+def save_state(symbol: str, last_buy_price: float, last_buy_qty: float):
+    """SUGGESTION: Now called with qty (see handle_account_activity below)."""
+    conn = sqlite3.connect(DB_PATH)
+    ts = datetime.datetime.now().isoformat()
+    conn.execute(
+        """
+        REPLACE INTO state (symbol, last_buy_price, last_buy_qty, last_buy_time)
+        VALUES (?, ?, ?, ?)
+    """,
+        (symbol, last_buy_price, last_buy_qty, ts),
+    )
+    conn.commit()
     conn.close()
-    return {row[0]: {"last_buy_price": row[1]} for row in rows}
 
 
-def get_last_buy_price(symbol):
-    state = load_state()
-    return state.get(symbol, {}).get("last_buy_price")
+def load_state() -> dict:
+    """SUGGESTION: Single version that returns both price + qty (previous duplicate removed)."""
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT symbol, last_buy_price, last_buy_qty FROM state"
+    ).fetchall()
+    conn.close()
+    return {sym: {"price": price, "qty": qty} for sym, price, qty in rows}
+
+
+def get_last_buy_price(symbol: str) -> float | None:
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT last_buy_price FROM state WHERE symbol=?", (symbol,)
+    ).fetchone()
+    conn.close()
+    return float(row[0]) if row else None
+
+
+def get_last_buy_qty(symbol: str) -> float | None:
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT last_buy_qty FROM state WHERE symbol=?", (symbol,)
+    ).fetchone()
+    conn.close()
+    return float(row[0]) if row and row[0] is not None else None
+
+
+def get_transaction_history() -> list:
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT * FROM transactions ORDER BY timestamp DESC LIMIT 100"
+    ).fetchall()
+    conn.close()
+    return rows

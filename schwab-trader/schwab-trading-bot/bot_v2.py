@@ -12,7 +12,8 @@ from rich.table import Table
 from rich.console import Console
 from rich.panel import Panel
 from rich.columns import Columns
-from rich.prompt import Confirm # 
+from rich.prompt import Confirm  #
+import argparse
 
 from config import CONFIG, RISK_CONFIG
 from db import init_db, log_transaction, save_state, get_last_buy_price, load_state
@@ -31,27 +32,34 @@ CACHE_TTL_SECONDS = 60
 
 
 class TradingBot:
-    def __init__(self):
+    def __init__(self, mode: str = "cli"):
+        """Initialize client, caches, state flags, and start DB."""
         init_db()
         self.client = schwabdev.Client(
             os.getenv("app_key"), os.getenv("app_secret"), os.getenv("callback_url")
         )
+        self.mode = mode
         self.streamer = schwabdev.Stream(self.client)
-        
+
         self._symbols = CONFIG.keys()
 
         self.current_prices = {sym: None for sym in self._symbols}
         self.holdings = {}
-        
+
         # ── Duplicate-buy protection + manual approval ─────────────────────
-        self.auto_buy_allowed = {sym: True for sym in self._symbols}   # True = next trigger is AUTO
-        self.pending_buy_orders = set() # prevents double-submit while order is in flight
-        
+        self.auto_buy_allowed = {
+            sym: True for sym in self._symbols
+        }  # True = next trigger is AUTO
+        self.pending_buy_orders = (
+            set()
+        )  # prevents double-submit while order is in flight
+
         self.last_holdings_sync = time.time()
         self.first_api_pull = True
-        self.HOLDINGS_SYNC_INTERVAL = 60 # 1 minutes, first start has to wait to get values populated
-        
-        self.state = load_state()
+        self.HOLDINGS_SYNC_INTERVAL = (
+            60  # 1 minutes, first start has to wait to get values populated
+        )
+
         self.lock = (
             threading.Lock()
         )  # ensures only one thread can execute a critical section at a time
@@ -66,36 +74,37 @@ class TradingBot:
         self._cash_balance = None
         self._day_trading_bp = None
         self._non_marginable_bp = None
-        
+
         # Open orders cache
         self._open_orders_cache = None
         self._open_orders_cache_time = None
-        self.OPEN_ORDERS_CACHE_TTL = 45     # seconds, 30–90 is a good range
+        self.OPEN_ORDERS_CACHE_TTL = 45  # seconds, 30–90 is a good range
 
         # Daily risk tracking
         self.daily_start_equity = self.get_account_snapshot()["equity"]
         self.today = datetime.date.today()
 
-        console.print(
-            f"[bold cyan]Account Equity at start: ${self.daily_start_equity:,.2f}[/bold cyan]"
-        )
+        # console.print(
+        #     f"[bold cyan]Account Equity at start: ${self.daily_start_equity:,.2f}[/bold cyan]"
+        # )
 
-
+    # =============================================================
+    # ACCOUNT MANAGEMENT (snapshot, holdings, cache invalidation)
+    # =============================================================
     def _get_account_hash(self):
+        """Retrieve the primary account hashValue (used for all API calls)."""
         accounts = self.client.linked_accounts().json()
         if not accounts:
             raise RuntimeError("No linked accounts found")
         return accounts[0]["hashValue"]
 
-
     def invalidate_open_orders_cache(self):
+        """Force next get_open_orders() to hit the API (called after every trade)."""
         self._open_orders_cache = None
         self._open_orders_cache_time = 0
-        
-        
-    # ── ACCOUNT METRICS (for risk checks) ─────────────────────────────────────
-    def get_account_snapshot(self):
 
+    def get_account_snapshot(self):
+        """Returns (cached or fresh) account equity, buying power, cash, etc."""
         now = time.time()
         # If self._equity_cache has been assinged with a value (other than initial None), the API will only be called every CACHE_TTL_SECONDS, less frequently.
         if (
@@ -146,27 +155,43 @@ class TradingBot:
                 "nonMarginableBP": 0.0,
             }
 
+    # SUGGESTION: Consider calling load_state() once here (or in monitor_logic)
+    # to cache last_buy_price/qty in memory instead of 4 separate DB hits per loop.
+    def update_holdings_from_api(self):
+        """Sync current positions from Schwab API (called on startup + every 60 s)."""
+        try:
+            pos = self.client.account_details(
+                self.account_hash, fields="positions"
+            ).json()
+            positions = pos.get("securitiesAccount", {}).get("positions", [])
+            new_h = {}
+            for p in positions:
+                sym = p["instrument"]["symbol"]
+                if sym in self._symbols and float(p.get("longQuantity", 0)) > 0:
+                    new_h[sym] = {
+                        "shares": float(p["longQuantity"]),
+                        "buy_price": p.get("averagePrice", 0),
+                    }
+            with self.lock:
+                self.holdings = new_h
+                # If we somehow have no position but flag is locked, unlock it
+                for sym in list(self.auto_buy_allowed.keys()):
+                    if sym not in new_h:
+                        self.auto_buy_allowed[sym] = True
+        except:
+            pass
+
+    def force_sync_holdings(self):
+        """Call after any trade fill for instant accuracy."""
+        self.update_holdings_from_api()
+        self.last_holdings_sync = time.time()
+
+    # =============================================================
+    # ORDER QUERYING (open orders + safety checks)
+    # =============================================================
     def iter_orders(self, order, cancelable_only=False):
         """
         Yield flattened order records from a Schwab/TD Ameritrade order tree.
-
-        Parameters
-        ----------
-        order : dict
-            Single order dictionary (can contain childOrderStrategies)
-        cancelable_only : bool, default False
-            If True, yields only orders with cancelable=True.
-            If False, yields all orders.
-
-        Yields
-        ------
-        dict
-            Flattened order info with:
-                - orderId
-                - orderType
-                - duration
-                - price
-                - legs: list of dicts with instruction, symbol, quantity
         """
         # Skip non-cancelable orders if requested
         if cancelable_only and not order.get("cancelable", False):
@@ -213,12 +238,14 @@ class TradingBot:
         - orders with childOrderStrategies (brackets)
         Returns flattened list of dicts suitable for table display.
         """
-        
+
         now = time.time()
 
         # Return cached result if still fresh
-        if (self._open_orders_cache is not None and
-            now - self._open_orders_cache_time < self.OPEN_ORDERS_CACHE_TTL):
+        if (
+            self._open_orders_cache is not None
+            and now - self._open_orders_cache_time < self.OPEN_ORDERS_CACHE_TTL
+        ):
             return self._open_orders_cache
 
         from_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
@@ -256,7 +283,7 @@ class TradingBot:
                         "duration": order.get("duration", "N/A"),
                     }
                 )
-                
+
             # Update cache
             self._open_orders_cache = displayed
             self._open_orders_cache_time = now
@@ -268,8 +295,16 @@ class TradingBot:
             # Return last known good cache if available, otherwise empty
             return self._open_orders_cache or []
 
-    # ── RISK CALCULATIONS ─────────────────────────────────────────────────────
+    def has_open_buy_order(self, symbol: str) -> bool:
+        """Extra safety net: check Schwab API (cached) for any live BUY order."""
+        orders = self.get_open_orders()
+        return any(o["symbol"] == symbol and o["instruction"] == "BUY" for o in orders)
+
+    # =============================================================
+    # RISK MANAGEMENT
+    # =============================================================
     def calculate_shares(self, symbol, buy_price):
+        """Determine buy quantity: fixed_shares (preferred) or risk-based (currently commented)."""
         cfg = CONFIG.get(symbol, {})
         fixed = cfg.get("fixed_shares", 0)
 
@@ -298,7 +333,7 @@ class TradingBot:
         return shares
 
     def risk_checks_pass(self, symbol):
-        """All pre-trade risk validations"""
+        """All pre-trade risk validations (daily loss, min equity, max positions, BP)."""
         snapshot = self.get_account_snapshot()
         equity = snapshot["equity"]
         bp = snapshot["buyingPower"]
@@ -331,20 +366,26 @@ class TradingBot:
             console.print("[yellow]Max positions reached — skipping new buys[/yellow]")
             return False
 
-        # Buying power check
-        estimated_cost = (
-            self.current_prices.get(symbol, 0) * RISK_CONFIG["default_shares"]
-        )
-        if bp < estimated_cost * 1.1:  # 10% buffer
+        # Buying power check - Use real calculated qty instead
+        qty = self.calculate_shares(symbol, self.current_prices.get(symbol, 0))
+        estimated_cost = self.current_prices.get(symbol, 0) * qty
+
+        if bp < estimated_cost * 1.1:
             console.print(
                 f"[yellow]Insufficient buying power (${bp:,.0f}) — skipping[/yellow]"
             )
             return False
-
         return True
 
-    # ── STREAM HANDLERS ──────────────────────────────────────────────
+    # SUGGESTION: The risk-based sizing code above is commented out.
+    # Uncommenting it (and removing the fixed_shares path when you want dynamic sizing)
+    # would make position size respect your 1% risk-per-trade rule automatically.
+
+    # =============================================================
+    # STREAM HANDLING
+    # =============================================================
     def unified_receiver(self, message):
+        """Unified callback that routes LEVELONE_EQUITIES or ACCT_ACTIVITY messages."""
         if isinstance(message, str):
             try:
                 message = json.loads(message)
@@ -372,6 +413,7 @@ class TradingBot:
                 self.handle_account_activity(data_item)
 
     def handle_price_message(self, item):
+        """Update self.current_prices from LEVELONE_EQUITIES stream (field 3 = last)."""
         content_list = item.get("content", [])
         if not content_list:
             return
@@ -381,7 +423,8 @@ class TradingBot:
             if symbol not in self.current_prices:
                 continue
 
-            last_str = content.get("3")
+            prev_close = content.get("16")  # previous close
+            last_str = content.get("3")  # last price
             if last_str is not None:
                 try:
                     last_price = float(last_str)
@@ -406,6 +449,7 @@ class TradingBot:
             #             pass
 
     def handle_account_activity(self, item):
+        """Process EXECUTION / FILL messages, update holdings, place bracket, reset flags."""
         content_list = item.get("content", [])
         for content in content_list:
             # We only care about real executions / fills (ignore heartbeats, subscriptions, etc.)
@@ -437,139 +481,78 @@ class TradingBot:
                         del self.holdings[symbol]
                         # Removes the symbol from the internal holdings dictionary, the bot now considers the position flat/closed
                         log_transaction(
-                            "SELL (detected via stream)",
-                            symbol,
-                            qty,
-                            price,
+                            action="SELL_FILLED",
+                            symbol=symbol,
+                            qty=qty,
+                            price=price,
                             note="OCO fill via ACCT_ACTIVITY",
+                            order_id=None,
+                            order_status="FILLED",
                         )
-                        # Reset for next sycle 
+                        # Reset for next sycle
                         self.auto_buy_allowed[symbol] = True
-                        console.print(f"[green]→ Cycle reset: AUTO BUY re-enabled for {symbol}[/green]")
+                        console.print(
+                            f"[green]→ Cycle reset: AUTO BUY re-enabled for {symbol}[/green]"
+                        )
 
                 elif instruction in ("BUY", "BUY_TO_COVER"):
-                    # Try to remove the exact (symbol, qty) we submitted
-                    with self.lock:
+                    with self.lock:  # SUGGESTION: everything under one lock for consistency
                         self.pending_buy_orders.discard((symbol, qty))
-                        
-                    self.holdings[symbol] = {
-                        "shares": qty,
-                        "buy_price": price,
-                        "limit_price": None,
-                        "stop_price": None,
-                    }
-                    log_transaction(
-                        "BUY (detected via stream)",
-                        symbol,
-                        qty,
-                        price,
-                        note="Initial buy fill via ACCT_ACTIVITY",
-                    )
-                    self.place_bracket_orders(symbol, price)
-                    self.save_state(symbol, price)
-                    # Clear pending
-                    if symbol in self.pending_buy_orders:
-                        self.pending_buy_orders.remove(symbol)
-                    
-                # Force authoritative sync after any fill
-                self.force_sync_holdings()
-                # After any BUY or SELL fill, invalidate the cache
-                self.invalidate_open_orders_cache()
+                        self.holdings[symbol] = {
+                            "shares": qty,
+                            "buy_price": price,
+                            "limit_price": None,
+                            "stop_price": None,
+                        }
+                        log_transaction(
+                            action="BUY_FILLED",
+                            symbol=symbol,
+                            qty=qty,
+                            price=price,
+                            note="Initial buy fill via ACCT_ACTIVITY",
+                            order_id=None,  # ← rarely present in fill message
+                            order_status="FILLED",
+                        )
+                        self.place_bracket_orders(symbol, price)
+                        self.save_state(symbol, price, qty)
+                        self.force_sync_holdings()
+                        self.invalidate_open_orders_cache()
+                        # # Clear pending
+                        # if symbol in self.pending_buy_orders:
+                        #     self.pending_buy_orders.remove(symbol)
 
-    # def start_stream(self):
-    #     """
-    #     Subscribes to live quotes for your sumbols, listens to both price updates and order execution events
-    #     """
-
-    #     # Starts the WebSocket connection in the background
-    #     self.streamer.start(receiver=self.unified_receiver)
-
-    #     # Prepares and sends the subscription request for stock quotes
-    #     quote_request = {
-    #         "service": "LEVELONE_EQUITIES",
-    #         "command": "SUBS",  # SUBS = subscribe
-    #         "requestid": "1001",  # any unique string/int per request
-    #         "SchwabClientCustomerId": "",  # usually left empty or from user principals
-    #         "SchwabClientCorrelId": "corr123",  # can be any string
-    #         "parameters": {
-    #             "keys": ",".join(self._symbols),
-    #             "fields": "0,1,2,3,4,5,6,7,8,9",  # symbol, bid, ask, last, etc.
-    #         },
-    #     }
-
-    #     self.streamer.send(quote_request)
-    #     console.print(
-    #         f"[green]→ Subscribed to LEVELONE_EQUITIES for {', '.join(self._symbols)}[/green]"
-    #     )
-
-    #     # ── Account Activity Subscription ─────────────────────────────────────────
-    #     # First try the convenience method if it exists
-    #     try:
-    #         acct_req = self.streamer.account_activity(fields="0,1,2,3", command="SUBS")
-    #         self.streamer.send(acct_req)
-    #         console.print(
-    #             "[green]→ Subscribed to account activity (via convenience)[/green]"
-    #         )
-    #     except (AttributeError, TypeError):
-    #         console.print(
-    #             "[yellow]Falling back to manual ACCT_ACTIVITY subscription[/yellow]"
-    #         )
-
-    #         # Manual version - you may need to fetch subscription keys from user principals
-    #         try:
-    #             principals = self.client.user_principals().json()
-    #             # Typically one key for your linked account
-    #             sub_key = principals.get("streamerSubscriptionKeys", [{}])[0].get(
-    #                 "key", ""
-    #             )
-    #             if not sub_key:
-    #                 sub_key = (
-    #                     self.account_hash
-    #                 )  # fallback to account hash sometimes works
-    #         except Exception:
-    #             sub_key = self.account_hash  # safest fallback
-
-    #         acct_manual = {
-    #             "service": "ACCT_ACTIVITY",
-    #             "command": "SUBS",
-    #             "requestid": "1002",
-    #             "SchwabClientCustomerId": "",
-    #             "SchwabClientCorrelId": "corr456",
-    #             "parameters": {
-    #                 "keys": sub_key,
-    #                 "fields": "0,1,2,3",  # subscription key, account, message type, data
-    #             },
-    #         }
-
-    #         self.streamer.send(acct_manual)
-    #         console.print("[green]→ Manual ACCT_ACTIVITY subscription sent[/green]")
-
-    #     console.print(
-    #         "[bold green]Streaming active — quotes + account activity[/bold green]"
-    #     )
-    
     def start_stream(self):
+        """Start the streamer and subscribe to price + account activity feeds."""
         self.streamer.start(receiver=self.unified_receiver)
 
         # Quotes
         self.streamer.send(
             self.streamer.level_one_equities(
                 ",".join(self._symbols),
-                "0,1,2,3,4,5,6,7,8"   # 3 = last price
+                "0,1,2,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18",  # 3 = last price, 16 = previous close price
             )
+        )  # https://schwab-py.readthedocs.io/en/latest/streaming.html#schwab.streaming.StreamClient.LevelOneEquityFields
+        console.print(
+            f"[green]→ Subscribed to LEVELONE_EQUITIES for {self._symbols}[/green]"
         )
-        console.print(f"[green]→ Subscribed to LEVELONE_EQUITIES for {self._symbols}[/green]")
 
         # Account activity (convenience method handles subkey automatically)
         self.streamer.send(
             self.streamer.account_activity("Account Activity", "0,1,2,3")
         )
-        console.print("[green]→ Subscribed to ACCT_ACTIVITY (fills, executions)[/green]")
+        console.print(
+            "[green]→ Subscribed to ACCT_ACTIVITY (fills, executions)[/green]"
+        )
 
-        console.print("[bold green]Streaming active — quotes + account activity[/bold green]")
+        console.print(
+            "[bold green]Streaming active — quotes + account activity[/bold green]"
+        )
 
-    # ── ORDER PLACEMENT ────────────────────────────────────────────
+    # =============================================================
+    # ORDER PLACEMENT
+    # =============================================================
     def place_buy_order(self, symbol: str, qty: float) -> bool:
+        """Submit a MARKET BUY order (used only after all safety checks pass)."""
         if not self.risk_checks_pass(symbol):
             return False
 
@@ -581,7 +564,7 @@ class TradingBot:
             "orderLegCollection": [
                 {
                     "instruction": "BUY",
-                    "quantity": qty,                     # ← use the passed qty
+                    "quantity": qty,  # ← use the passed qty
                     "instrument": {"symbol": symbol, "assetType": "EQUITY"},
                 }
             ],
@@ -589,16 +572,18 @@ class TradingBot:
 
         try:
             resp = self.client.place_order(self.account_hash, order)
+            location = resp.headers.get("Location")
+            order_id = location.split("/")[-1] if location else None
             log_transaction(
-                "BUY_SUBMITTED",
-                symbol,
-                qty,
-                self.current_prices.get(symbol, 0),
-                note=f"Risk-sized: {qty} shares",
+                action="BUY_SUBMITTED",
+                symbol=symbol,
+                qty=qty,
+                price=self.current_prices.get(symbol, 0),
+                note=f"Risk-sized: {qty} shares | session={order.get('session', 'NORMAL')}",
+                order_id=order_id,
+                order_status="PENDING",
             )
-            console.print(
-                f"[green]BUY SUBMITTED → {qty} shares of {symbol}[/green]"
-            )
+            console.print(f"[green]BUY SUBMITTED → {qty} shares of {symbol}[/green]")
 
             self.invalidate_open_orders_cache()
             return True
@@ -606,10 +591,11 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Buy failed: {e}[/red]")
             with self.lock:
-                self.pending_buy_orders.discard((symbol, qty))   # cleanup
+                self.pending_buy_orders.discard((symbol, qty))  # cleanup
             return False
 
     def place_bracket_orders(self, symbol, buy_price):
+        """Place GTC OCO bracket (LIMIT SELL + STOP LOSS) right after a buy fill."""
         # (unchanged from previous version — GTC OCO)
         cfg = CONFIG[symbol]
         qty = self.holdings[symbol]["shares"]
@@ -652,17 +638,20 @@ class TradingBot:
         }
 
         try:
-            self.client.place_order(self.account_hash, oco)
+            resp = self.client.place_order(self.account_hash, oco)
+            location = resp.headers.get("Location")
+            order_id = location.split("/")[-1] if location else None
             console.print("[green]OCO placed[/green]")
             self.invalidate_open_orders_cache()  # Invalidate the cache after order
 
             log_transaction(
-                "OCO_PLACED",
-                symbol,
-                qty,
-                buy_price,
-                "OCO",
-                f"Limit ${limit_price:.2f} | Stop ${stop_price:.2f}",
+                action="OCO_PLACED",
+                symbol=symbol,
+                qty=qty,
+                price=buy_price,
+                note=f"Limit ${limit_price:.2f} | Stop ${stop_price:.2f}",
+                order_id=order_id,
+                order_status="WORKING",
             )
             with self.lock:
                 self.holdings[symbol].update(
@@ -672,7 +661,7 @@ class TradingBot:
             console.print(f"[red]OCO failed: {e}[/red]")
 
     def _confirm_manual_buy(self, symbol: str, price: float) -> bool:
-        """Ask user in terminal for manual approval."""
+        """Ask user in terminal for manual approval when auto_buy_allowed is False."""
         console.print(
             f"[yellow]🚨 BUY TRIGGER {symbol} @ ${price:.2f} — AUTO already used this cycle.[/yellow]"
         )
@@ -681,41 +670,12 @@ class TradingBot:
             default=False,
             console=console,
         )
-        
-    def update_holdings_from_api(self):
-        try:
-            pos = self.client.account_details(
-                self.account_hash, fields="positions"
-            ).json()
-            positions = pos.get("securitiesAccount", {}).get("positions", [])
-            new_h = {}
-            for p in positions:
-                sym = p["instrument"]["symbol"]
-                if sym in self._symbols and float(p.get("longQuantity", 0)) > 0:
-                    new_h[sym] = {
-                        "shares": float(p["longQuantity"]),
-                        "buy_price": p.get("averagePrice", 0),
-                    }
-            with self.lock:
-                self.holdings = new_h
-                # If we somehow have no position but flag is locked, unlock it
-                for sym in list(self.auto_buy_allowed.keys()):
-                    if sym not in new_h:
-                        self.auto_buy_allowed[sym] = True
-        except:
-            pass
-        
-    def force_sync_holdings(self):
-        """Call after any trade fill for instant accuracy."""
-        self.update_holdings_from_api()
-        self.last_holdings_sync = time.time()
 
-    def stop(self):
-        self.running = False
-        self.streamer.stop()
-        console.print("[red]Bot stopped.[/red]")
-
+    # =============================================================
+    # UI / DASHBOARD
+    # =============================================================
     def make_dashboard(self):
+        """Build the rich live dashboard (positions + open orders + account summary)."""
         equity = self.get_account_snapshot()["equity"]
         daily_pnl = (
             (equity - self.daily_start_equity) / self.daily_start_equity * 100
@@ -803,20 +763,18 @@ class TradingBot:
             border_style="blue",
         )
 
-    def monitor_loop(self):
+    def monitor_display(self):
+        """Display-only thread (used in --mode full). Keeps rich Live updated."""
         last_hash = None
-
         with Live(console=console, refresh_per_second=4, screen=True) as live:
             while self.running:
                 time.sleep(6)
-
-                if datetime.date.today() != self.today: # in case of overnight runs
+                # daily + sync (identical to logic thread)
+                if datetime.date.today() != self.today:
                     self.daily_start_equity = self.get_account_snapshot()["equity"]
                     self.today = datetime.date.today()
                     self.trading_paused = False
-
-                # only sync after HOLDINGS_SYNC_INTERVAL
-                if self.first_api_pull: # No waiting when first start
+                if self.first_api_pull:
                     self.update_holdings_from_api()
                     self.first_api_pull = False
                 now = time.time()
@@ -825,10 +783,131 @@ class TradingBot:
                     self.last_holdings_sync = now
 
                 with self.lock:
+                    holdings_copy = dict(self.holdings)
+                    prices_copy = dict(self.current_prices)
                     view = {}
                     for sym in self._symbols:
-                        p = self.current_prices.get(sym)
-                        h = self.holdings.get(sym, {})
+                        p = prices_copy.get(sym)
+                        h = holdings_copy.get(sym, {})
+                        view[sym] = (p, h.get("shares", 0), h.get("buy_price"))
+                    view["equity"] = self.get_account_snapshot()["equity"]
+                    view["paused"] = self.trading_paused
+                    view["orders"] = len(self.get_open_orders())
+
+                state_str = str(sorted(view.items()))
+                current_hash = hashlib.md5(state_str.encode()).hexdigest()
+
+                if current_hash != last_hash:
+                    last_hash = current_hash
+                    live.update(self.make_dashboard())
+
+    # =============================================================
+    # MONITORING LOGIC (core buy-trigger loop)
+    # =============================================================
+    def monitor_logic(self):
+        """Pure background logic thread (runs every 6 s). Handles all buy triggers."""
+        while self.running:
+            time.sleep(6)
+
+            if datetime.date.today() != self.today:
+                self.daily_start_equity = self.get_account_snapshot()["equity"]
+                self.today = datetime.date.today()
+                self.trading_paused = False
+
+            if self.first_api_pull:
+                self.update_holdings_from_api()
+                self.first_api_pull = False
+            now = time.time()
+            if now - self.last_holdings_sync > self.HOLDINGS_SYNC_INTERVAL:
+                self.update_holdings_from_api()
+                self.last_holdings_sync = now
+
+            with self.lock:
+                holdings_copy = dict(self.holdings)
+                pending_copy = set(self.pending_buy_orders)
+                auto_copy = dict(self.auto_buy_allowed)
+                prices_copy = dict(self.current_prices)
+
+            # ── Buy trigger logic (exactly the same as before) ──
+            for sym in self._symbols:
+                if sym in holdings_copy and holdings_copy[sym].get("shares", 0) > 0:
+                    continue
+                price = prices_copy.get(sym)
+                if not price:
+                    continue
+                cfg = CONFIG[sym]
+                last_buy = get_last_buy_price(sym)
+                trigger = (price <= cfg.get("buy_target_price", float("inf"))) or (
+                    last_buy and price <= last_buy * (1 - cfg["buy_drop_pct"] / 100)
+                )
+
+                if not (
+                    trigger and not self.trading_paused and self.risk_checks_pass(sym)
+                ):
+                    continue
+
+                console.print(f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]")
+
+                qty = self.calculate_shares(sym, price)
+
+                if (sym, qty) in pending_copy or self.has_open_buy_order(sym):
+                    console.print(
+                        f"[dim yellow]Order already pending/open for {sym} — skipping[/dim yellow]"
+                    )
+                    continue
+
+                if auto_copy[sym]:
+                    approved = True
+                else:
+                    approved = self._confirm_manual_buy(sym, price)
+
+                if approved:
+                    with self.lock:
+                        self.pending_buy_orders.add((sym, qty))
+                    success = self.place_buy_order(sym, qty)
+                    if success:
+                        with self.lock:
+                            self.auto_buy_allowed[sym] = False
+                            # REMOVED: self.last_buy_time (unused – we use DB)
+                    else:
+                        with self.lock:
+                            self.pending_buy_orders.discard((sym, qty))
+                else:
+                    console.print("[dim]Manual buy declined.[/dim]")
+
+    def monitor_loop(self):
+        """Legacy combined monitor (display + logic). No longer used — kept for reference only."""
+        last_hash = None
+
+        with Live(console=console, refresh_per_second=4, screen=True) as live:
+            while self.running:
+                time.sleep(6)
+
+                if datetime.date.today() != self.today:  # in case of overnight runs
+                    self.daily_start_equity = self.get_account_snapshot()["equity"]
+                    self.today = datetime.date.today()
+                    self.trading_paused = False
+
+                # only sync after HOLDINGS_SYNC_INTERVAL
+                if self.first_api_pull:  # No waiting when first start
+                    self.update_holdings_from_api()
+                    self.first_api_pull = False
+                now = time.time()
+                if now - self.last_holdings_sync > self.HOLDINGS_SYNC_INTERVAL:
+                    self.update_holdings_from_api()
+                    self.last_holdings_sync = now
+
+                with self.lock:
+                    # # Copy all mutable state UNDER LOCK so streamer thread can't change it while we decide
+                    holdings_copy = dict(self.holdings)
+                    pending_copy = set(self.pending_buy_orders)
+                    auto_copy = dict(self.auto_buy_allowed)
+                    prices_copy = dict(self.current_prices)
+
+                    view = {}
+                    for sym in self._symbols:
+                        p = prices_copy.get(sym)
+                        h = holdings_copy.get(sym, {})
                         view[sym] = (p, h.get("shares", 0), h.get("buy_price"))
 
                     view["equity"] = self.get_account_snapshot()["equity"]
@@ -844,10 +923,13 @@ class TradingBot:
 
                     # Buy logic (only when changed or periodically)
                     for sym in self._symbols:
-                        if sym in self.holdings and self.holdings[sym].get("shares", 0) > 0:
+                        if (
+                            sym in holdings_copy
+                            and holdings_copy[sym].get("shares", 0) > 0
+                        ):
                             continue
 
-                        price = self.current_prices.get(sym)
+                        price = prices_copy.get(sym)
                         if not price:
                             continue
 
@@ -860,22 +942,39 @@ class TradingBot:
                             and price <= last_buy * (1 - cfg["buy_drop_pct"] / 100)
                         )
 
-                        if not (trigger and not self.trading_paused and self.risk_checks_pass(sym)):
+                        if not (
+                            trigger
+                            and not self.trading_paused
+                            and self.risk_checks_pass(sym)
+                        ):
                             continue
 
-                        console.print(f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]")
+                        console.print(
+                            f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]"
+                        )
 
                         # Decide quantity
-                        qty = self.calculate_shares(sym, price)   # ← your existing function
+                        qty = self.calculate_shares(
+                            sym, price
+                        )  # ← your existing function
 
                         # Check if this exact (symbol, qty) is already pending
-                        if (sym, qty) in self.pending_buy_orders:
-                            console.print(f"[dim yellow]Exact same order ({sym}, {qty} shares) already pending — skipping[/dim yellow]")
+                        if (sym, qty) in self.pending_copy:
+                            console.print(
+                                f"[dim yellow]Exact same order ({sym}, {qty} shares) already pending — skipping[/dim yellow]"
+                            )
+                            continue
+                        if self.has_open_buy_order(sym):
+                            console.print(
+                                f"[dim yellow]Open BUY order already exists for {sym} — skipping[/dim yellow]"
+                            )
                             continue
 
                         # Decide AUTO vs MANUAL
-                        if self.auto_buy_allowed[sym]:
-                            console.print(f"[green]→ AUTO BUY allowed for {sym}[/green]")
+                        if auto_copy[sym]:
+                            console.print(
+                                f"[green]→ AUTO BUY allowed for {sym}[/green]"
+                            )
                             approved = True
                         else:
                             approved = self._confirm_manual_buy(sym, price)
@@ -884,30 +983,235 @@ class TradingBot:
                             with self.lock:
                                 self.pending_buy_orders.add((sym, qty))
 
-                            success = self.place_buy_order(sym, qty)   # ← pass qty explicitly (see next step)
+                            success = self.place_buy_order(
+                                sym, qty
+                            )  # ← pass qty explicitly (see next step)
 
                             if success:
                                 with self.lock:
                                     self.auto_buy_allowed[sym] = False
+                                    self.last_buy_time[sym] = time.time()
                             else:
                                 with self.lock:
-                                    self.pending_buy_orders.discard((sym, qty))   # rollback on failure
+                                    self.pending_buy_orders.discard(
+                                        (sym, qty)
+                                    )  # rollback on failure
                         else:
                             console.print(f"[dim]Manual buy declined.[/dim]")
 
-bot = TradingBot()  # your class instance
+    def cli_loop(self):
+        """CLI command loop (add/remove/pause/stop/etc.) — runs in its own thread."""
+        console.print(
+            "[bold cyan]CLI mode active - type 'help' for commands[/bold cyan]"
+        )
+        while self.running:
+            try:
+                cmd_line = input("> ").strip()
+                if not cmd_line:
+                    continue
 
+                parts = cmd_line.split(maxsplit=1)
+                command = parts[0].lower()
+
+                if command == "help":
+                    console.print("""Commands:
+                    add SYMBOL {"buy_target_price": 8.0, ...}
+                    remove SYMBOL
+                    list | add | remove | pause | resume | stop | restart
+                    """)
+                    continue
+                elif command == "list":
+                    with self.lock:
+                        active = ", ".join(sorted(self._symbols)) or "(none)"
+                    console.print(f"[cyan]Currently monitoring: {active}[/cyan]")
+                    continue
+                elif command == "remove":
+                    if len(parts) < 2:
+                        console.print("[yellow]Usage: remove SYMBOL[/yellow]")
+                        continue
+                    sym = parts[1].strip().upper()
+                    self.remove_symbol(sym)
+                    continue
+                elif command == "pause":
+                    self.trading_paused = True
+                    console.print("[yellow]Trading paused[/yellow]")
+                    continue
+                elif command == "resume":
+                    self.trading_paused = False
+                    console.print("[green]Trading resumed[/green]")
+                    continue
+                elif command == "stop":
+                    self.stop()
+                    break
+                elif command == "add":
+                    if len(parts) < 3:
+                        console.print(
+                            "[yellow]Usage: add SYMBOL {json config}[/yellow]"
+                        )
+                        continue
+                    try:
+                        _, rest = cmd_line.split(" ", 1)
+                        sym_part, json_part = rest.split(" ", 1)
+                        sym = sym_part.upper()
+                        cfg = json.loads(json_part)
+                        self.add_new_symbol(sym, cfg)
+                    except Exception as e:
+                        console.print(f"[red]Add error: {e}[/red]")
+                    continue
+                elif command == "restart":
+                    self.restart()
+                    continue
+                else:
+                    console.print(
+                        "[dim yellow]Unknown command — type 'help'[/dim yellow]"
+                    )
+
+            except KeyboardInterrupt:
+                self.stop()
+                break
+            except Exception as e:
+                console.print(f"[dim red]CLI error: {e}[/dim red]")
+
+    # =============================================================
+    # DYNAMIC SYMBOL MANAGEMENT
+    # =============================================================
+    def add_new_symbol(self, symbol: str, cfg: dict):
+        """Dynamically add a symbol (updates CONFIG + stream subscription)."""
+        if symbol in CONFIG:
+            console.print(f"[yellow]{symbol} already exists[/yellow]")
+            return
+
+        CONFIG[symbol] = cfg
+        with self.lock:
+            self._symbols = list(CONFIG.keys())
+            self.current_prices[symbol] = None
+            self.auto_buy_allowed[symbol] = True
+            self.holdings.pop(symbol, None)
+
+        try:
+            self.streamer.send(
+                self.streamer.level_one_equities(symbol, "0,1,2,3,4,5,6,7,8")
+            )
+            console.print(f"[green]✅ Added {symbol} and subscribed[/green]")
+        except Exception as e:
+            console.print(f"[red]Stream subscribe failed: {e}[/red]")
+
+    def remove_symbol(self, symbol: str):
+        """Dynamically remove a symbol from monitoring (unsubscribes + cleans up state)"""
+        symbol = symbol.upper()
+
+        if symbol not in CONFIG:
+            console.print(f"[yellow]Symbol {symbol} not found in CONFIG[/yellow]")
+            return
+
+        # Stop monitoring this symbol
+        with self.lock:
+            if symbol in self.current_prices:
+                del self.current_prices[symbol]
+            if symbol in self.auto_buy_allowed:
+                del self.auto_buy_allowed[symbol]
+            if symbol in self.holdings:
+                console.print(
+                    f"[yellow]Warning: {symbol} has an open position — removal won't close it[/yellow]"
+                )
+                # We intentionally do NOT force-close positions here — safety first
+            if symbol in self.pending_buy_orders:  # rare, but cleanup
+                self.pending_buy_orders = {
+                    (s, q) for s, q in self.pending_buy_orders if s != symbol
+                }
+
+            # Remove from _symbols list
+            if symbol in self._symbols:
+                self._symbols.remove(symbol)
+
+        # Remove from global CONFIG (careful — this affects future runs too)
+        del CONFIG[symbol]
+
+        # Note: schwabdev streamer does NOT have an explicit unsubscribe method in most wrappers.
+        # In practice many streamers just ignore data for keys they don't care about anymore.
+        # If heavy traffic becomes an issue, you would need to restart the whole stream subscription.
+
+        console.print(f"[green]→ Removed {symbol} from monitoring[/green]")
+        log_transaction(
+            action="SYMBOL_REMOVED",
+            symbol=symbol,
+            qty=0,
+            price=0,
+            note="Manually removed via CLI",
+            order_id=None,
+            order_status=None,
+        )
+
+    # =============================================================
+    # SHUTDOWN & RESTART
+    # =============================================================
+    def stop(self):
+        """Stop the bot and streamer."""
+        self.running = False
+        self.streamer.stop()
+        console.print("[red]Bot stopped.[/red]")
+
+    def graceful_shutdown(self):
+        """Helper to cleanly stop streaming and threads without killing the process"""
+        self.running = False
+        try:
+            self.streamer.stop()
+            console.print("[yellow]Streamer stopped[/yellow]")
+        except Exception as e:
+            console.print(f"[dim red]Error stopping streamer: {e}[/dim red]")
+        # Give threads a moment to notice running=False
+        time.sleep(1.5)
+
+    def restart(self):
+        """Restart streaming and monitoring without exiting the process"""
+        console.print("[bold yellow]Restarting bot...[/bold yellow]")
+
+        self.graceful_shutdown()
+
+        # Reset state
+        self.running = True
+        self.trading_paused = False
+        self.first_api_pull = True
+        self.last_holdings_sync = time.time()
+        self.invalidate_open_orders_cache()
+        self._account_snapshot_cache_time = None
+        # ... you can reset other caches if needed
+
+        # Re-fetch account hash in case something weird happened
+        try:
+            self.account_hash = self._get_account_hash()
+        except Exception as e:
+            console.print(f"[red]Failed to refresh account hash: {e}[/red]")
+            return
+
+        # Re-start the stream
+        try:
+            self.start_stream()  # ← this is your existing method that calls streamer.start() + sends subscriptions
+            console.print("[green]Streamer restarted and re-subscribed[/green]")
+        except Exception as e:
+            console.print(f"[red]Failed to restart stream: {e}[/red]")
+            return
+
+        # Re-start the logic thread (it will see running=True again)
+        logic_thread = threading.Thread(target=self.monitor_logic, daemon=True)
+        logic_thread.start()
+
+        if self.mode == "full":  # assuming you store self.mode = args.mode in __init__
+            display_thread = threading.Thread(target=self.monitor_display, daemon=True)
+            display_thread.start()
+        else:
+            cli_thread = threading.Thread(target=self.cli_loop, daemon=True)
+            cli_thread.start()
+
+        console.print("[bold green]Bot restarted successfully[/bold green]")
+
+
+bot = TradingBot()  # your class instance
 
 # ── Dash app ────────────────────────────────────────────────────────────────
 app = dash.Dash(
     __name__,
     external_stylesheets=[dbc.themes.DARKLY],  # SLATE, CYBORG or FLATLY, etc
-    assets_folder="assets",
-)
-
-app = dash.Dash(
-    __name__,
-    external_stylesheets=[dbc.themes.DARKLY],
     assets_folder="assets",
 )
 
@@ -919,7 +1223,18 @@ app.layout = dbc.Container(
             ],
             className="mb-4",
         ),
-        
+        dbc.Row(
+            dbc.Col(
+                dbc.Button(
+                    "Refresh Now",
+                    id="refresh-button",
+                    color="primary",
+                    className="mb-3",
+                ),
+                width={"size": 3, "offset": 0},
+            ),
+            className="mb-3",
+        ),
         # Positions - full width (unchanged)
         html.H4("Positions", className="mt-4 mb-2"),
         dash_table.DataTable(
@@ -946,7 +1261,6 @@ app.layout = dbc.Container(
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
         ),
-        
         # Open Orders - full width (unchanged)
         html.H4("Open Orders", className="mt-5 mb-2"),
         dash_table.DataTable(
@@ -974,7 +1288,6 @@ app.layout = dbc.Container(
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
         ),
-        
         # ── Account Summary - now half width ────────────────────────────────
         dbc.Row(
             dbc.Col(
@@ -989,7 +1302,7 @@ app.layout = dbc.Container(
                         style_table={
                             "overflowX": "auto",
                             "maxWidth": "100%",
-                            "width": "100%",           # ← fills the column
+                            "width": "100%",  # ← fills the column
                         },
                         style_cell={"textAlign": "left"},
                         style_header={
@@ -1003,14 +1316,13 @@ app.layout = dbc.Container(
                         },
                     ),
                 ],
-                width=6,          # ← this is the key change: half width
+                width=6,  # ← this is the key change: half width
                 lg=6,
-                md=12,            # full width on smaller screens
+                md=12,  # full width on smaller screens
                 xs=12,
             ),
-            className="mb-4",     # adds some bottom margin
+            className="mb-4",  # adds some bottom margin
         ),
-        
         # Footer
         html.Div(id="status-footer", className="mt-5 text-center"),
         dcc.Interval(id="interval-component", interval=8 * 1000, n_intervals=0),
@@ -1020,7 +1332,7 @@ app.layout = dbc.Container(
 )
 
 
-# ── FIXED CALLBACK (this is what was breaking your account-summary table) ─────
+# ── FIXED CALLBACK ────────────────────────────────────────────────────────────
 @app.callback(
     [
         Output("positions-table", "data"),
@@ -1028,9 +1340,13 @@ app.layout = dbc.Container(
         Output("account-summary-table", "data"),
         Output("status-footer", "children"),
     ],
-    Input("interval-component", "n_intervals"),
+    [
+        Input("interval-component", "n_intervals"),
+        Input("refresh-button", "n_clicks"),
+    ],
+    prevent_initial_call=True,  # optional: skip first empty call
 )
-def update_dashboard(n):
+def update_dashboard(n_interval, n_clicks):
     try:
         # Positions
         positions_data = []
@@ -1073,10 +1389,10 @@ def update_dashboard(n):
                     "Duration": o.get("duration", "—"),
                 }
             )
-        
+
         # Account Summary
         snapshot = bot.get_account_snapshot()
-        
+
         account_data = [
             {"Metric": "Equity(Net Liq)", "Value": f"${snapshot['equity']:,.2f}"},
             {
@@ -1114,17 +1430,35 @@ def update_dashboard(n):
 
 # ── Main ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # Start your streaming + background logic in daemon threads
+    parser = argparse.ArgumentParser(description="Schwab Trading Bot")
+    parser.add_argument(
+        "--mode",
+        choices=["full", "cli"],
+        default="cli",
+        help="full = rich terminal dashboard + web dashboard | cli = web dashboard only + terminal commands",
+    )
+    args = parser.parse_args()
+
+    bot = TradingBot(mode=args.mode)
     bot.start_stream()
 
-    monitor_thread = threading.Thread(target=bot.monitor_loop, daemon=True)
-    monitor_thread.start()
+    # Always run the logic thread
+    logic_thread = threading.Thread(target=bot.monitor_logic, daemon=True)
+    logic_thread.start()
 
-    # Optional: keep some console logging
-    print("Dashboard starting → open http://127.0.0.1:8050/")
-    print("Streaming + bot logic running in background...")
+    if args.mode == "full":
+        display_thread = threading.Thread(target=bot.monitor_display, daemon=True)
+        display_thread.start()
+        console.print(
+            "[bold green]FULL MODE - Terminal + Web dashboard active[/bold green]"
+        )
+    else:
+        cli_thread = threading.Thread(target=bot.cli_loop, daemon=True)
+        cli_thread.start()
+        console.print(
+            "[bold green]CLI MODE - Web dashboard only + terminal commands active[/bold green]"
+        )
 
-    # Start Dash server (blocks main thread)
-    app.run(
-        debug=True, use_reloader=False
-    )  # use_reloader=False → avoids double thread start
+    # print("Dashboard starting → open http://127.0.0.1:8050/")
+    # Fix: remove duplicate app = dash.Dash line (was in your original)
+    app.run(debug=True, use_reloader=False)

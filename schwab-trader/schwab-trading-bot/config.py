@@ -46,7 +46,7 @@ RISK_CONFIG = {
     "max_positions": 4,  # never hold more than 4 symbols at once
     "min_account_equity": 5000.0,  # emergency stop if account drops below this
     "max_daily_loss_pct": 3.0,  # auto-pause buying after 3% daily loss
-    "default_shares": 1
+    "default_shares": 1,
 }
 
 

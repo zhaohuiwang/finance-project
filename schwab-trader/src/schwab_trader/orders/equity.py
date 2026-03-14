@@ -2,11 +2,13 @@ from enum import Enum
 from src.schwab_trader.accounts.type_literal import OrderType, Session, Duration
 
 # Dictionary specification for equity orders.
+# Note: Prices must be string in the JSON for precision
 
 
 def buy_market_dict(
     symbol: str,
     quantity: int,
+    session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
     """
@@ -16,7 +18,7 @@ def buy_market_dict(
     """
     return {
         "orderType": "MARKET",
-        "session": "NORMAL",
+        "session": session,
         "duration": duration,
         "orderStrategyType": "SINGLE",
         "orderLegCollection": [
@@ -35,11 +37,12 @@ def buy_market_dict(
 def sell_market_dict(
     symbol: str,
     quantity: int,
+    session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
     return {
         "orderType": "MARKET",
-        "session": "NORMAL",
+        "session": session,
         "duration": duration,
         "orderStrategyType": "SINGLE",
         "orderLegCollection": [
@@ -59,11 +62,12 @@ def buy_limit_dict(
     symbol: str,
     quantity: int,
     limit_price: float,
+    session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
     return {
         "orderType": "LIMIT",
-        "session": "NORMAL",
+        "session": session,
         "duration": duration,
         "orderStrategyType": "SINGLE",
         "price": str(limit_price),
@@ -84,11 +88,12 @@ def sell_limit_dict(
     symbol: str,
     quantity: int,
     limit_price: float,
+    session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
     return {
         "orderType": "LIMIT",
-        "session": "NORMAL",
+        "session": session,
         "duration": duration,
         "orderStrategyType": "SINGLE",
         "price": str(limit_price),
@@ -110,6 +115,8 @@ def buy_limit_trigger_sell_limit_dict(
     quantity: int,
     buy_limit_price: float,
     sell_limit_price: float,
+    session_buy: Session = "NORMAL",
+    session_sell: Session = "NORMAL",
     buy_duration: Duration = "DAY",
     sell_duration: Duration = "DAY",
 ) -> dict:
@@ -120,7 +127,7 @@ def buy_limit_trigger_sell_limit_dict(
     """
     return {
         "orderType": "LIMIT",
-        "session": "NORMAL",
+        "session": session_buy,
         "price": str(buy_limit_price),  # "34.97"
         "duration": buy_duration,
         "orderStrategyType": "TRIGGER",
@@ -134,7 +141,7 @@ def buy_limit_trigger_sell_limit_dict(
         "childOrderStrategies": [
             {
                 "orderType": "LIMIT",
-                "session": "NORMAL",
+                "session": session_sell,
                 "price": str(sell_limit_price),  # "42.03"
                 "duration": sell_duration,
                 "orderStrategyType": "SINGLE",
@@ -156,6 +163,8 @@ def sell_limit_sell_stoplimit_oco_dict(
     sell_limit_price: float,
     sell_stop_price: float,
     sell_stoplimit_price: float,
+    session_sell_limit: Session = "NORMAL",
+    session_sell_stoplimit: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
     """
@@ -167,7 +176,7 @@ def sell_limit_sell_stoplimit_oco_dict(
         "childOrderStrategies": [
             {
                 "orderType": "LIMIT",
-                "session": "NORMAL",
+                "session": session_sell_limit,
                 "price": str(sell_limit_price),  # "45.97"
                 "duration": duration,
                 "orderStrategyType": "SINGLE",
@@ -181,7 +190,7 @@ def sell_limit_sell_stoplimit_oco_dict(
             },
             {
                 "orderType": "STOP_LIMIT",
-                "session": "NORMAL",
+                "session": session_sell_stoplimit,
                 "price": str(sell_stoplimit_price),  # "37.00"
                 "stopPrice": str(sell_stop_price),  # "37.03"
                 "duration": duration,
@@ -204,6 +213,9 @@ def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
     buy_limit_price: float,
     sell_limit_price: float,
     sell_stop_price: float,
+    session_buy_limit: Session = "NORMAL",
+    session_sell_limit: Session = "NORMAL",
+    session_sell_stop: Session = "NORMAL",
     buy_duration: Duration = "DAY",
     sell_duration: Duration = "GOOD_TILL_CANCEL",
 ) -> dict:
@@ -215,7 +227,7 @@ def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
 
     return {
         "orderStrategyType": "TRIGGER",
-        "session": "NORMAL",
+        "session": session_buy_limit,
         "duration": buy_duration,
         "orderType": "LIMIT",
         "price": str(buy_limit_price),  # "14.97"
@@ -232,7 +244,7 @@ def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
                 "childOrderStrategies": [
                     {
                         "orderStrategyType": "SINGLE",
-                        "session": "NORMAL",
+                        "session": session_sell_limit,
                         "duration": sell_duration,
                         "orderType": "LIMIT",
                         "price": str(sell_limit_price),  # "15.27"
@@ -249,7 +261,7 @@ def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
                     },
                     {
                         "orderStrategyType": "SINGLE",
-                        "session": "NORMAL",
+                        "session": session_sell_stop,
                         "duration": sell_duration,
                         "orderType": "STOP",
                         "stopPrice": str(sell_stop_price),  # "11.27"
@@ -274,6 +286,7 @@ def sell_trailing_stop_dict(
     symbol: str,
     quantity: int,
     stop_price_offset: float,
+    session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
     """
@@ -284,7 +297,7 @@ def sell_trailing_stop_dict(
     return {
         "complexOrderStrategyType": "NONE",
         "orderType": "TRAILING_STOP",
-        "session": "NORMAL",
+        "session": session,
         "stopPriceLinkBasis": "BID",
         "stopPriceLinkType": "VALUE",
         "stopPriceOffset": stop_price_offset,  # 10

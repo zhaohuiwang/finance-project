@@ -553,3 +553,94 @@ print(json.dumps(order, indent=4))
 
 
 ]
+
+
+
+
+>>> resp = client.quotes("IREN").json()
+>>> print(json.dumps(resp, indent=4))
+
+{
+    "IREN": {
+        "assetMainType": "EQUITY",
+        "assetSubType": "COE",
+        "quoteType": "NBBO",
+        "realtime": true,
+        "ssid": 77026444,
+        "symbol": "IREN",
+        "extended": {
+            "askPrice": 0.0,
+            "askSize": 0,
+            "bidPrice": 0.0,
+            "bidSize": 0,
+            "lastPrice": 41.02,
+            "lastSize": 100,
+            "mark": 0.0,
+            "quoteTime": 1773388800000,
+            "totalVolume": 0,
+            "tradeTime": 1773388785000
+        },
+        "fundamental": {
+            "avg10DaysVolume": 35632658.0,
+            "avg1YearVolume": 30840034.0,
+            "divAmount": 0.0,
+            "divFreq": 0,
+            "divPayAmount": 0.0,
+            "divYield": 0.0,
+            "eps": 0.39,
+            "fundLeverageFactor": 0.0,
+            "lastEarningsDate": "2026-02-05T00:00:00Z",
+            "peRatio": 31.00525,
+            "sharesOutstanding": 332280383
+        },
+        "quote": {
+            "52WeekHigh": 76.87,
+            "52WeekLow": 5.125,
+            "askMICId": "ARCX",
+            "askPrice": 41.55,
+            "askSize": 500,
+            "askTime": 1773435300608,
+            "bidMICId": "ARCX",
+            "bidPrice": 41.44,
+            "bidSize": 100,
+            "bidTime": 1773435419662,
+            "closePrice": 41.37,
+            "highPrice": 44.15,
+            "lastMICId": "XADF",
+            "lastPrice": 41.4401,
+            "lastSize": 1000,
+            "lowPrice": 41.0,
+            "mark": 41.55,
+            "markChange": 0.18,
+            "markPercentChange": 0.4350979,
+            "netChange": 0.0701,
+            "netPercentChange": 0.16944646,
+            "openPrice": 42.625,
+            "postMarketChange": -0.1399,
+            "postMarketPercentChange": -0.33645984,
+            "quoteTime": 1773435419662,
+            "securityStatus": "Normal",
+            "totalVolume": 34316087,
+            "tradeTime": 1773435457586
+        },
+        "reference": {
+            "cusip": "Q4982L109",
+            "description": "IREN LTD",
+            "exchange": "Q",
+            "exchangeName": "NASDAQ",
+            "isHardToBorrow": false,
+            "isShortable": true,
+            "htbQuantity": 396434,
+            "htbRate": 0.0
+        },
+        "regular": {
+            "regularMarketLastPrice": 41.58,
+            "regularMarketLastSize": 1160351,
+            "regularMarketNetChange": 0.21,
+            "regularMarketPercentChange": 0.50761421,
+            "regularMarketTradeTime": 1773432000315
+        }
+    }
+}
+
+["quote"]["closePrice": 41.37,
