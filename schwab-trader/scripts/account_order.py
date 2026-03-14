@@ -7,6 +7,7 @@
 import datetime
 import json
 from pprint import pprint
+import pandas as pd
 
 from src.schwab_trader.accounts.schwab import client, SchwabAccount
 from src.schwab_trader.accounts.type_literal import Duration
@@ -32,6 +33,7 @@ from src.schwab_trader.orders.utils import (
     get_utc_time_range,
     iter_keys_path_tuple,
     iter_orders_filtered,
+    extract_final_executions,
 )
 
 # Specified an accout number, instiate a client, the client will fetch the matching account hashValue for later identification
@@ -218,11 +220,6 @@ orders = client.account_orders(
 
 print(json.dumps(orders, indent=4))
 
-import json
-
-with open("orders.json", "w") as f:
-    json.dump(orders[70:-1], f, indent=4)
-
 
 orders_flat = [
     o for root in orders for o in iter_orders_filtered(root, cancelable_only=True)
@@ -230,6 +227,16 @@ orders_flat = [
 
 print(json.dumps(orders_flat, indent=4))
 
+executions = extract_final_executions(
+    hashValue,
+    fromEnteredTime=from_time,
+    toEnteredTime=to_time,
+    # status='WORKING',
+    # status="FILLED"
+)
+
+
+df = pd.DataFrame(executions)
 
 # orders_all_account = client.account_orders_all(
 #     fromEnteredTime=from_time,

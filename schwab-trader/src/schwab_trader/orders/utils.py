@@ -327,58 +327,33 @@ def iter_orders_filtered(order, cancelable_only=False):
 
 def extract_final_executions(
     hashValue: str,
-    status: str | None,
-    fromEnteredTime: Any,
-    toEnteredTime: Any,
+    status: str | None = None,
+    fromEnteredTime: Any = None,
+    toEnteredTime: Any = None,
 ) -> list[dict[str, Any]]:
     """
-    Fetches orders for an account and extracts executed trade legs, including nested orders,
-    returning a flat list with execution details, order type, and hierarchy notes.
+    Extracts all executed orders (including nested child orders) for a given account,
+    returning a list of dictionaries with execution details, order hierarchy, and type.
 
     Args:
-        hashValue (str): Account identifier/hash to fetch orders for.
-        status (str | None): Filter orders by status (e.g., 'FILLED', 'CANCELED'); use None for no filter.
-        fromEnteredTime (Any): Start of order entry time range (typically ISO string or datetime).
-        toEnteredTime (Any): End of order entry time range (typically ISO string or datetime).
+        hashValue (str): Account hash to fetch orders for.
+        status (str | None, optional): Filter orders by status (e.g., 'FILLED'). Defaults to None.
+        fromEnteredTime (Any, optional): Start time filter for orders. Defaults to None.
+        toEnteredTime (Any, optional): End time filter for orders. Defaults to None.
 
     Returns:
-        List[Dict[str, Any]]: List of dictionaries, each representing an executed leg with:
-            - 'orderId': ID of the order
-            - 'symbol': traded instrument symbol
-            - 'side': 'BUY' or 'SELL'
-            - 'orderType': e.g., 'MARKET', 'LIMIT'
-            - 'price': execution price
-            - 'quantity': executed quantity
-            - 'time': execution timestamp as datetime
-            - 'status': order status
-            - 'note': 'simple' for top-level orders, or 'child_of_<parentId>' for nested orders
-
-    Example:
-        >>> extract_final_executions("abc123", "FILLED", "2026-01-01T00:00:00Z", "2026-01-31T23:59:59Z")
-        [
-            {
-                'orderId': 12345,
-                'symbol': 'AAPL',
-                'side': 'BUY',
-                'orderType': 'LIMIT',
-                'price': 150.0,
-                'quantity': 10,
-                'time': datetime(...),
-                'status': 'FILLED',
-                'note': 'simple'
-            },
-            {
-                'orderId': 12346,
-                'symbol': 'AAPL',
-                'side': 'SELL',
-                'orderType': 'MARKET',
-                'price': 151.0,
-                'quantity': 5,
-                'time': datetime(...),
-                'status': 'FILLED',
-                'note': 'child_of_12345'
-            }
-        ]
+        List[Dict[str, Any]]: A list of execution dictionaries with keys:
+            - orderId
+            - symbol
+            - instruction
+            - side (BUY/SELL)
+            - orderType (LIMIT, MARKET, etc.)
+            - price
+            - quantity
+            - placedTime (when the order was submitted)
+            - executedTime (when the execution occurred)
+            - status
+            - note (simple or child_of_<parent_id>)
     """
     orders = client.account_orders(
         accountHash=hashValue,
@@ -392,9 +367,13 @@ def extract_final_executions(
     def parse_orders(order_list: list[dict[str, Any]], parent_id: int | None = None) -> None:
         for order in order_list:
             order_id = order.get("orderId")
-            status = order.get("status")
+            order_status = order.get("status")
             order_type = order.get("orderType")
-
+            placed_time = (
+                datetime.fromisoformat(order["enteredTime"].replace("Z", "+00:00"))
+                if order.get("enteredTime")
+                else None
+            )
             note = "simple" if parent_id is None else f"child_of_{parent_id}"
 
             # Map legId → instrument info
@@ -412,29 +391,32 @@ def extract_final_executions(
                 for exec_leg in activity.get("executionLegs", []):
                     leg_id = exec_leg.get("legId")
                     leg_info = leg_map.get(leg_id, {})
-
                     instruction = leg_info.get("instruction", "")
                     side = "BUY" if instruction.startswith("BUY") else "SELL"
+
+                    executed_time = (
+                        datetime.fromisoformat(exec_leg["time"].replace("Z", "+00:00"))
+                        if exec_leg.get("time")
+                        else None
+                    )
 
                     results.append(
                         {
                             "orderId": order_id,
                             "symbol": leg_info.get("symbol"),
+                            "instruction": instruction,
                             "side": side,
                             "orderType": order_type,
                             "price": exec_leg.get("price"),
                             "quantity": exec_leg.get("quantity"),
-                            "time": dt.datetime.fromisoformat(
-                                exec_leg["time"].replace("Z", "+00:00")
-                            )
-                            if exec_leg.get("time")
-                            else None,
-                            "status": status,
+                            "status": order_status,
                             "note": note,
+                            "placedTime": placed_time,
+                            "executedTime": executed_time,
                         }
                     )
 
-            # recurse nested orders
+            # Recurse nested orders
             if "childOrderStrategies" in order:
                 parse_orders(order["childOrderStrategies"], parent_id=order_id)
 
