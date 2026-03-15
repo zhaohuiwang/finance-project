@@ -6,11 +6,9 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 
 from dotenv import load_dotenv
+from pathlib import Path
 from rich.console import Console
-
-
-from schwab_trader.config.config import TradingConfig
-
+from schwab_trader.config.bot.config import TradingConfig
 from dash import Dash, dcc, html, dash_table, Input, Output, State
 from dash.exceptions import PreventUpdate
 
@@ -20,12 +18,13 @@ from schwab_trader.pipelines.bot import TradingBot
 load_dotenv()
 console = Console()
 
-cfg = TradingConfig.load_from_file("../conf/bot/conf.yaml")
+cfg = TradingConfig.load_from_file(
+    Path(__file__).parent / "../conf/bot/conf.yaml"
+)
 
-bot = TradingBot()  # your class instance
 
-bot.symbols = cfg.symbols
-bot.risk_config = cfg.risk
+bot = TradingBot(cfg, mode="cli")  # your class instance
+
 
 # ── Dash app ────────────────────────────────────────────────────────────────
 app = Dash(
@@ -170,7 +169,7 @@ def update_dashboard(n_interval, n_clicks):
         # Positions
         positions_data = []
         with bot.lock:
-            for sym in bot._symbols:
+            for sym in bot.symbols_config:
                 price = bot.current_prices.get(sym)
                 h = bot.holdings.get(sym, {})
                 shares = h.get("shares", 0)
@@ -234,7 +233,7 @@ def update_dashboard(n_interval, n_clicks):
             if bot.daily_start_equity > 0
             else 0
         )
-        risk_used = len(bot.holdings) / RISK_CONFIG["max_positions"] * 100
+        risk_used = len(bot.holdings) / bot.risk_config.max_positions * 100
         status_text = (
             f"Equity(Net Liq): ${snapshot['equity']:,.0f} | Daily P/L: {daily_pnl:+.1f}% | "
             f"Risk Used: {risk_used:.0f}% | {'PAUSED' if bot.trading_paused else 'ACTIVE'}"
@@ -258,7 +257,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    bot = TradingBot(mode=args.mode)
+    bot = TradingBot(cfg, mode=args.mode)
     bot.start_stream()
 
     # Always run the logic thread

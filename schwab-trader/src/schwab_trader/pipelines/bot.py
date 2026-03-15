@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich.columns import Columns
 from rich.prompt import Confirm
 
-from schwab_trader.config.config import SymbolConfig, TradingConfig
+from schwab_trader.config.bot.config import SymbolConfig, TradingConfig
 from schwab_trader.utils.db import init_db, log_transaction, save_state, get_last_buy_price, load_state
 from schwab_trader.orders.utils import extract_final_executions
 
@@ -38,12 +38,12 @@ class TradingBot:
         self.symbols_config = cfg.symbols
         
 
-        self.current_prices = {sym: None for sym in self.symbols_config}
+        self.current_prices = {sym: None for sym in self.symbols}
         self.holdings = {}
 
         # ── Duplicate-buy protection + manual approval ─────────────────────
         self.auto_buy_allowed = {
-            sym: True for sym in self.symbols_config
+            sym: True for sym in self.symbols
         }  # True = next trigger is AUTO
         self.pending_buy_orders = (
             set()
@@ -82,6 +82,11 @@ class TradingBot:
         #     f"[bold cyan]Account Equity at start: ${self.daily_start_equity:,.2f}[/bold cyan]"
         # )
 
+
+    @property
+    def symbols(self):
+        """for easy access like for sym in self.symbols"""
+        return list(self.symbols_config.keys())
     # =============================================================
     # ACCOUNT MANAGEMENT (snapshot, holdings, cache invalidation)
     # =============================================================
@@ -161,7 +166,7 @@ class TradingBot:
             new_h = {}
             for p in positions:
                 sym = p["instrument"]["symbol"]
-                if sym in self.symbols and float(p.get("longQuantity", 0)) > 0:
+                if sym in self.symbols_config and float(p.get("longQuantity", 0)) > 0:
                     new_h[sym] = {
                         "shares": float(p["longQuantity"]),
                         "buy_price": p.get("averagePrice", 0),
@@ -522,12 +527,12 @@ class TradingBot:
         # Quotes
         self.streamer.send(
             self.streamer.level_one_equities(
-                ",".join(self.symbols),
+                ",".join(self.symbols_config.keys()),
                 "0,1,2,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18",  # 3 = last price, 16 = previous close price
             )
         )  # https://schwab-py.readthedocs.io/en/latest/streaming.html#schwab.streaming.StreamClient.LevelOneEquityFields
         console.print(
-            f"[green]→ Subscribed to LEVELONE_EQUITIES for {self.symbols}[/green]"
+            f"[green]→ Subscribed to LEVELONE_EQUITIES for {self.symbols_config.keys()}[/green]"
         )
 
         # Account activity (convenience method handles subkey automatically)
@@ -688,7 +693,7 @@ class TradingBot:
         table.add_column("Status")
 
         with self.lock:
-            for sym in self.symbols_config:
+            for sym in self.symbols:
                 price = self.current_prices.get(sym)
                 h = self.holdings.get(sym, {})
                 shares = h.get("shares", 0)
@@ -780,7 +785,7 @@ class TradingBot:
                     holdings_copy = dict(self.holdings)
                     prices_copy = dict(self.current_prices)
                     view = {}
-                    for sym in self.symbols_config:
+                    for sym in self.symbols:
                         p = prices_copy.get(sym)
                         h = holdings_copy.get(sym, {})
                         view[sym] = (p, h.get("shares", 0), h.get("buy_price"))
@@ -823,7 +828,7 @@ class TradingBot:
                 prices_copy = dict(self.current_prices)
 
             # ── Buy trigger logic (exactly the same as before) ──
-            for sym in self.symbols_config:
+            for sym in self.symbols:
                 if sym in holdings_copy and holdings_copy[sym].get("shares", 0) > 0:
                     continue
                 price = prices_copy.get(sym)
@@ -905,7 +910,7 @@ class TradingBot:
                     prices_copy = dict(self.current_prices)
 
                     view = {}
-                    for sym in self.symbols_config:
+                    for sym in self.symbols:
                         p = prices_copy.get(sym)
                         h = holdings_copy.get(sym, {})
                         view[sym] = (p, h.get("shares", 0), h.get("buy_price"))
@@ -922,7 +927,7 @@ class TradingBot:
                     live.update(self.make_dashboard())
 
                     # Buy logic (only when changed or periodically)
-                    for sym in self.symbols_config:
+                    for sym in self.symbols:
                         if (
                             sym in holdings_copy
                             and holdings_copy[sym].get("shares", 0) > 0
@@ -1019,12 +1024,12 @@ class TradingBot:
                     console.print("""Commands:
                     add SYMBOL {"buy_target_price": 8.0, ...}
                     remove SYMBOL
-                    list | add | remove | pause | resume | stop | restart
+                    list | add | remove | pause | resume | stop | restart | config
                     """)
                     continue
                 elif command == "list":
                     with self.lock:
-                        active = ", ".join(sorted(self.symbols)) or "(none)"
+                        active = ", ".join(sorted(self.symbols_config)) or "(none)"
                     console.print(f"[cyan]Currently monitoring: {active}[/cyan]")
                     continue
                 elif command == "remove":
@@ -1055,13 +1060,18 @@ class TradingBot:
                         _, rest = cmd_line.split(" ", 1)
                         sym_part, json_part = rest.split(" ", 1)
                         sym = sym_part.upper()
-                        cfg = json.loads(json_part)
+                        cfg_dict = json.loads(json_part)
+                        cfg = SymbolConfig(**cfg_dict)
+
                         self.add_new_symbol(sym, cfg)
                     except Exception as e:
                         console.print(f"[red]Add error: {e}[/red]")
                     continue
                 elif command == "restart":
                     self.restart()
+                    continue
+                elif command == "config":
+                    console.print(self.symbols_config)
                     continue
                 else:
                     console.print(
@@ -1078,20 +1088,16 @@ class TradingBot:
     # DYNAMIC SYMBOL MANAGEMENT
     # =============================================================
     def add_new_symbol(self, symbol: str, cfg: SymbolConfig):
-        """Dynamically add a symbol (updates CONFIG + stream subscription)."""
-        if symbol in self.symbols:
+        """Add a symbol dynamically"""
+
+        if symbol in self.symbols_config:
             console.print(f"[yellow]{symbol} already exists[/yellow]")
             return
 
-        # self.symbols_config = cfg.symbols
-        # self.symbols = cfg.symbols.keys()
-        
         with self.lock:
             self.symbols_config[symbol] = cfg
-            self.symbols = list(self.symbols_config.keys())
             self.current_prices[symbol] = None
             self.auto_buy_allowed[symbol] = True
-            self.holdings.pop(symbol, None)
 
         try:
             self.streamer.send(
@@ -1106,47 +1112,25 @@ class TradingBot:
         symbol = symbol.upper()
 
         if symbol not in self.symbols_config:
-            console.print(f"[yellow]Symbol {symbol} not found in CONFIG[/yellow]")
+            console.print(f"[yellow]{symbol} not found[/yellow]")
             return
 
-        # Stop monitoring this symbol
         with self.lock:
-            if symbol in self.current_prices:
-                del self.current_prices[symbol]
-            if symbol in self.auto_buy_allowed:
-                del self.auto_buy_allowed[symbol]
+
+            self.symbols_config.pop(symbol, None)
+            self.current_prices.pop(symbol, None)
+            self.auto_buy_allowed.pop(symbol, None)
+
             if symbol in self.holdings:
                 console.print(
-                    f"[yellow]Warning: {symbol} has an open position — removal won't close it[/yellow]"
+                    f"[yellow]{symbol} has open position (not closing automatically)[/yellow]"
                 )
-                # We intentionally do NOT force-close positions here — safety first
-            if symbol in self.pending_buy_orders:  # rare, but cleanup
-                self.pending_buy_orders = {
-                    (s, q) for s, q in self.pending_buy_orders if s != symbol
-                }
 
-            # Remove from _symbols list
-            if symbol in self.symbols:
-                self.symbols.remove(symbol)
+            self.pending_buy_orders = {
+                (s, q) for s, q in self.pending_buy_orders if s != symbol
+            }
 
-        # Remove from global CONFIG (careful — this affects future runs too)
-        del self.symbols_config[symbol]
-        self.symbols = list(self.symbols_config.keys())
-
-        # Note: schwabdev streamer does NOT have an explicit unsubscribe method in most wrappers.
-        # In practice many streamers just ignore data for keys they don't care about anymore.
-        # If heavy traffic becomes an issue, you would need to restart the whole stream subscription.
-
-        console.print(f"[green]→ Removed {symbol} from monitoring[/green]")
-        log_transaction(
-            action="SYMBOL_REMOVED",
-            symbol=symbol,
-            qty=0,
-            price=0,
-            note="Manually removed via CLI",
-            order_id=None,
-            order_status=None,
-        )
+        console.print(f"[green]Removed {symbol}[/green]")
 
     # =============================================================
     # SHUTDOWN & RESTART

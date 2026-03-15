@@ -51,6 +51,7 @@ python bot.py --mode cli           # web only + live terminal commands
 > resume
 > stop
 > restart
+> config
 
 ```
 

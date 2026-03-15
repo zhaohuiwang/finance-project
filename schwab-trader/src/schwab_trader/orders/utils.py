@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from typing import  Any
 
-from src.schwab_trader.accounts.schwab import client
+from schwab_trader.accounts.schwab import client
 
 
 def place_order(client, accountHash: str, order: dict) -> tuple[int, str, str]:
