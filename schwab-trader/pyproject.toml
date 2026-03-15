@@ -27,3 +27,17 @@ dependencies = [
 
 [tool.uv.sources]
 schwabdev = { path = "../github-lib/schwabdev", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/schwab_trader"]
+
+
+# Python uses the build backend (Hatchling) to create a wheel. (Python installs packages from wheels. This project is also treated as a package).
+# What a “Wheel” Is: A wheel contains: 1. compiled binaries (if needed) 2. package files 3. metadata. Installing from a wheel is basically unzipping files, which is very fast.
+# How uv Is Different: uv maintains a shared global cache for all Python environments on your machine (~/.cache/uv).
+
+# editable install behavior: uv installs packages specified dependencies mormally as wheels into site-packages. Those are not editable. When you run `uv sync` you will see `schwab-trader==0.1.0 (from file:///home/zhaohuiwang/dev/finance-project/schwab-trader)` You local project is in the path specified in the parentheses is referred as `schwab-trader==0.1.0`. Any edits you make in your local project are immediately visible in python without reinstalling. Now you can `from schwab_trader.utils.db import init_db; import sachwab_trader`. So editable install behavior is basically a link (via a .pth file) from the virtual environment to your local project.

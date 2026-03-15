@@ -2,7 +2,7 @@
 Start a venv and run the bot
 ```Bash
 cd ~/dev/finance-project/schwab-trader && source .venv/bin/activate
-python3 schwab-trading-bot/bot_v2.py
+python3 -m schwab_bot.bot --mode cli
 ```
 You will see:
 * Console Rich live dashboard (updates on price change)
@@ -40,7 +40,7 @@ While the bot is running in one terminla, you can open another terminal and add 
 ```Pyhton
 (schwab-trader) zhaohuiwang@WangFamily:~/dev/finance-project/schwab-trader/schwab-trading-bot$ python3
 
-python3 schwab-trading-bot/bot_v2.py --mode cli
+python3 schwab-trading-bot/bot.py --mode cli
 
 python bot.py --mode full          # original behaviour (rich + web)
 python bot.py --mode cli           # web only + live terminal commands

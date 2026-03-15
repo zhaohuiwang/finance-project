@@ -19,16 +19,16 @@ from rich.panel import Panel
 from rich.columns import Columns
 from rich.prompt import Confirm
 
-from config import CONFIG, RISK_CONFIG
-from db import init_db, log_transaction, save_state, get_last_buy_price, load_state
+from schwab_bot.config import CONFIG, RISK_CONFIG
+from schwab_bot.db import init_db, log_transaction, save_state, get_last_buy_price, load_state
 
 from dash import Dash, dcc, html, dash_table, Input, Output, State
 from dash.exceptions import PreventUpdate
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-print(sys.path)
+# import sys
+# from pathlib import Path
+# sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# print(sys.path)
 from src.schwab_trader.orders.utils import extract_final_executions
 
 
