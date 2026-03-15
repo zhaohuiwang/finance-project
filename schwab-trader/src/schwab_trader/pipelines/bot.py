@@ -16,18 +16,16 @@ from rich.panel import Panel
 from rich.columns import Columns
 from rich.prompt import Confirm
 
-from schwab_trader.config.config import CONFIG, RISK_CONFIG
+from schwab_trader.config.config import SymbolConfig, TradingConfig
 from schwab_trader.utils.db import init_db, log_transaction, save_state, get_last_buy_price, load_state
 from schwab_trader.orders.utils import extract_final_executions
 
 
 load_dotenv()
 console = Console()
-CACHE_TTL_SECONDS = 60
-
 
 class TradingBot:
-    def __init__(self, mode: str = "cli"):
+    def __init__(self, cfg: TradingConfig, mode: str = "cli"):
         """Initialize client, caches, state flags, and start DB."""
         init_db()
         self.client = schwabdev.Client(
@@ -35,15 +33,17 @@ class TradingBot:
         )
         self.mode = mode
         self.streamer = schwabdev.Stream(self.client)
+        
+        self.risk_config = cfg.risk
+        self.symbols_config = cfg.symbols
+        
 
-        self._symbols = CONFIG.keys()
-
-        self.current_prices = {sym: None for sym in self._symbols}
+        self.current_prices = {sym: None for sym in self.symbols_config}
         self.holdings = {}
 
         # ── Duplicate-buy protection + manual approval ─────────────────────
         self.auto_buy_allowed = {
-            sym: True for sym in self._symbols
+            sym: True for sym in self.symbols_config
         }  # True = next trigger is AUTO
         self.pending_buy_orders = (
             set()
@@ -51,29 +51,28 @@ class TradingBot:
 
         self.last_holdings_sync = time.time()
         self.first_api_pull = True
-        self.HOLDINGS_SYNC_INTERVAL = (
-            60  # 1 minutes, first start has to wait to get values populated
-        )
-
-        self.lock = (
-            threading.Lock()
-        )  # ensures only one thread can execute a critical section at a time
-        self.running = True
-        self.trading_paused = False
-        self.account_hash = self._get_account_hash()
-
-        # live for CACHE_TTL_SECONDS, less frequency to all API
+        self.holding_sync_interval = 60 # 1 minutes, first start has to wait to get values populated
+        self.account_cache_ttl = 60
+        
+        # live for account_cache_ttl, less frequency to all API
         self._account_snapshot_cache_time = None
         self._equity_cache = None
         self._buying_power_cache = None
         self._cash_balance = None
         self._day_trading_bp = None
         self._non_marginable_bp = None
-
+        
+        self.lock = (
+            threading.Lock()
+        )  # ensures only one thread can execute a critical section at a time
+        self.running = True
+        self.trading_paused = False
+        self.account_hash = self._get_account_hash()
+        
         # Open orders cache
         self._open_orders_cache = None
         self._open_orders_cache_time = None
-        self.OPEN_ORDERS_CACHE_TTL = 45  # seconds, 30–90 is a good range
+        self.open_orders_cache_ttl = 45  # seconds, 30–90 is a good range
 
         # Daily risk tracking
         self.daily_start_equity = self.get_account_snapshot()["equity"]
@@ -101,10 +100,10 @@ class TradingBot:
     def get_account_snapshot(self):
         """Returns (cached or fresh) account equity, buying power, cash, etc."""
         now = time.time()
-        # If self._equity_cache has been assinged with a value (other than initial None), the API will only be called every CACHE_TTL_SECONDS, less frequently.
+        # If self._equity_cache has been assinged with a value (other than initial None), the API will only be called every account_cache_ttl, less frequently.
         if (
             self._equity_cache is not None
-            and now - self._account_snapshot_cache_time < CACHE_TTL_SECONDS
+            and now - self._account_snapshot_cache_time < self.account_cache_ttl
         ):
             return {
                 "equity": self._equity_cache,
@@ -162,7 +161,7 @@ class TradingBot:
             new_h = {}
             for p in positions:
                 sym = p["instrument"]["symbol"]
-                if sym in self._symbols and float(p.get("longQuantity", 0)) > 0:
+                if sym in self.symbols and float(p.get("longQuantity", 0)) > 0:
                     new_h[sym] = {
                         "shares": float(p["longQuantity"]),
                         "buy_price": p.get("averagePrice", 0),
@@ -239,7 +238,7 @@ class TradingBot:
         # Return cached result if still fresh
         if (
             self._open_orders_cache is not None
-            and now - self._open_orders_cache_time < self.OPEN_ORDERS_CACHE_TTL
+            and now - self._open_orders_cache_time < self.open_orders_cache_ttl
         ):
             return self._open_orders_cache
 
@@ -300,8 +299,8 @@ class TradingBot:
     # =============================================================
     def calculate_shares(self, symbol, buy_price):
         """Determine buy quantity: fixed_shares (preferred) or risk-based (currently commented)."""
-        cfg = CONFIG.get(symbol, {})
-        fixed = cfg.get("fixed_shares", 0)
+        cfg: SymbolConfig = self.symbols_config[symbol]
+        fixed = cfg.fixed_shares
 
         if fixed > 0:
             # Manual / fixed mode takes priority
@@ -312,15 +311,15 @@ class TradingBot:
         # else:
         #     # Fall back to risk-based sizing
         #     if buy_price <= 0:
-        #         shares = RISK_CONFIG["default_shares"]
+        #         shares = self.risk_config.get("default_shares")
         #     else:
         #         equity = self.get_account_snapshot()["equity"]
-        #         risk_dollars = equity * (RISK_CONFIG["risk_per_trade_pct"] / 100)
+        #         risk_dollars = equity * (self.risk_config.get(risk_per_trade_pct") / 100)
         #         stop_pct = cfg.get("stop_loss_pct", 5.0) / 100
         #         stop_distance = buy_price * stop_pct
 
         #         if stop_distance <= 0:
-        #             shares = RISK_CONFIG["default_shares"]
+        #             shares = self.risk_config.get("default_shares")
         #         else:
         #             shares = int(risk_dollars / stop_distance)
         #             shares = max(1, min(shares, 1000))  # safety bounds
@@ -341,7 +340,7 @@ class TradingBot:
         daily_pnl_pct = (
             (current_equity - self.daily_start_equity) / self.daily_start_equity * 100
         )
-        if daily_pnl_pct <= -RISK_CONFIG["max_daily_loss_pct"]:
+        if daily_pnl_pct <= -self.risk_config.max_daily_loss_pct:
             console.print(
                 f"[bold red]🚨 DAILY LOSS LIMIT HIT ({daily_pnl_pct:.1f}%) — TRADING PAUSED[/bold red]"
             )
@@ -349,7 +348,7 @@ class TradingBot:
             return False
 
         # Minimum equity guard
-        if current_equity < RISK_CONFIG["min_account_equity"]:
+        if current_equity < self.risk_config.min_account_equity:
             console.print(
                 f"[bold red]🚨 ACCOUNT BELOW MIN EQUITY (${current_equity:,.0f}) — TRADING PAUSED[/bold red]"
             )
@@ -357,7 +356,7 @@ class TradingBot:
             return False
 
         # Max positions
-        if len(self.holdings) >= RISK_CONFIG["max_positions"]:
+        if len(self.holdings) >= self.risk_config.max_positions:
             console.print("[yellow]Max positions reached — skipping new buys[/yellow]")
             return False
 
@@ -456,7 +455,7 @@ class TradingBot:
             symbol = content.get("symbol") or content.get("instrument", {}).get(
                 "symbol"
             )
-            if not symbol or symbol not in self._symbols:
+            if not symbol or symbol not in self.symbols:
                 continue  # ignore if not one of our watched stocks
 
             qty_str = content.get("quantity") or content.get("filledQuantity", "0")
@@ -523,12 +522,12 @@ class TradingBot:
         # Quotes
         self.streamer.send(
             self.streamer.level_one_equities(
-                ",".join(self._symbols),
+                ",".join(self.symbols),
                 "0,1,2,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18",  # 3 = last price, 16 = previous close price
             )
         )  # https://schwab-py.readthedocs.io/en/latest/streaming.html#schwab.streaming.StreamClient.LevelOneEquityFields
         console.print(
-            f"[green]→ Subscribed to LEVELONE_EQUITIES for {self._symbols}[/green]"
+            f"[green]→ Subscribed to LEVELONE_EQUITIES for {self.symbols}[/green]"
         )
 
         # Account activity (convenience method handles subkey automatically)
@@ -592,10 +591,10 @@ class TradingBot:
     def place_bracket_orders(self, symbol, buy_price):
         """Place GTC OCO bracket (LIMIT SELL + STOP LOSS) right after a buy fill."""
         # (unchanged from previous version — GTC OCO)
-        cfg = CONFIG[symbol]
+        cfg: SymbolConfig = self.symbols_config[symbol]
         qty = self.holdings[symbol]["shares"]
-        limit_price = round(buy_price * (1 + cfg["limit_sell_pct"] / 100), 2)
-        stop_price = round(buy_price * (1 - cfg["stop_loss_pct"] / 100), 2)
+        limit_price = round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
+        stop_price = round(buy_price * (1 - cfg.stop_loss_pct / 100), 2)
 
         oco = {
             "orderType": "OCO",
@@ -689,7 +688,7 @@ class TradingBot:
         table.add_column("Status")
 
         with self.lock:
-            for sym in self._symbols:
+            for sym in self.symbols_config:
                 price = self.current_prices.get(sym)
                 h = self.holdings.get(sym, {})
                 shares = h.get("shares", 0)
@@ -706,7 +705,7 @@ class TradingBot:
                     status,
                 )
 
-        risk_used = len(self.holdings) / RISK_CONFIG["max_positions"] * 100
+        risk_used = len(self.holdings) / self.risk_config.get("max_positions") * 100
         footer = (
             f"Equity: ${equity:,.0f} | Daily: {daily_pnl:+.1f}% | "
             f"Risk: {risk_used:.0f}% | {'PAUSED' if self.trading_paused else 'ACTIVE'}"
@@ -773,7 +772,7 @@ class TradingBot:
                     self.update_holdings_from_api()
                     self.first_api_pull = False
                 now = time.time()
-                if now - self.last_holdings_sync > self.HOLDINGS_SYNC_INTERVAL:
+                if now - self.last_holdings_sync > self.holding_sync_interval:
                     self.update_holdings_from_api()
                     self.last_holdings_sync = now
 
@@ -781,7 +780,7 @@ class TradingBot:
                     holdings_copy = dict(self.holdings)
                     prices_copy = dict(self.current_prices)
                     view = {}
-                    for sym in self._symbols:
+                    for sym in self.symbols_config:
                         p = prices_copy.get(sym)
                         h = holdings_copy.get(sym, {})
                         view[sym] = (p, h.get("shares", 0), h.get("buy_price"))
@@ -813,7 +812,7 @@ class TradingBot:
                 self.update_holdings_from_api()
                 self.first_api_pull = False
             now = time.time()
-            if now - self.last_holdings_sync > self.HOLDINGS_SYNC_INTERVAL:
+            if now - self.last_holdings_sync > self.holding_sync_interval:
                 self.update_holdings_from_api()
                 self.last_holdings_sync = now
 
@@ -824,16 +823,22 @@ class TradingBot:
                 prices_copy = dict(self.current_prices)
 
             # ── Buy trigger logic (exactly the same as before) ──
-            for sym in self._symbols:
+            for sym in self.symbols_config:
                 if sym in holdings_copy and holdings_copy[sym].get("shares", 0) > 0:
                     continue
                 price = prices_copy.get(sym)
                 if not price:
                     continue
-                cfg = CONFIG[sym]
+                cfg: SymbolConfig = self.symbols_config.get(sym)
+                if not cfg:
+                    continue
                 last_buy = get_last_buy_price(sym)
-                trigger = (price <= cfg.get("buy_target_price", float("inf"))) or (
-                    last_buy and price <= last_buy * (1 - cfg["buy_drop_pct"] / 100)
+                trigger = (
+                    price <= cfg.buy_target_price
+                    or (
+                        last_buy
+                        and price <= last_buy * (1 - cfg.buy_drop_pct / 100)
+                    )
                 )
 
                 if not (
@@ -883,12 +888,12 @@ class TradingBot:
                     self.today = datetime.date.today()
                     self.trading_paused = False
 
-                # only sync after HOLDINGS_SYNC_INTERVAL
+                # only sync after holding_sync_interval
                 if self.first_api_pull:  # No waiting when first start
                     self.update_holdings_from_api()
                     self.first_api_pull = False
                 now = time.time()
-                if now - self.last_holdings_sync > self.HOLDINGS_SYNC_INTERVAL:
+                if now - self.last_holdings_sync > self.holding_sync_interval:
                     self.update_holdings_from_api()
                     self.last_holdings_sync = now
 
@@ -900,7 +905,7 @@ class TradingBot:
                     prices_copy = dict(self.current_prices)
 
                     view = {}
-                    for sym in self._symbols:
+                    for sym in self.symbols_config:
                         p = prices_copy.get(sym)
                         h = holdings_copy.get(sym, {})
                         view[sym] = (p, h.get("shares", 0), h.get("buy_price"))
@@ -917,7 +922,7 @@ class TradingBot:
                     live.update(self.make_dashboard())
 
                     # Buy logic (only when changed or periodically)
-                    for sym in self._symbols:
+                    for sym in self.symbols_config:
                         if (
                             sym in holdings_copy
                             and holdings_copy[sym].get("shares", 0) > 0
@@ -928,13 +933,15 @@ class TradingBot:
                         if not price:
                             continue
 
-                        cfg = CONFIG[sym]
+                        cfg: SymbolConfig = self.symbols_config.get(sym)
+                        if not cfg:
+                            continue
                         last_buy = get_last_buy_price(sym)
                         trigger = (
-                            price <= cfg.get("buy_target_price", float("inf"))
+                            price <= cfg.buy_target_price or float("inf")
                         ) or (
                             last_buy
-                            and price <= last_buy * (1 - cfg["buy_drop_pct"] / 100)
+                            and price <= last_buy * (1 - cfg.buy_drop_pct / 100)
                         )
 
                         if not (
@@ -1017,7 +1024,7 @@ class TradingBot:
                     continue
                 elif command == "list":
                     with self.lock:
-                        active = ", ".join(sorted(self._symbols)) or "(none)"
+                        active = ", ".join(sorted(self.symbols)) or "(none)"
                     console.print(f"[cyan]Currently monitoring: {active}[/cyan]")
                     continue
                 elif command == "remove":
@@ -1070,15 +1077,18 @@ class TradingBot:
     # =============================================================
     # DYNAMIC SYMBOL MANAGEMENT
     # =============================================================
-    def add_new_symbol(self, symbol: str, cfg: dict):
+    def add_new_symbol(self, symbol: str, cfg: SymbolConfig):
         """Dynamically add a symbol (updates CONFIG + stream subscription)."""
-        if symbol in CONFIG:
+        if symbol in self.symbols:
             console.print(f"[yellow]{symbol} already exists[/yellow]")
             return
 
-        CONFIG[symbol] = cfg
+        # self.symbols_config = cfg.symbols
+        # self.symbols = cfg.symbols.keys()
+        
         with self.lock:
-            self._symbols = list(CONFIG.keys())
+            self.symbols_config[symbol] = cfg
+            self.symbols = list(self.symbols_config.keys())
             self.current_prices[symbol] = None
             self.auto_buy_allowed[symbol] = True
             self.holdings.pop(symbol, None)
@@ -1095,7 +1105,7 @@ class TradingBot:
         """Dynamically remove a symbol from monitoring (unsubscribes + cleans up state)"""
         symbol = symbol.upper()
 
-        if symbol not in CONFIG:
+        if symbol not in self.symbols_config:
             console.print(f"[yellow]Symbol {symbol} not found in CONFIG[/yellow]")
             return
 
@@ -1116,11 +1126,12 @@ class TradingBot:
                 }
 
             # Remove from _symbols list
-            if symbol in self._symbols:
-                self._symbols.remove(symbol)
+            if symbol in self.symbols:
+                self.symbols.remove(symbol)
 
         # Remove from global CONFIG (careful — this affects future runs too)
-        del CONFIG[symbol]
+        del self.symbols_config[symbol]
+        self.symbols = list(self.symbols_config.keys())
 
         # Note: schwabdev streamer does NOT have an explicit unsubscribe method in most wrappers.
         # In practice many streamers just ignore data for keys they don't care about anymore.

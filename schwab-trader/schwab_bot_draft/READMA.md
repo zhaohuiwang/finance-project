@@ -29,10 +29,7 @@ sqlite> select * from state;
 sqlite> select * from transactions;
 
 # Example log records
-1|2026-03-12T14:42:32.976913|BUY_SUBMITTED|IREN|2.0|41.175|MARKET|Risk-sized: 2 shares
-2|2026-03-12T14:42:40.645050|BUY_SUBMITTED|IREN|2.0|41.145|MARKET|Risk-sized: 2 shares
-3|2026-03-12T14:42:47.605828|BUY_SUBMITTED|IREN|2.0|41.165|MARKET|Risk-sized: 2 shares
-4|2026-03-12T14:42:54.450428|BUY_SUBMITTED|IREN|2.0|41.165|MARKET|Risk-sized: 2 shares
+
 ```
 
 While the bot is running in one terminla, you can open another terminal and add or take off any symbol and configuration like the following.  Both aim to give you live, on-the-fly control over what the bot pays attention to — which is one of the most valuable features in a real trading bot.

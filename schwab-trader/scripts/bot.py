@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 
-from schwab_trader.config.config import CONFIG, RISK_CONFIG
+from schwab_trader.config.config import TradingConfig
 
 from dash import Dash, dcc, html, dash_table, Input, Output, State
 from dash.exceptions import PreventUpdate
@@ -19,10 +19,13 @@ from schwab_trader.pipelines.bot import TradingBot
 
 load_dotenv()
 console = Console()
-CACHE_TTL_SECONDS = 60
 
+cfg = TradingConfig.load_from_file("../conf/bot/conf.yaml")
 
 bot = TradingBot()  # your class instance
+
+bot.symbols = cfg.symbols
+bot.risk_config = cfg.risk
 
 # ── Dash app ────────────────────────────────────────────────────────────────
 app = Dash(
