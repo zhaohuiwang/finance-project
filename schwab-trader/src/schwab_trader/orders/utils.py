@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 
 from typing import  Any
-import datetime
 
 from src.schwab_trader.accounts.schwab import client
 
@@ -125,35 +124,6 @@ def get_utc_time_range(
     return to_iso_utc(from_time), to_iso_utc(to_time)
 
 
-def iter_key_where(data, key="orderId", boolean_key="cancelable"):
-    """
-    Find all specified key values in a nested order structure, conditional on boolean_key at the same dictionary level, or local.
-    Only knows how to handle two types of containers: dictionaries and lists. Everything else is ignored.
-    Works with arbitrary depth of childOrderStrategies.
-    a. Check if this dictionary is an order we want to collect
-    b. Regardless of whether we yielded or not — look inside every value.
-
-    Example:
-    >>> all_ids = list(iter_key_where(orders, key="orderId", bool
-    >>> all_ids
-    [1005596382168, 1005596382169]
-
-    # or just iterate:
-    >>> for oid in iter_key_where(orders, key="orderId" boolean_key="cancelable"):
-    ...     print(oid)
-    ...
-    1005596382168
-    1005596382169
-    """
-    if isinstance(data, dict):
-        # Only yield if boolean_key value is True
-        if key in data and data.get(boolean_key) is True:
-            yield data[key]
-        for v in data.values():
-            yield from iter_key_where(v, key, boolean_key)  # recursion engine.
-    elif isinstance(data, list):
-        for i in data:
-            yield from iter_key_where(i, key, boolean_key)
 
 
 ###  Instead of recursion, we use a stack to remember what to process next. Each iteration pops a node from the stack and checks it. Children are pushed onto the stack instead of calling recursively. No yield from is needed — the while loop naturally continues iteration.
@@ -261,69 +231,6 @@ def iter_keys_path_tuple(
 to_iso_utc = lambda dt: dt.astimezone(timezone.utc).isoformat(timespec="milliseconds")
 
 
-def iter_orders_filtered(order, cancelable_only=False):
-    """
-    Yield flattened order records from a Schwab/TD Ameritrade order tree.
-
-    Parameters
-    ----------
-    order : dict
-        Single order dictionary (can contain childOrderStrategies)
-    cancelable_only : bool, default False
-        If True, yields only orders with cancelable=True.
-        If False, yields all orders.
-
-    Yields
-    ------
-    dict
-        Flattened order info with:
-            - orderId
-            - orderType
-            - duration
-            - price
-            - legs: list of dicts with instruction, symbol, quantity
-    Example: where orders is a list of orders from client.account_orders().json()
-    orders_flat_cancelable = [o for root in orders for o in iter_orders_filtered(root, cancelable_only=True)]
-
-    """
-    # Skip non-cancelable orders if requested
-    if cancelable_only and not order.get("cancelable", False):
-        return
-
-    if "orderLegCollection" in order:
-        # find price (price, stopPrice, etc.)
-        price_value = order.get("price")
-        if price_value is None:
-            for k, v in order.items():
-                if "price" in k.lower():
-                    price_value = v
-                    break
-
-        # merge all legs
-        legs = []
-        for leg in order["orderLegCollection"]:
-            legs.append(
-                {
-                    "instruction": leg["instruction"],
-                    "symbol": leg["instrument"]["symbol"],
-                    "quantity": leg["quantity"],
-                }
-            )
-
-        extracted = {
-            "orderId": order.get("orderId"),
-            "orderType": order.get("orderType"),
-            "duration": order.get("duration"),
-            "price": price_value,
-            "legs": legs,
-        }
-
-        yield extracted
-
-    # recurse into child orders
-    for child in order.get("childOrderStrategies", []):
-        yield from iter_orders_filtered(child, cancelable_only=cancelable_only)
-
 
 def extract_final_executions(
     hashValue: str,
@@ -342,19 +249,10 @@ def extract_final_executions(
         toEnteredTime (Any, optional): End time filter for orders. Defaults to None.
 
     Returns:
-        List[Dict[str, Any]]: A list of execution dictionaries with keys:
-            - orderId
-            - symbol
-            - instruction
-            - side (BUY/SELL)
-            - orderType (LIMIT, MARKET, etc.)
-            - price
-            - quantity
-            - placedTime (when the order was submitted)
-            - executedTime (when the execution occurred)
-            - status
-            - note (simple or child_of_<parent_id>)
+        List[Dict[str, Any]]: A list of execution dictionaries.
     """
+    from datetime import datetime
+    
     orders = client.account_orders(
         accountHash=hashValue,
         fromEnteredTime=fromEnteredTime,
@@ -368,6 +266,8 @@ def extract_final_executions(
         for order in order_list:
             order_id = order.get("orderId")
             order_status = order.get("status")
+            cancelable = order.get("cancelable")
+            editable = order.get("editable")
             order_type = order.get("orderType")
             placed_time = (
                 datetime.fromisoformat(order["enteredTime"].replace("Z", "+00:00"))
@@ -410,6 +310,8 @@ def extract_final_executions(
                             "price": exec_leg.get("price"),
                             "quantity": exec_leg.get("quantity"),
                             "status": order_status,
+                            "cancelable": cancelable,
+                            "editable": editable,
                             "note": note,
                             "placedTime": placed_time,
                             "executedTime": executed_time,

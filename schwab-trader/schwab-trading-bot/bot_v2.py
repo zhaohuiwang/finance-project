@@ -1,30 +1,37 @@
 # bot.py
-import json
+import argparse
+import os
 import time
-import threading
+import hashlib
+import json
 import datetime
 import schwabdev
+import threading
+
+import dash_bootstrap_components as dbc
+import pandas as pd
+
 from dotenv import load_dotenv
-import os
-import hashlib
 from rich.live import Live
 from rich.table import Table
 from rich.console import Console
 from rich.panel import Panel
 from rich.columns import Columns
-from rich.prompt import Confirm  #
-import argparse
+from rich.prompt import Confirm
 
 from config import CONFIG, RISK_CONFIG
 from db import init_db, log_transaction, save_state, get_last_buy_price, load_state
-import dash
-from dash import dcc, html, dash_table, Input, Output, State
-import dash_bootstrap_components as dbc
+
+from dash import Dash, dcc, html, dash_table, Input, Output, State
 from dash.exceptions import PreventUpdate
 
-import threading
-import time
-import pandas as pd
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+print(sys.path)
+from src.schwab_trader.orders.utils import extract_final_executions
+
+
 
 load_dotenv()
 console = Console()
@@ -1209,7 +1216,7 @@ class TradingBot:
 bot = TradingBot()  # your class instance
 
 # ── Dash app ────────────────────────────────────────────────────────────────
-app = dash.Dash(
+app = Dash(
     __name__,
     external_stylesheets=[dbc.themes.DARKLY],  # SLATE, CYBORG or FLATLY, etc
     assets_folder="assets",

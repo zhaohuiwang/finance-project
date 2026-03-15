@@ -4,7 +4,7 @@
 # # Add the src folder to sys.path dynamically
 # sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
-import datetime
+import datetime as dt
 import json
 from pprint import pprint
 import pandas as pd
@@ -32,7 +32,6 @@ from src.schwab_trader.orders.utils import (
     cancel_order,
     get_utc_time_range,
     iter_keys_path_tuple,
-    iter_orders_filtered,
     extract_final_executions,
 )
 
@@ -201,14 +200,14 @@ status_code, date, order_id = place_order(
 # Get all orders (or met the status) in the past delta time period
 
 from_time, to_time = get_utc_time_range(
-    # to_time= datetime.datetime(2026, 3, 6, 10, 0)
-    offset=datetime.timedelta(days=100, hours=1, minutes=5)
+    # to_time= dt.datetime(2026, 3, 6, 10, 0)
+    offset=dt.timedelta(days=100, hours=1, minutes=5)
 )
 # or simply
-from_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
     days=0, hours=2, minutes=5
 )
-to_time = datetime.datetime.now(datetime.timezone.utc)
+to_time = dt.datetime.now(dt.timezone.utc)
 
 orders = client.account_orders(
     hashValue,
@@ -220,12 +219,6 @@ orders = client.account_orders(
 
 print(json.dumps(orders, indent=4))
 
-
-orders_flat = [
-    o for root in orders for o in iter_orders_filtered(root, cancelable_only=True)
-]
-
-print(json.dumps(orders_flat, indent=4))
 
 executions = extract_final_executions(
     hashValue,
@@ -339,10 +332,10 @@ symbol_quantity = [
 ]
 
 
-from_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
     days=0, hours=2, minutes=1
 )
-to_time = datetime.datetime.now(datetime.timezone.utc)
+to_time = dt.datetime.now(dt.timezone.utc)
 
 
 response = client.account_orders_all(
