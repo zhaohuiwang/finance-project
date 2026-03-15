@@ -1,5 +1,6 @@
 
-# bot.py
+# schwab-trader/src/schwab_trader/pipelines/bot.py
+
 import os
 import time
 import hashlib
@@ -7,8 +8,10 @@ import json
 import datetime
 import schwabdev
 import threading
+import yaml
 
 from dotenv import load_dotenv
+from pathlib import Path
 from rich.live import Live
 from rich.table import Table
 from rich.console import Console
@@ -78,6 +81,14 @@ class TradingBot:
         self.daily_start_equity = self.get_account_snapshot()["equity"]
         self.today = datetime.date.today()
 
+        # For streamer health monitoring
+        self.last_message_time = time.time() # updated on ANY stream message
+        self.stream_heartbeat_interval = 30  # seconds - expected heartbeat freq
+        self.stream_silence_threshold = 90   # seconds without message → consider dead
+        self.reconnect_cooldown = 10         # min seconds between reconnect attempts
+        self.last_reconnect_attempt = 0
+        self.stream_running = False          # flag
+        
         # console.print(
         #     f"[bold cyan]Account Equity at start: ${self.daily_start_equity:,.2f}[/bold cyan]"
         # )
@@ -385,6 +396,9 @@ class TradingBot:
     # =============================================================
     def unified_receiver(self, message):
         """Unified callback that routes LEVELONE_EQUITIES or ACCT_ACTIVITY messages."""
+        with self.lock:
+            self.last_message_time = time.time()
+            
         if isinstance(message, str):
             try:
                 message = json.loads(message)
@@ -520,33 +534,82 @@ class TradingBot:
                         # if symbol in self.pending_buy_orders:
                         #     self.pending_buy_orders.remove(symbol)
 
+    # def start_stream(self):
+    #     """Start the streamer and subscribe to price + account activity feeds."""
+    #     self.streamer.start(receiver=self.unified_receiver)
+
+    #     # Quotes
+    #     self.streamer.send(
+    #         self.streamer.level_one_equities(
+    #             ",".join(self.symbols_config.keys()),
+    #             "0,1,2,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18",  # 3 = last price, 16 = previous close price
+    #         )
+    #     )  # https://schwab-py.readthedocs.io/en/latest/streaming.html#schwab.streaming.StreamClient.LevelOneEquityFields
+    #     console.print(
+    #         f"[green]→ Subscribed to LEVELONE_EQUITIES for {self.symbols_config.keys()}[/green]"
+    #     )
+
+    #     # Account activity (convenience method handles subkey automatically)
+    #     self.streamer.send(
+    #         self.streamer.account_activity("Account Activity", "0,1,2,3")
+    #     )
+    #     console.print(
+    #         "[green]→ Subscribed to ACCT_ACTIVITY (fills, executions)[/green]"
+    #     )
+
+    #     console.print(
+    #         "[bold green]Streaming active — quotes + account activity[/bold green]"
+    #     )
+
     def start_stream(self):
-        """Start the streamer and subscribe to price + account activity feeds."""
-        self.streamer.start(receiver=self.unified_receiver)
+        """
+        Start (or restart) the streamer and (re)subscribe.
+        Ref for level_one_equities: https://schwab-py.readthedocs.io/en/latest/streaming.html#schwab.streaming.StreamClient.LevelOneEquityFields
+        # """
+        try:
+            # Always stop cleanly if something exists
+            if hasattr(self, 'streamer') and self.streamer:
+                try:
+                    self.streamer.stop()
+                    console.print("[yellow]Previous streamer stopped[/yellow]")
+                except Exception as e:
+                    console.print(f"[dim red]Error stopping previous streamer: {e}[/dim red]")
+                time.sleep(1.5)  # Give it time to close sockets cleanly
 
-        # Quotes
-        self.streamer.send(
-            self.streamer.level_one_equities(
-                ",".join(self.symbols_config.keys()),
-                "0,1,2,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18",  # 3 = last price, 16 = previous close price
+            # Create a brand new Stream instance every time (avoids stale state)
+            self.streamer = schwabdev.Stream(self.client)
+
+            # Start the receiver loop in background
+            self.streamer.start(receiver=self.unified_receiver)
+
+            # (Re)subscribe quotes for ALL current symbols
+            symbols_str = ",".join(self.symbols_config.keys())
+            if symbols_str:
+                self.streamer.send(
+                    self.streamer.level_one_equities(
+                        symbols_str,
+                        "0,1,2,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18"  # full fields as in original
+                    )
+                )
+                console.print(f"[green]Subscribed to LEVELONE_EQUITIES ({len(self.symbols_config)} symbols)[/green]")
+            else:
+                console.print("[yellow]No symbols to subscribe — add some first[/yellow]")
+
+            # Always (re)subscribe account activity
+            self.streamer.send(
+                self.streamer.account_activity("Account Activity", "0,1,2,3")
             )
-        )  # https://schwab-py.readthedocs.io/en/latest/streaming.html#schwab.streaming.StreamClient.LevelOneEquityFields
-        console.print(
-            f"[green]→ Subscribed to LEVELONE_EQUITIES for {self.symbols_config.keys()}[/green]"
-        )
+            console.print("[green]Subscribed to ACCT_ACTIVITY[/green]")
 
-        # Account activity (convenience method handles subkey automatically)
-        self.streamer.send(
-            self.streamer.account_activity("Account Activity", "0,1,2,3")
-        )
-        console.print(
-            "[green]→ Subscribed to ACCT_ACTIVITY (fills, executions)[/green]"
-        )
+            # Reset heartbeat
+            with self.lock:
+                self.last_message_time = time.time()
 
-        console.print(
-            "[bold green]Streaming active — quotes + account activity[/bold green]"
-        )
+            console.print("[bold green]Stream (re)started successfully[/bold green]")
 
+        except Exception as e:
+            console.print(f"[bold red]Stream start/restart failed: {e}[/bold red]")
+            
     # =============================================================
     # ORDER PLACEMENT
     # =============================================================
@@ -1024,7 +1087,7 @@ class TradingBot:
                     console.print("""Commands:
                     add SYMBOL {"buy_target_price": 8.0, ...}
                     remove SYMBOL
-                    list | add | remove | pause | resume | stop | restart | config
+                    list | pause | resume | stop | restart | config
                     """)
                     continue
                 elif command == "list":
@@ -1051,21 +1114,26 @@ class TradingBot:
                     self.stop()
                     break
                 elif command == "add":
-                    if len(parts) < 3:
+                    if len(parts) < 2:
                         console.print(
-                            "[yellow]Usage: add SYMBOL {json config}[/yellow]"
+                            "[yellow]Usage: add SYMBOL {json-config-dict}[/yellow]\n"
+                            "Example: add AAPL {\"buy_target_price\": 10.0, \"limit_sell_price\": 25.0, "
+                            "\"buy_drop_pct\": 5.0, \"limit_sell_pct\": 10.0, \"stop_loss_pct\": 5.0, \"fixed_shares\": 10}"
                         )
                         continue
+
                     try:
-                        _, rest = cmd_line.split(" ", 1)
-                        sym_part, json_part = rest.split(" ", 1)
-                        sym = sym_part.upper()
-                        cfg_dict = json.loads(json_part)
+                        # parts[0] = "add", parts[1] = everything after it
+                        rest = parts[1]
+                        sym_part, json_part = rest.split(" ", 1)   # split only once on the first space
+                        sym = sym_part.strip().upper()
+                        cfg_dict = json.loads(json_part.strip())
                         cfg = SymbolConfig(**cfg_dict)
 
                         self.add_new_symbol(sym, cfg)
                     except Exception as e:
                         console.print(f"[red]Add error: {e}[/red]")
+                        console.print("[yellow]Make sure you put a SPACE between SYMBOL and the {json} part[/yellow]")
                     continue
                 elif command == "restart":
                     self.restart()
@@ -1083,10 +1151,54 @@ class TradingBot:
                 break
             except Exception as e:
                 console.print(f"[dim red]CLI error: {e}[/dim red]")
+                
+    def stream_watchdog(self):
+        """Background thread: monitors stream health and auto-reconnects if silent too long."""
+        console.print("[dim cyan]Streamer watchdog started[/dim cyan]")
+        
+        while self.running:
+            time.sleep(10)
+
+            if not self.running:
+                break
+
+            now = time.time()
+            time_since_last = now - self.last_message_time
+
+            if now - self.last_reconnect_attempt < self.reconnect_cooldown:
+                continue
+
+            if time_since_last > self.stream_silence_threshold:
+                console.print(
+                    f"[bold yellow]Stream silence ({time_since_last:.0f}s) → reconnecting[/bold yellow]"
+                )
+                self.last_reconnect_attempt = now
+
+                try:
+                    self.start_stream()  # ← now handles stop + new instance + subs
+                except Exception as e:
+                    console.print(f"[red]Watchdog reconnect failed: {e}[/red]")
 
     # =============================================================
     # DYNAMIC SYMBOL MANAGEMENT
     # =============================================================
+    def save_config_to_yaml(self):
+        """Persist current symbols_config back to conf.yaml"""
+        console.print("[dim]Saving updated config to conf.yaml...[/dim]")
+        try:
+            path = Path(__file__).parent / "../../conf/bot/conf.yaml"  # adjust path as needed
+            data = {
+                "symbols": {
+                    sym: cfg.model_dump() for sym, cfg in self.symbols_config.items()
+                },
+                "risk": self.risk_config.model_dump()
+            }
+            with open(path, "w") as f:
+                yaml.safe_dump(data, f, sort_keys=False)
+            console.print("[green]Configuration saved to conf.yaml[/green]")
+        except Exception as e:
+            console.print(f"[red]Failed to save config: {e}[/red]")
+        
     def add_new_symbol(self, symbol: str, cfg: SymbolConfig):
         """Add a symbol dynamically"""
 
@@ -1104,6 +1216,8 @@ class TradingBot:
                 self.streamer.level_one_equities(symbol, "0,1,2,3,4,5,6,7,8")
             )
             console.print(f"[green]✅ Added {symbol} and subscribed[/green]")
+            self.save_config_to_yaml()
+            
         except Exception as e:
             console.print(f"[red]Stream subscribe failed: {e}[/red]")
 
@@ -1130,6 +1244,7 @@ class TradingBot:
                 (s, q) for s, q in self.pending_buy_orders if s != symbol
             }
 
+        self.save_config_to_yaml()
         console.print(f"[green]Removed {symbol}[/green]")
 
     # =============================================================

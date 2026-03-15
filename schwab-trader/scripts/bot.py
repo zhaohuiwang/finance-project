@@ -1,4 +1,5 @@
-# bot.py
+# schwab-trader/scripts/bot.py
+
 import argparse
 import threading
 
@@ -260,23 +261,26 @@ if __name__ == "__main__":
     bot = TradingBot(cfg, mode=args.mode)
     bot.start_stream()
 
-    # Always run the logic thread
+    # Start logic thread
     logic_thread = threading.Thread(target=bot.monitor_logic, daemon=True)
     logic_thread.start()
+
+    # Add the watchdog thread
+    watchdog_thread = threading.Thread(target=bot.stream_watchdog, daemon=True)
+    watchdog_thread.start()
+
 
     if args.mode == "full":
         display_thread = threading.Thread(target=bot.monitor_display, daemon=True)
         display_thread.start()
-        console.print(
-            "[bold green]FULL MODE - Terminal + Web dashboard active[/bold green]"
-        )
+        console.print("[bold green]FULL MODE - Terminal + Web dashboard active[/bold green]")
     else:
         cli_thread = threading.Thread(target=bot.cli_loop, daemon=True)
         cli_thread.start()
-        console.print(
-            "[bold green]CLI MODE - Web dashboard only + terminal commands active[/bold green]"
-        )
+        console.print("[bold green]CLI MODE - Web dashboard only + terminal commands active[/bold green]")
+
+    app.run(debug=True, use_reloader=False)
 
     # print("Dashboard starting → open http://127.0.0.1:8050/")
     # Fix: remove duplicate app = dash.Dash line (was in your original)
-    app.run(debug=True, use_reloader=False)
+
