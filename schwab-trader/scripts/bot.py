@@ -54,6 +54,48 @@ app.layout = dbc.Container(
             ),
             className="mb-3",
         ),
+        # All Account Holdings - full width (new)
+        html.H4("All Account Holdings", className="mt-4 mb-2"),
+                dash_table.DataTable(
+            id="all-holdings-table",
+            columns=[
+                {"name": "Symbol", "id": "Symbol"},
+                {"name": "Price", "id": "Price"},
+                {"name": "Today's % Chg", "id": "Today's % Chg"},
+                {"name": "Shares", "id": "Shares"},
+                {"name": "Avg Buy", "id": "Avg Buy"},
+                {"name": "P/L %", "id": "P/L %"},
+                {"name": "Market Value", "id": "Market Value"},
+            ],
+            style_table={
+                "overflowX": "auto",
+                "maxWidth": "100%",
+                "width": "100%",
+            },
+            style_cell={
+                "textAlign": "left",
+                "minWidth": "80px",
+                "overflow": "hidden",
+                "textOverflow": "ellipsis",
+            },
+            style_data={"color": "white", "backgroundColor": "#212529"},
+            style_header={"backgroundColor": "#2c3e50", "color": "white"},
+            style_data_conditional=[                           # ← now valid
+                {
+                    'if': {
+                        'filter_query': '{Today\'s % Chg} contains "+"'
+                    },
+                    'color': 'lime',
+                },
+                {
+                    'if': {
+                        'filter_query': '{Today\'s % Chg} contains "-"'
+                    },
+                    'color': 'tomato',
+                },
+            ],
+        ),
+        
         # Positions - full width (unchanged)
         html.H4("Positions", className="mt-4 mb-2"),
         dash_table.DataTable(
@@ -80,6 +122,7 @@ app.layout = dbc.Container(
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
         ),
+        
         # Open Orders - full width (unchanged)
         html.H4("Open Orders", className="mt-5 mb-2"),
         dash_table.DataTable(
@@ -150,10 +193,10 @@ app.layout = dbc.Container(
     className="p-4",
 )
 
-
 # ── FIXED CALLBACK ────────────────────────────────────────────────────────────
 @app.callback(
     [
+        Output("all-holdings-table", "data"),
         Output("positions-table", "data"),
         Output("orders-table", "data"),
         Output("account-summary-table", "data"),
@@ -228,6 +271,35 @@ def update_dashboard(n_interval, n_clicks):
                 "Value": f"${snapshot['nonMarginableBP']:,.2f}",
             },
         ]
+        
+        # All Holdings (full account — any symbol)
+        all_holdings_data = []
+        with bot.lock:
+            for sym, h in bot.all_holdings.items():
+                price = bot.current_prices.get(sym) or h.get("current_price", None)
+                shares = h.get("shares", 0)
+                buy_p = h.get("buy_price")
+                pl = (
+                    round((price - buy_p) / buy_p * 100, 1)
+                    if price and buy_p and buy_p > 0
+                    else 0.0
+                )
+                market_val = round(shares * (price or 0), 2)
+                day_chg_pct = h.get("day_change_pct", 0.0)
+
+                all_holdings_data.append(
+                    {
+                        "Symbol": sym,
+                        "Shares": shares,
+                        "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
+                        "Price": f"${price:,.2f}" if price else "—",
+                        "Today's % Chg": f"{day_chg_pct:+.2f}%" if abs(day_chg_pct) > 0.001 else "—",
+                        "P/L %": f"{pl:+.1f}%",
+                        "Market Value": f"${market_val:,.2f}",
+                    }
+                )
+        all_holdings_data.sort(key=lambda x: x["Symbol"])
+        
 
         daily_pnl = (
             (snapshot["equity"] - bot.daily_start_equity) / bot.daily_start_equity * 100
@@ -240,7 +312,7 @@ def update_dashboard(n_interval, n_clicks):
             f"Risk Used: {risk_used:.0f}% | {'PAUSED' if bot.trading_paused else 'ACTIVE'}"
         )
 
-        return positions_data, orders_data, account_data, status_text
+        return all_holdings_data, positions_data, orders_data, account_data, status_text
 
     except Exception as e:
         console.print(f"[red]Dashboard callback error: {e}[/red]")

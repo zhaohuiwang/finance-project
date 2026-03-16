@@ -1,4 +1,4 @@
-# db.py
+# schwab-trader/src/schwab_trader/utils/db.py
 
 import sqlite3
 import datetime
@@ -39,7 +39,6 @@ def log_transaction(
     order_id: str,
     order_status: str,
     note: str,
-    ts: datetime,
 ):
     conn = sqlite3.connect(DB_PATH)
     ts = datetime.datetime.now().isoformat()
@@ -47,7 +46,7 @@ def log_transaction(
         """
         INSERT INTO transactions 
         (action, symbol, qty, price, order_id, order_status, note, ts)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (action, symbol, qty, price, order_id, order_status, note, ts),
     )

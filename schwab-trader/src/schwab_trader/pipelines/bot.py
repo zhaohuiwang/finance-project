@@ -22,6 +22,7 @@ from rich.prompt import Confirm
 from schwab_trader.config.bot.config import SymbolConfig, TradingConfig
 from schwab_trader.utils.db import init_db, log_transaction, save_state, get_last_buy_price, load_state
 from schwab_trader.orders.utils import extract_final_executions
+from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
 
 
 load_dotenv()
@@ -41,8 +42,9 @@ class TradingBot:
         self.symbols_config = cfg.symbols
         
 
-        self.current_prices = {sym: None for sym in self.symbols}
-        self.holdings = {}
+        self.current_prices = {sym: None for sym in self.symbols} # a live in-memory price cache. It is updated in `handle_price_message()`, statement `self.current_prices[symbol] = last_price`
+        self.holdings = {} # im-memory representation of the positions the account currently holds. It is updated by update_holdings_from_api(), statement self.client.account_details()
+        self.all_holdings = {}  # full account positions (ANY symbol, updated via API)
 
         # ── Duplicate-buy protection + manual approval ─────────────────────
         self.auto_buy_allowed = {
@@ -65,9 +67,7 @@ class TradingBot:
         self._day_trading_bp = None
         self._non_marginable_bp = None
         
-        self.lock = (
-            threading.Lock()
-        )  # ensures only one thread can execute a critical section at a time
+        self.lock = threading.RLock()  # ensures only one thread can execute a critical section at a time, and no deadlock
         self.running = True
         self.trading_paused = False
         self.account_hash = self._get_account_hash()
@@ -174,22 +174,44 @@ class TradingBot:
                 self.account_hash, fields="positions"
             ).json()
             positions = pos.get("securitiesAccount", {}).get("positions", [])
-            new_h = {}
+
+            new_watched = {}
+            new_all = {}
             for p in positions:
                 sym = p["instrument"]["symbol"]
-                if sym in self.symbols_config and float(p.get("longQuantity", 0)) > 0:
-                    new_h[sym] = {
-                        "shares": float(p["longQuantity"]),
-                        "buy_price": p.get("averagePrice", 0),
+                net_change = p["instrument"].get("netChange", 0.0)  # today's $ change
+                day_pct = p["currentDayProfitLossPercentage"] # positional level
+                long_qty = float(p.get("longQuantity", 0))
+                if long_qty > 0:
+                    avg_price = float(p.get("averagePrice") or 0)
+                    market_val = float(p.get("marketValue") or 0)
+                    current_price = market_val / long_qty if long_qty > 0 else 0.0
+
+                    # Calculate today's % price change
+                    if current_price > 0 and (current_price - net_change) != 0:
+                        day_pct = (net_change / (current_price - net_change)) * 100
+                    else:
+                        day_pct = 0.0
+
+                    entry = {
+                        "shares": long_qty,
+                        "buy_price": avg_price,
+                        "current_price": current_price,
+                        "day_change_pct": day_pct,          # calculated price %
                     }
+                    new_all[sym] = entry
+                    if sym in self.symbols_config:
+                        new_watched[sym] = entry.copy()
+
             with self.lock:
-                self.holdings = new_h
-                # If we somehow have no position but flag is locked, unlock it
+                self.holdings = new_watched
+                self.all_holdings = new_all
+                # unlock auto-buy flag for any watched symbol that is now flat
                 for sym in list(self.auto_buy_allowed.keys()):
-                    if sym not in new_h:
+                    if sym not in new_watched:
                         self.auto_buy_allowed[sym] = True
-        except:
-            pass
+        except Exception as e:
+            console.print(f"[dim red]Holdings sync failed: {e}[/dim red]")
 
     def force_sync_holdings(self):
         """Call after any trade fill for instant accuracy."""
@@ -436,7 +458,7 @@ class TradingBot:
             if symbol not in self.current_prices:
                 continue
 
-            prev_close = content.get("16")  # previous close
+            # prev_close = content.get("16")  # previous close
             last_str = content.get("3")  # last price
             if last_str is not None:
                 try:
@@ -504,6 +526,7 @@ class TradingBot:
                         )
                         # Reset for next sycle
                         self.auto_buy_allowed[symbol] = True
+                        self.force_sync_holdings()
                         console.print(
                             f"[green]→ Cycle reset: AUTO BUY re-enabled for {symbol}[/green]"
                         )
@@ -526,7 +549,7 @@ class TradingBot:
                             order_id=None,  # ← rarely present in fill message
                             order_status="FILLED",
                         )
-                        self.place_bracket_orders(symbol, price)
+                        self.place_bracket_orders(symbol, price, self.symbols_config[symbol].limit_sell_price)
                         self.save_state(symbol, price, qty)
                         self.force_sync_holdings()
                         self.invalidate_open_orders_cache()
@@ -606,6 +629,9 @@ class TradingBot:
                 self.last_message_time = time.time()
 
             console.print("[bold green]Stream (re)started successfully[/bold green]")
+            
+            # Sell holding shares once the price meet the specification
+            self.attach_brackets_to_existing_holdings()
 
         except Exception as e:
             console.print(f"[bold red]Stream start/restart failed: {e}[/bold red]")
@@ -613,6 +639,51 @@ class TradingBot:
     # =============================================================
     # ORDER PLACEMENT
     # =============================================================
+    def attach_brackets_to_existing_holdings(self):
+        """
+        On startup (or when needed): place OCO brackets on any current holdings that don't already have them.
+        """
+           
+        console.print("[cyan]Checking for existing holdings to attach brackets...[/cyan]")
+        
+        self.update_holdings_from_api()  # Ensure fresh data
+        
+        open_orders = self.get_open_orders()
+        symbols_with_open_sell = set()
+        
+        # Simple check: if there's already a SELL LIMIT or STOP for the symbol, assume bracket exists
+        for order in open_orders:
+            if order.get("instruction") in ("SELL", "SELL_SHORT"):
+                symbols_with_open_sell.add(order.get("symbol"))
+        
+        with self.lock:
+            for symbol, holding in list(self.holdings.items()):
+                if symbol not in self.symbols_config:
+                    continue  # ignore non-watched symbols
+                
+                if symbol in symbols_with_open_sell:
+                    console.print(f"[dim yellow]Skipping {symbol} — appears to have open sell orders already[/dim yellow]")
+                    continue
+                
+                qty = holding["shares"]
+                if qty <= 0:
+                    continue
+                
+                buy_price = holding.get("buy_price", 0)  # fallback if missing
+                if buy_price <= 0:
+                    # If no avg buy price known, skip or use current price (your choice)
+                    current_price = self.current_prices.get(symbol, 0)
+                    if current_price > 0:
+                        buy_price = current_price
+                        console.print(f"[yellow]Using current price as fallback for {symbol} bracket[/yellow]")
+                    else:
+                        console.print(f"[red]Cannot attach bracket for {symbol} — no buy price available[/red]")
+                        continue
+                
+                # Reuse your bracket placement logic (with fixed limit_sell_price)
+                self.place_bracket_orders(symbol, buy_price, self.symbols_config[symbol].limit_sell_price)
+                console.print(f"[green]Attached bracket to existing {symbol} position ({qty} shares)[/green]")
+    
     def place_buy_order(self, symbol: str, qty: float) -> bool:
         """Submit a MARKET BUY order (used only after all safety checks pass)."""
         if not self.risk_checks_pass(symbol):
@@ -656,56 +727,32 @@ class TradingBot:
                 self.pending_buy_orders.discard((symbol, qty))  # cleanup
             return False
 
-    def place_bracket_orders(self, symbol, buy_price):
+    def place_bracket_orders(self, symbol, buy_price, limit_sell_price):
         """Place GTC OCO bracket (LIMIT SELL + STOP LOSS) right after a buy fill."""
-        # (unchanged from previous version — GTC OCO)
         cfg: SymbolConfig = self.symbols_config[symbol]
         qty = self.holdings[symbol]["shares"]
-        limit_price = round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
+        # Confirm the logic here
+        limit_price = limit_sell_price if limit_sell_price > buy_price > 1 else round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
         stop_price = round(buy_price * (1 - cfg.stop_loss_pct / 100), 2)
+        stoplimit_price = round(stop_price * 0.99, 2)
+        # Requirement: order above $1 can be entered in no more than two decimals.
 
-        oco = {
-            "orderType": "OCO",
-            "session": "NORMAL",
-            "duration": "GTC",
-            "orderStrategyType": "OCO",
-            "childOrderStrategies": [
-                {  # LIMIT SELL
-                    "orderType": "LIMIT",
-                    "session": "NORMAL",
-                    "duration": "GTC",
-                    "price": str(limit_price),
-                    "orderLegCollection": [
-                        {
-                            "instruction": "SELL",
-                            "quantity": qty,
-                            "instrument": {"symbol": symbol, "assetType": "EQUITY"},
-                        }
-                    ],
-                },
-                {  # STOP LOSS
-                    "orderType": "STOP",
-                    "session": "NORMAL",
-                    "duration": "GTC",
-                    "stopPrice": str(stop_price),
-                    "orderLegCollection": [
-                        {
-                            "instruction": "SELL",
-                            "quantity": qty,
-                            "instrument": {"symbol": symbol, "assetType": "EQUITY"},
-                        }
-                    ],
-                },
-            ],
-        }
-
+        oco = sell_limit_sell_stoplimit_oco_dict(
+            symbol=symbol,
+            quantity=qty,
+            sell_limit_price=str(limit_price),
+            sell_stop_price=str(stop_price),
+            sell_stoplimit_price=str(stoplimit_price),
+            session_sell_limit="NORMAL",
+            session_sell_stoplimit="NORMAL",
+            duration="DAY",
+        )
+        
         try:
-            resp = self.client.place_order(self.account_hash, oco)
+            resp = self.client.place_order(self.account_hash, oco)    
             location = resp.headers.get("Location")
             order_id = location.split("/")[-1] if location else None
-            console.print("[green]OCO placed[/green]")
             self.invalidate_open_orders_cache()  # Invalidate the cache after order
-
             log_transaction(
                 action="OCO_PLACED",
                 symbol=symbol,
@@ -817,9 +864,41 @@ class TradingBot:
         acc_panel.add_row(
             "Non-Marginable Buying Power", f"${snap['nonMarginableBP']:,.0f}"
         )
+        
+        # ── All Account Holdings Table ────────────────────────────────────────
+        all_table = Table(title="All Account Holdings")
+        all_table.add_column("Symbol", style="cyan")
+        all_table.add_column("Price", justify="right")
+        all_table.add_column("Today's % Chg", justify="right")
+        all_table.add_column("Shares", justify="right")
+        all_table.add_column("Avg Buy", justify="right")
+        all_table.add_column("P/L %", justify="right")
+        with self.lock:
+            sorted_holdings = sorted(self.all_holdings.items(), key=lambda item: item[0])
+            for sym, h in sorted_holdings:
+                price = self.current_prices.get(sym) or h.get("current_price")
+                shares = h.get("shares", 0)
+                buy_p = h.get("buy_price")
+                pl = (
+                    round((price - buy_p) / buy_p * 100, 1)
+                    if price and buy_p and buy_p > 0
+                    else 0.0
+                )
+                day_chg_pct  = h.get("day_change_pct", 0.0)
+                day_style = "green" if day_chg_pct > 0 else "red" if day_chg_pct < 0 else "white"
+                
+                all_table.add_row(
+                    sym,
+                    f"{shares:,.0f}",
+                    f"${buy_p:,.2f}" if buy_p else "—",
+                    f"${price:,.2f}" if price else "—",
+                    f"[{day_style}]{day_chg_pct:+.2f}%[/{day_style}]" if day_chg_pct != 0 else "—",
+                    f"{pl:+.1f}%",
+                )
+        
 
         return Panel(
-            Columns([table, ord_table, acc_panel], equal=True, expand=True),
+            Columns([table, all_table, ord_table, acc_panel], equal=True, expand=True),
             title="Dashboard",
             subtitle=footer,
             border_style="blue",
@@ -1070,7 +1149,7 @@ class TradingBot:
                             console.print(f"[dim]Manual buy declined.[/dim]")
 
     def cli_loop(self):
-        """CLI command loop (add/remove/pause/stop/etc.) — runs in its own thread."""
+        """CLI command loop (add/remove/update/pause/stop/etc.) — runs in its own thread."""
         console.print(
             "[bold cyan]CLI mode active - type 'help' for commands[/bold cyan]"
         )
@@ -1084,35 +1163,27 @@ class TradingBot:
                 command = parts[0].lower()
 
                 if command == "help":
-                    console.print("""Commands:
-                    add SYMBOL {"buy_target_price": 8.0, ...}
-                    remove SYMBOL
-                    list | pause | resume | stop | restart | config
+                    console.print("""Available commands:
+  help                  Show this help
+  list                  List currently monitored symbols
+  add SYMBOL {json}     Add a new symbol with config (e.g. add IREN {"buy_target_price":0.8,...})
+  update SYMBOL {json}  Update config for existing symbol (e.g. update IREN {"limit_sell_price":90.0})
+  remove SYMBOL         Remove a symbol from monitoring
+  attach-brackets [SYMBOL]  Attach OCO brackets to current holdings (all or one symbol)
+  pause                 Pause new buy orders
+  resume                Resume trading
+  stop                  Gracefully stop the bot
+  restart               Restart streaming and threads
+  config                Show current full configuration
                     """)
                     continue
+
                 elif command == "list":
                     with self.lock:
-                        active = ", ".join(sorted(self.symbols_config)) or "(none)"
+                        active = ", ".join(sorted(self.symbols_config.keys())) or "(none)"
                     console.print(f"[cyan]Currently monitoring: {active}[/cyan]")
                     continue
-                elif command == "remove":
-                    if len(parts) < 2:
-                        console.print("[yellow]Usage: remove SYMBOL[/yellow]")
-                        continue
-                    sym = parts[1].strip().upper()
-                    self.remove_symbol(sym)
-                    continue
-                elif command == "pause":
-                    self.trading_paused = True
-                    console.print("[yellow]Trading paused[/yellow]")
-                    continue
-                elif command == "resume":
-                    self.trading_paused = False
-                    console.print("[green]Trading resumed[/green]")
-                    continue
-                elif command == "stop":
-                    self.stop()
-                    break
+
                 elif command == "add":
                     if len(parts) < 2:
                         console.print(
@@ -1123,9 +1194,8 @@ class TradingBot:
                         continue
 
                     try:
-                        # parts[0] = "add", parts[1] = everything after it
                         rest = parts[1]
-                        sym_part, json_part = rest.split(" ", 1)   # split only once on the first space
+                        sym_part, json_part = rest.split(" ", 1)
                         sym = sym_part.strip().upper()
                         cfg_dict = json.loads(json_part.strip())
                         cfg = SymbolConfig(**cfg_dict)
@@ -1133,17 +1203,107 @@ class TradingBot:
                         self.add_new_symbol(sym, cfg)
                     except Exception as e:
                         console.print(f"[red]Add error: {e}[/red]")
-                        console.print("[yellow]Make sure you put a SPACE between SYMBOL and the {json} part[/yellow]")
+                        console.print("[yellow]Make sure there's a SPACE between SYMBOL and the {json} part[/yellow]")
                     continue
+
+                elif command == "update":
+                    if len(parts) < 2:
+                        console.print(
+                            "[yellow]Usage: update SYMBOL {new-json-config}[/yellow]\n"
+                            "Example: update IREN {\"buy_target_price\": 0.75, \"limit_sell_price\": 80.0}"
+                        )
+                        continue
+
+                    try:
+                        rest = parts[1]
+                        sym_part, json_part = rest.split(" ", 1)
+                        sym = sym_part.strip().upper()
+
+                        if sym not in self.symbols_config:
+                            console.print(f"[red]{sym} not found — use 'add' to create it[/red]")
+                            continue
+
+                        cfg_dict = json.loads(json_part.strip())
+                        new_cfg = SymbolConfig(**cfg_dict)
+
+                        with self.lock:
+                            old_cfg = self.symbols_config[sym]
+                            self.symbols_config[sym] = new_cfg
+
+                        console.print(
+                            f"[green]Updated {sym}:[/green]\n"
+                            f"  Old → {old_cfg.model_dump()}\n"
+                            f"  New → {new_cfg.model_dump()}"
+                        )
+
+                        self.save_config_to_yaml()
+
+                        # If currently holding, re-attach bracket with new limit price etc.
+                        if sym in self.holdings and self.holdings[sym].get("shares", 0) > 0:
+                            console.print(f"[cyan]Re-attaching bracket to existing {sym} position with updated config[/cyan]")
+                            buy_price = self.holdings[sym].get("buy_price", self.current_prices.get(sym, 0))
+                            if buy_price > 0:
+                                self.place_bracket_orders(sym, buy_price, self.symbols_config[sym].limit_sell_price)
+                            else:
+                                console.print(f"[yellow]No valid buy price for {sym} — bracket not re-attached[/yellow]")
+
+                    except Exception as e:
+                        console.print(f"[red]Update failed: {e}[/red]")
+                    continue
+
+                elif command == "remove":
+                    if len(parts) < 2:
+                        console.print("[yellow]Usage: remove SYMBOL[/yellow]")
+                        continue
+                    sym = parts[1].strip().upper()
+                    self.remove_symbol(sym)
+                    continue
+
+                elif command == "attach-brackets":
+                    if len(parts) > 1:
+                        # Single symbol
+                        sym = parts[1].strip().upper()
+                        if sym in self.holdings and self.holdings[sym].get("shares", 0) > 0:
+                            buy_price = self.holdings[sym].get("buy_price", self.current_prices.get(sym, 0))
+                            if buy_price > 0:
+                                self.place_bracket_orders(sym, buy_price, self.symbols_config[sym].limit_sell_price)
+                                console.print(f"[green]Bracket attached to {sym}[/green]")
+                            else:
+                                console.print(f"[yellow]No buy price available for {sym}[/yellow]")
+                        else:
+                            console.print(f"[yellow]No current position in {sym}[/yellow]")
+                    else:
+                        # All holdings
+                        self.attach_brackets_to_existing_holdings()
+                        console.print("[green]Checked and attached brackets where needed[/green]")
+                    continue
+
+                elif command == "pause":
+                    self.trading_paused = True
+                    console.print("[yellow]Trading paused (no new buys)[/yellow]")
+                    continue
+
+                elif command == "resume":
+                    self.trading_paused = False
+                    console.print("[green]Trading resumed[/green]")
+                    continue
+
+                elif command == "stop":
+                    self.stop()
+                    break
+
                 elif command == "restart":
                     self.restart()
                     continue
+
                 elif command == "config":
-                    console.print(self.symbols_config)
+                    with self.lock:
+                        console.print(self.symbols_config)
                     continue
+
                 else:
                     console.print(
-                        "[dim yellow]Unknown command — type 'help'[/dim yellow]"
+                        "[dim yellow]Unknown command — type 'help' for list[/dim yellow]"
                     )
 
             except KeyboardInterrupt:

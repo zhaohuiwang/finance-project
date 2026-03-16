@@ -101,11 +101,11 @@ order_3 = buy_limit_trigger_sell_limit_dict(
 )
 
 order_4 = sell_limit_sell_stoplimit_oco_dict(
-    symbol="IREN",
-    quantity=380,
-    sell_limit_price=45,  # 45.97
-    sell_stop_price=40,  # 37.00
-    sell_stoplimit_price=39.8,  # 37.03
+    symbol="NBIS",
+    quantity=1,
+    sell_limit_price=445,  # 450.97
+    sell_stop_price=10,  # 37.00
+    sell_stoplimit_price=9.8,  # 37.03
     session_sell_limit="NORMAL",
     session_sell_stoplimit="NORMAL",
     duration="DAY",
@@ -148,7 +148,7 @@ order_8 = sell_market_dict(
 
 
 # submit an order
-order = order_2
+order = order_4
 
 
 status_code, date, order_id = place_order(

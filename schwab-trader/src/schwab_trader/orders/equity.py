@@ -1,5 +1,5 @@
 from enum import Enum
-from src.schwab_trader.accounts.type_literal import OrderType, Session, Duration
+from schwab_trader.accounts.type_literal import OrderType, Session, Duration
 
 # Dictionary specification for equity orders.
 # Note: Prices must be string in the JSON for precision

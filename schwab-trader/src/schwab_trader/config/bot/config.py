@@ -3,7 +3,7 @@
 
 from typing import Dict
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import yaml
 
 # ----------------------------
@@ -16,6 +16,14 @@ class SymbolConfig(BaseModel):
     limit_sell_pct: float = Field(ge=0)
     stop_loss_pct: float = Field(ge=0)
     fixed_shares: int = Field(default=0, ge=0)
+    
+    @model_validator(mode="after")
+    def check_prices(self):
+        if self.limit_sell_price <= self.buy_target_price:
+            raise ValueError(
+                "limit_sell_price must be greater than buy_target_price"
+            )
+        return self
 # ----------------------------
 # 2. Overall risk config
 # ----------------------------
