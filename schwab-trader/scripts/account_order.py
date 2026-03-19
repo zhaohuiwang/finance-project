@@ -9,9 +9,9 @@ import json
 from pprint import pprint
 import pandas as pd
 
-from src.schwab_trader.accounts.schwab import client, SchwabAccount
-from src.schwab_trader.accounts.type_literal import Duration
-from src.schwab_trader.orders.equity import (
+from schwab_trader.accounts.schwab import client, SchwabAccount
+from schwab_trader.accounts.type_literal import Duration
+from schwab_trader.orders.equity import (
     buy_market_dict,
     sell_market_dict,
     buy_limit_dict,
@@ -21,13 +21,13 @@ from src.schwab_trader.orders.equity import (
     buy_limit_trigger_sell_limit_sell_stop_oco_dict,
     sell_trailing_stop_dict,
 )
-from src.schwab_trader.orders.option import (
+from schwab_trader.orders.option import (
     buy_limit_single_option_dict,
     buy_limit_vertical_call_spread_dict,
     sell_covered_call_dict,
 )
 
-from src.schwab_trader.orders.utils import (
+from schwab_trader.orders.utils import (
     place_order,
     cancel_order,
     get_utc_time_range,
@@ -73,23 +73,23 @@ print(json.dumps(data, indent=4))
 # ========================================================================
 
 # create an order configuration dictionary
-order_1 = buy_limit_dict(
-    symbol="ACHR",
+order_b1 = buy_market_dict(
+    symbol="THISISADEMO",
     quantity=1,
-    limit_price=0.2,
     session="NORMAL",
     duration="DAY",
 )
 
-order_2 = sell_limit_dict(
-    symbol="IREN",
-    quantity=388,
-    limit_price=44.4,
+order_b3 = buy_limit_dict(
+    symbol="ACHR",
+    quantity=2900,
+    limit_price=6.6,
     session="NORMAL",
     duration="DAY",
 )
 
-order_3 = buy_limit_trigger_sell_limit_dict(
+
+order_b5 = buy_limit_trigger_sell_limit_dict(
     symbol="NBIS",
     quantity=1,
     buy_limit_price=20,
@@ -100,23 +100,12 @@ order_3 = buy_limit_trigger_sell_limit_dict(
     sell_duration="GOOD_TILL_CANCEL",
 )
 
-order_4 = sell_limit_sell_stoplimit_oco_dict(
-    symbol="NBIS",
-    quantity=1,
-    sell_limit_price=445,  # 450.97
-    sell_stop_price=10,  # 37.00
-    sell_stoplimit_price=9.8,  # 37.03
-    session_sell_limit="NORMAL",
-    session_sell_stoplimit="NORMAL",
-    duration="DAY",
-)
-
-order_5 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
-    symbol="NBIS",
-    quantity=2,
-    buy_limit_price=80.0,  # 14.97
-    sell_limit_price=98.2,  # 15.27
-    sell_stop_price=75.2,  # 11.27
+order_b7 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
+    symbol="IREN",
+    quantity=400,
+    buy_limit_price=44.3,  # 14.97
+    sell_limit_price=47.88,  # 15.27
+    sell_stop_price=40.0,  # 11.27
     session_buy_limit="NORMAL",
     session_sell_limit="NORMAL",
     session_sell_stop="NORMAL",
@@ -124,7 +113,22 @@ order_5 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
     sell_duration="GOOD_TILL_CANCEL",
 )
 
-order_6 = sell_trailing_stop_dict(
+order_s2 = sell_market_dict(
+    symbol="THISISADEMO",
+    quantity=1,
+    session="NORMAL",
+    duration="DAY",
+)
+
+order_s4 = sell_limit_dict(
+    symbol="ACHR",
+    quantity=2900,
+    limit_price=6.68,
+    session="NORMAL",
+    duration="DAY",
+)
+
+order_s6 = sell_trailing_stop_dict(
     symbol="NBIS",
     quantity=1,
     stop_price_offset=10,  # 10
@@ -132,23 +136,20 @@ order_6 = sell_trailing_stop_dict(
     duration="DAY",
 )
 
-order_7 = buy_market_dict(
-    symbol="THISISADEMO",
-    quantity=1,
-    session="NORMAL",
-    duration="DAY",
-)
-
-order_8 = sell_market_dict(
-    symbol="THISISADEMO",
-    quantity=1,
-    session="NORMAL",
-    duration="DAY",
+order_s8 = sell_limit_sell_stoplimit_oco_dict(
+    symbol="JOBY",
+    quantity=1800,
+    sell_limit_price=10.25,  # 450.97
+    sell_stop_price=9.5,  # 37.00
+    sell_stoplimit_price=9.48,  # 37.03
+    session_sell_limit="NORMAL",
+    session_sell_stoplimit="NORMAL",
+    duration="GOOD_TILL_CANCEL",
 )
 
 
 # submit an order
-order = order_4
+order = order_s8
 
 
 status_code, date, order_id = place_order(
@@ -201,12 +202,10 @@ status_code, date, order_id = place_order(
 
 from_time, to_time = get_utc_time_range(
     # to_time= dt.datetime(2026, 3, 6, 10, 0)
-    offset=dt.timedelta(days=100, hours=1, minutes=5)
+    offset=dt.timedelta(days=2, hours=1, minutes=5)
 )
 # or simply
-from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
-    days=0, hours=2, minutes=5
-)
+from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=0, hours=2, minutes=5)
 to_time = dt.datetime.now(dt.timezone.utc)
 
 orders = client.account_orders(
@@ -214,7 +213,7 @@ orders = client.account_orders(
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
     # status='WORKING',
-    # status="FILLED"
+    status="FILLED",
 ).json()
 
 print(json.dumps(orders, indent=4))
@@ -332,9 +331,7 @@ symbol_quantity = [
 ]
 
 
-from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
-    days=0, hours=2, minutes=1
-)
+from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=0, hours=2, minutes=1)
 to_time = dt.datetime.now(dt.timezone.utc)
 
 

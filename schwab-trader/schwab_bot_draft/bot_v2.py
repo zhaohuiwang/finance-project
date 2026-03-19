@@ -20,7 +20,13 @@ from rich.columns import Columns
 from rich.prompt import Confirm
 
 from schwab_bot.config import CONFIG, RISK_CONFIG
-from schwab_bot.db import init_db, log_transaction, save_state, get_last_buy_price, load_state
+from schwab_bot.db import (
+    init_db,
+    log_transaction,
+    save_state,
+    get_last_buy_price,
+    load_state,
+)
 
 from dash import Dash, dcc, html, dash_table, Input, Output, State
 from dash.exceptions import PreventUpdate
@@ -30,8 +36,6 @@ from dash.exceptions import PreventUpdate
 # sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # print(sys.path)
 from src.schwab_trader.orders.utils import extract_final_executions
-
-
 
 load_dotenv()
 console = Console()

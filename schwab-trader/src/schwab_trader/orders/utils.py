@@ -1,10 +1,9 @@
-import datetime as dt
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from collections.abc import Callable, Iterator, Iterable
 from dotenv import load_dotenv
 
 
-from typing import  Any
+from typing import Any
 
 from schwab_trader.accounts.schwab import client
 
@@ -61,7 +60,6 @@ def cancel_order(client, accountHash: str, order_id: int) -> tuple[int, str]:
 
     response.headers.get("Date")
     """
-
     response = client.cancel_order(accountHash=accountHash, orderId=order_id)
 
     date = response.headers.get("Date")
@@ -71,12 +69,12 @@ def cancel_order(client, accountHash: str, order_id: int) -> tuple[int, str]:
 
 
 def get_utc_time_range(
-    to_time: dt.datetime = None,
+    to_time: datetime | None = None,
     *,
-    offset: dt.timedelta = dt.timedelta(minutes=20),
-):
+    offset: timedelta = timedelta(minutes=20),
+) -> tuple[str, str]:
     """
-    Generate UTC ISO-formatted from_time and to_time for API calls.
+    Generate UTC ISO-formatted (from_time, to_time) strings.
 
     Args:
         to_time: datetime object to use as end time (defaults to now)
@@ -89,41 +87,22 @@ def get_utc_time_range(
         microseconds=250  # 0.00025 second
     Returns:
         tuple: (from_time_iso, to_time_iso)
-
-    Example:
-    >>> from_time, to_time = get_utc_time_range(
-    ...     offset=datetime.timedelta(minutes=20)
-    ...     )
-    >>> from_time, to_time
-    ('2026-03-06T03:01:58.246+00:00', '2026-03-06T03:21:58.246+00:00')
-
-    >>> from_time, to_time = get_utc_time_range(
-    ...     to_time=datetime.datetime(2026, 3, 6, 10, 0),
-    ...     offset=datetime.timedelta(minutes=20)
-    ...     )
-    >>> from_time, to_time
-    ('2026-03-06T15:40:00.000+00:00', '2026-03-06T16:00:00.000+00:00')
-
     """
-
-    # Default to now if no to_time provided
     if to_time is None:
-        to_time = dt.datetime.now().astimezone()
+        to_time = datetime.now(timezone.utc)
     else:
-        # Ensure timezone-aware
+        # If naive, assume UTC instead of local time (important improvement)
         if to_time.tzinfo is None:
-            to_time = to_time.astimezone()
+            to_time = to_time.replace(tzinfo=timezone.utc)
+        else:
+            to_time = to_time.astimezone(timezone.utc)
 
     from_time = to_time - offset
 
-    # Lambda to convert any datetime to UTC ISO with milliseconds
-    to_iso_utc = lambda dt: dt.astimezone(timezone.utc).isoformat(
-        timespec="milliseconds"
-    )
+    def to_iso(dt_obj: datetime) -> str:
+        return dt_obj.isoformat(timespec="milliseconds")
 
-    return to_iso_utc(from_time), to_iso_utc(to_time)
-
-
+    return to_iso(from_time), to_iso(to_time)
 
 
 ###  Instead of recursion, we use a stack to remember what to process next. Each iteration pops a node from the stack and checks it. Children are pushed onto the stack instead of calling recursively. No yield from is needed — the while loop naturally continues iteration.
@@ -228,8 +207,14 @@ def iter_keys_path_tuple(
 
 
 # Simple lambda conversion to convert datetime.datetime to ISO UTC time format, e.g. '2026-03-06T00:54:57.375+00:00'
-to_iso_utc = lambda dt: dt.astimezone(timezone.utc).isoformat(timespec="milliseconds")
+to_iso_utc = lambda dt_obj: dt_obj.astimezone(timezone.utc).isoformat(
+    timespec="milliseconds"
+)
 
+
+def to_iso_utc(dt_obj: datetime) -> str:
+    """Convert a datetime to a UTC ISO string with millisecond precision."""
+    return dt_obj.astimezone(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def extract_final_executions(
@@ -252,7 +237,7 @@ def extract_final_executions(
         List[Dict[str, Any]]: A list of execution dictionaries.
     """
     from datetime import datetime
-    
+
     orders = client.account_orders(
         accountHash=hashValue,
         fromEnteredTime=fromEnteredTime,
@@ -262,13 +247,16 @@ def extract_final_executions(
 
     results: list[dict[str, Any]] = []
 
-    def parse_orders(order_list: list[dict[str, Any]], parent_id: int | None = None) -> None:
+    def parse_orders(
+        order_list: list[dict[str, Any]], parent_id: int | None = None
+    ) -> None:
         for order in order_list:
             order_id = order.get("orderId")
             order_status = order.get("status")
             cancelable = order.get("cancelable")
             editable = order.get("editable")
             order_type = order.get("orderType")
+            duration = order.get("duration")
             placed_time = (
                 datetime.fromisoformat(order["enteredTime"].replace("Z", "+00:00"))
                 if order.get("enteredTime")
@@ -307,6 +295,7 @@ def extract_final_executions(
                             "instruction": instruction,
                             "side": side,
                             "orderType": order_type,
+                            "duration": duration,
                             "price": exec_leg.get("price"),
                             "quantity": exec_leg.get("quantity"),
                             "status": order_status,
@@ -325,6 +314,7 @@ def extract_final_executions(
     parse_orders(orders)
 
     return results
+
 
 class TimeUtil:
     """

@@ -1,10 +1,10 @@
-
 # schwab-trader/src/schwab_trader/config/bot/config.py
 
 from typing import Dict
 from pathlib import Path
 from pydantic import BaseModel, Field, model_validator
 import yaml
+
 
 # ----------------------------
 # 1. Individual symbol config
@@ -16,14 +16,14 @@ class SymbolConfig(BaseModel):
     limit_sell_pct: float = Field(ge=0)
     stop_loss_pct: float = Field(ge=0)
     fixed_shares: int = Field(default=0, ge=0)
-    
+
     @model_validator(mode="after")
     def check_prices(self):
         if self.limit_sell_price <= self.buy_target_price:
-            raise ValueError(
-                "limit_sell_price must be greater than buy_target_price"
-            )
+            raise ValueError("limit_sell_price must be greater than buy_target_price")
         return self
+
+
 # ----------------------------
 # 2. Overall risk config
 # ----------------------------
@@ -33,6 +33,7 @@ class RiskConfig(BaseModel):
     min_account_equity: float
     max_daily_loss_pct: float
     default_shares: int = Field(default=1)
+
 
 # ----------------------------
 # 3. Full configuration

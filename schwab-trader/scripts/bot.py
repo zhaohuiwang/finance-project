@@ -15,13 +15,10 @@ from dash.exceptions import PreventUpdate
 
 from schwab_trader.pipelines.bot import TradingBot
 
-
 load_dotenv()
 console = Console()
 
-cfg = TradingConfig.load_from_file(
-    Path(__file__).parent / "../conf/bot/conf.yaml"
-)
+cfg = TradingConfig.load_from_file(Path(__file__).parent / "../conf/bot/conf.yaml")
 
 
 bot = TradingBot(cfg, mode="cli")  # your class instance
@@ -56,7 +53,7 @@ app.layout = dbc.Container(
         ),
         # All Account Holdings - full width (new)
         html.H4("All Account Holdings", className="mt-4 mb-2"),
-                dash_table.DataTable(
+        dash_table.DataTable(
             id="all-holdings-table",
             columns=[
                 {"name": "Symbol", "id": "Symbol"},
@@ -80,33 +77,29 @@ app.layout = dbc.Container(
             },
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
-            style_data_conditional=[                           # ← now valid
+            style_data_conditional=[  # ← now valid
                 {
-                    'if': {
-                        'filter_query': '{Today\'s % Chg} contains "+"'
-                    },
-                    'color': 'lime',
+                    "if": {"filter_query": '{Today\'s % Chg} contains "+"'},
+                    "color": "lime",
                 },
                 {
-                    'if': {
-                        'filter_query': '{Today\'s % Chg} contains "-"'
-                    },
-                    'color': 'tomato',
+                    "if": {"filter_query": '{Today\'s % Chg} contains "-"'},
+                    "color": "tomato",
                 },
             ],
         ),
-        
         # Positions - full width (unchanged)
-        html.H4("Positions", className="mt-4 mb-2"),
+        html.H4("Managed Positions (config only)", className="mt-4 mb-2"),
         dash_table.DataTable(
-            id="positions-table",
+            id="managed-positions-table",
             columns=[
                 {"name": "Symbol", "id": "Symbol"},
-                {"name": "Price", "id": "Price"},
-                {"name": "Shares", "id": "Shares"},
-                {"name": "Avg Buy", "id": "Avg Buy"},
-                {"name": "P/L %", "id": "P/L %"},
-                {"name": "Status", "id": "Status"},
+                {"name": "Buy Target Price", "id": "buy_target_price"},
+                {"name": "Limit Sell Price", "id": "limit_sell_price"},
+                {"name": "Buy Drop %", "id": "buy_drop_pct"},
+                {"name": "Limit Sell %", "id": "limit_sell_pct"},
+                {"name": "Stop Loss %", "id": "stop_loss_pct"},
+                {"name": "Fixed Shares", "id": "fixed_shares"},
             ],
             style_table={
                 "overflowX": "auto",
@@ -114,15 +107,21 @@ app.layout = dbc.Container(
                 "width": "100%",
             },
             style_cell={
-                "textAlign": "left",
-                "minWidth": "80px",
+                "textAlign": "right",
+                "minWidth": "100px",
                 "overflow": "hidden",
                 "textOverflow": "ellipsis",
             },
-            style_data={"color": "white", "backgroundColor": "#212529"},
-            style_header={"backgroundColor": "#2c3e50", "color": "white"},
+            style_header={
+                "backgroundColor": "#2c3e50",
+                "color": "white",
+                "fontWeight": "bold",
+            },
+            style_data={
+                "color": "white",
+                "backgroundColor": "#212529",
+            },
         ),
-        
         # Open Orders - full width (unchanged)
         html.H4("Open Orders", className="mt-5 mb-2"),
         dash_table.DataTable(
@@ -193,11 +192,12 @@ app.layout = dbc.Container(
     className="p-4",
 )
 
+
 # ── FIXED CALLBACK ────────────────────────────────────────────────────────────
 @app.callback(
     [
         Output("all-holdings-table", "data"),
-        Output("positions-table", "data"),
+        Output("managed-positions-table", "data"),
         Output("orders-table", "data"),
         Output("account-summary-table", "data"),
         Output("status-footer", "children"),
@@ -210,27 +210,19 @@ app.layout = dbc.Container(
 )
 def update_dashboard(n_interval, n_clicks):
     try:
-        # Positions
-        positions_data = []
+        # Managed Positions — from conf.yaml
+        managed_positions_data = []
         with bot.lock:
-            for sym in bot.symbols_config:
-                price = bot.current_prices.get(sym)
-                h = bot.holdings.get(sym, {})
-                shares = h.get("shares", 0)
-                buy_p = h.get("buy_price")
-                pl = (
-                    round((price - buy_p) / buy_p * 100, 1)
-                    if price and buy_p and buy_p > 0
-                    else 0.0
-                )
-                positions_data.append(
+            for sym, cfg in sorted(bot.symbols_config.items()):
+                managed_positions_data.append(
                     {
                         "Symbol": sym,
-                        "Price": f"${price:,.2f}" if price else "—",
-                        "Shares": shares,
-                        "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
-                        "P/L %": f"{pl:+.1f}%",
-                        "Status": "HOLDING" if shares > 0 else "WATCHING",
+                        "buy_target_price": f"{cfg.buy_target_price:.2f}",
+                        "limit_sell_price": f"{cfg.limit_sell_price:.2f}",
+                        "buy_drop_pct": f"{cfg.buy_drop_pct:.1f}",
+                        "limit_sell_pct": f"{cfg.limit_sell_pct:.1f}",
+                        "stop_loss_pct": f"{cfg.stop_loss_pct:.1f}",
+                        "fixed_shares": cfg.fixed_shares,
                     }
                 )
 
@@ -271,7 +263,7 @@ def update_dashboard(n_interval, n_clicks):
                 "Value": f"${snapshot['nonMarginableBP']:,.2f}",
             },
         ]
-        
+
         # All Holdings (full account — any symbol)
         all_holdings_data = []
         with bot.lock:
@@ -293,13 +285,14 @@ def update_dashboard(n_interval, n_clicks):
                         "Shares": shares,
                         "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
                         "Price": f"${price:,.2f}" if price else "—",
-                        "Today's % Chg": f"{day_chg_pct:+.2f}%" if abs(day_chg_pct) > 0.001 else "—",
+                        "Today's % Chg": (
+                            f"{day_chg_pct:+.2f}%" if abs(day_chg_pct) > 0.001 else "—"
+                        ),
                         "P/L %": f"{pl:+.1f}%",
                         "Market Value": f"${market_val:,.2f}",
                     }
                 )
         all_holdings_data.sort(key=lambda x: x["Symbol"])
-        
 
         daily_pnl = (
             (snapshot["equity"] - bot.daily_start_equity) / bot.daily_start_equity * 100
@@ -312,7 +305,13 @@ def update_dashboard(n_interval, n_clicks):
             f"Risk Used: {risk_used:.0f}% | {'PAUSED' if bot.trading_paused else 'ACTIVE'}"
         )
 
-        return all_holdings_data, positions_data, orders_data, account_data, status_text
+        return (
+            all_holdings_data,
+            managed_positions_data,
+            orders_data,
+            account_data,
+            status_text,
+        )
 
     except Exception as e:
         console.print(f"[red]Dashboard callback error: {e}[/red]")
@@ -341,18 +340,20 @@ if __name__ == "__main__":
     watchdog_thread = threading.Thread(target=bot.stream_watchdog, daemon=True)
     watchdog_thread.start()
 
-
     if args.mode == "full":
         display_thread = threading.Thread(target=bot.monitor_display, daemon=True)
         display_thread.start()
-        console.print("[bold green]FULL MODE - Terminal + Web dashboard active[/bold green]")
+        console.print(
+            "[bold green]FULL MODE - Terminal + Web dashboard active[/bold green]"
+        )
     else:
         cli_thread = threading.Thread(target=bot.cli_loop, daemon=True)
         cli_thread.start()
-        console.print("[bold green]CLI MODE - Web dashboard only + terminal commands active[/bold green]")
+        console.print(
+            "[bold green]CLI MODE - Web dashboard only + terminal commands active[/bold green]"
+        )
 
     app.run(debug=True, use_reloader=False)
 
     # print("Dashboard starting → open http://127.0.0.1:8050/")
     # Fix: remove duplicate app = dash.Dash line (was in your original)
-
