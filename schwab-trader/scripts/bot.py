@@ -271,11 +271,9 @@ def update_dashboard(n_interval, n_clicks):
                 price = bot.current_prices.get(sym) or h.get("current_price", None)
                 shares = h.get("shares", 0)
                 buy_p = h.get("buy_price")
-                pl = (
-                    round((price - buy_p) / buy_p * 100, 1)
-                    if price and buy_p and buy_p > 0
-                    else 0.0
-                )
+                price_safe = price if price is not None else 0.0
+                buy_p_safe = buy_p if buy_p is not None else 0.0
+                pl = round((price_safe - buy_p_safe) / buy_p_safe * 100, 1) if buy_p_safe > 0 else 0.0
                 market_val = round(shares * (price or 0), 2)
                 day_chg_pct = h.get("day_change_pct", 0.0)
 

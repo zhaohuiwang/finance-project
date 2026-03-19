@@ -2,33 +2,40 @@
 # schwab-trader/conf/bot/conf.yaml
 
 symbols:
-  ACHR:
-    buy_target_price: 6.20
-    limit_sell_price: 6.30
-    buy_drop_pct: 5.0
-    limit_sell_pct: 5.0
-    stop_loss_pct: 5.5
-    fixed_shares: 2900
+  # ACHR:
+  #   buy_target_price: 6.20
+  #   limit_sell_price: 6.30
+  #   buy_drop_pct: 20.0
+  #   limit_sell_pct: 15.0
+  #   stop_loss_pct: 15.5
+  #   fixed_shares: 2900
   # NBIS:
   #   buy_target_price: 145.0
   #   limit_sell_price: 155.0
-  #   buy_drop_pct: 7.0
-  #   limit_sell_pct: 5.0
-  #   stop_loss_pct: 5.5
+  #   buy_drop_pct: 20.0
+  #   limit_sell_pct: 15.0
+  #   stop_loss_pct: 15.5
   #   fixed_shares: 1
+  JOBY:
+    buy_target_price: 9.26
+    limit_sell_price: 10.26
+    buy_drop_pct: 20.0
+    limit_sell_pct: 15.0
+    stop_loss_pct: 15.5
+    fixed_shares: 1800
   IREN:
-    buy_target_price: 40.8
-    limit_sell_price: 44.8
-    buy_drop_pct: 5.0
-    limit_sell_pct: 5.0
-    stop_loss_pct: 5.5
+    buy_target_price: 38.8
+    limit_sell_price: 42.8
+    buy_drop_pct: 20.0
+    limit_sell_pct: 15.0
+    stop_loss_pct: 15.5
     fixed_shares: 400
   USAR:
-    buy_target_price: 17.5
+    buy_target_price: 15.5
     limit_sell_price: 21.0
-    buy_drop_pct: 5.0
-    limit_sell_pct: 5.0
-    stop_loss_pct: 5.5
+    buy_drop_pct: 20.0
+    limit_sell_pct: 15.0
+    stop_loss_pct: 15.5
     fixed_shares: 38
 
 risk:
@@ -44,3 +51,4 @@ risk:
 # When the price hits the calculated limit or the stop, Schwab executes the sell automatically (you don’t see the bot “deciding” to sell — it’s a real live order at Schwab)
 # After the sell fills, the bot resets the buy flag and will buy again later if the price drops below `buy_target_price` or the `buy_drop_pct` from the last buy.
 
+  # USAR {"buy_target_price": 15.5,"limit_sell_price": 21.0,"buy_drop_pct": 5.0,"limit_sell_pct": 5.0,"stop_loss_pct": 5.5,"fixed_shares": 38}
