@@ -788,16 +788,36 @@ class TradingBot:
             return False
 
     def place_bracket_orders(self, symbol, buy_price, limit_sell_price):
-        """Place GTC OCO bracket (LIMIT SELL + STOP LOSS) right after a buy fill."""
+        """Place OCO bracket (LIMIT SELL + STOP LOSS) """
         cfg: SymbolConfig = self.symbols_config[symbol]
         qty = self.holdings[symbol]["shares"]
+        
         # Confirm the logic here
+        # limit_sell_price has high priority, otherwise fallback to limit_sell_pct
         limit_price = (
             limit_sell_price
             if limit_sell_price > buy_price > 1
             else round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
         )
-        stop_price = round(buy_price * (1 - cfg.stop_loss_pct / 100), 2)
+        # stop_loss_dollar has high priority, otherwise fallback to stop_loss_pct
+        if cfg.stop_loss_dollar > 0:
+            stop_price = round(buy_price - cfg.stop_loss_dollar, 2)
+            console.print(
+                f"[dim cyan]Using fixed $ stop for {symbol}: "
+                f"${cfg.stop_loss_dollar:.2f} below entry → stop @ ${stop_price:.2f}[/dim cyan]"
+            )
+        else:
+            stop_price = round(buy_price * (1 - cfg.stop_loss_pct / 100), 2)
+            console.print(
+                f"[dim]Using % stop for {symbol}: "
+                f"{cfg.stop_loss_pct}% below entry → stop @ ${stop_price:.2f}[/dim]"
+            )
+
+        # Prevent invalid stop (shouldn't happen with config validation, but safety)
+        if stop_price >= buy_price or stop_price <= 0:
+            console.print(f"[yellow]Invalid stop price calculated for {symbol} — skipping bracket[/yellow]")
+            return
+    
         stoplimit_price = round(stop_price * 0.99, 2)
         # Requirement: order above $1 can be entered in no more than two decimals.
 
@@ -1214,7 +1234,15 @@ class TradingBot:
                             console.print(f"[dim]Manual buy declined.[/dim]")
 
     def cli_loop(self):
-        """CLI command loop (add/remove/update/pause/stop/etc.) — runs in its own thread."""
+        """
+        CLI command loop (add/remove/update/pause/stop/etc.) — runs in its own thread.
+        add and remove commands
+            update in-memory config, affect monitoring loop (buy/sell triggers), updates streaming subscription, affect trading logic, persis to conf.yaml.
+        reload-config command
+            can be applied after you updated any values in the conf.yaml file, like limit price, stop price etc.
+        
+        
+        """
         console.print(
             "[bold cyan]CLI mode active - type 'help' for commands[/bold cyan]"
         )
@@ -1509,16 +1537,16 @@ class TradingBot:
             return
 
         with self.lock:
-            self.symbols_config[symbol] = cfg
-            self.current_prices[symbol] = None
-            self.auto_buy_allowed[symbol] = True
+            self.symbols_config[symbol] = cfg # Now new symbol added to in-memory configuration
+            self.current_prices[symbol] = None  # ready to receive real-time prices
+            self.auto_buy_allowed[symbol] = True    # can auto-buy once
 
         try:
             self.streamer.send(
                 self.streamer.level_one_equities(symbol, "0,1,2,3,4,5,6,7,8")
             )
             console.print(f"[green]✅ Added {symbol} and subscribed[/green]")
-            self.save_config_to_yaml()
+            self.save_config_to_yaml() # the change is persisted to disk
 
         except Exception as e:
             console.print(f"[red]Stream subscribe failed: {e}[/red]")

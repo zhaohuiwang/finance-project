@@ -4,9 +4,10 @@
 symbols:
   # ACHR:
   #   buy_target_price: 6.20
-  #   limit_sell_price: 6.30
+  #   limit_sell_price: 6.30  # primary fixed price (used most of the time)
   #   buy_drop_pct: 20.0
-  #   limit_sell_pct: 15.0
+  #   limit_sell_pct: 15.0    # the % used in fallback 
+  #   stop_loss_dollar: 0.6
   #   stop_loss_pct: 15.5
   #   fixed_shares: 2900
   # NBIS:
@@ -14,6 +15,7 @@ symbols:
   #   limit_sell_price: 155.0
   #   buy_drop_pct: 20.0
   #   limit_sell_pct: 15.0
+  #   stop_loss_dollar: 20
   #   stop_loss_pct: 15.5
   #   fixed_shares: 1
   JOBY:
@@ -21,6 +23,7 @@ symbols:
     limit_sell_price: 10.26
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0
+    stop_loss_dollar: 2.0
     stop_loss_pct: 15.5
     fixed_shares: 1800
   IREN:
@@ -28,6 +31,7 @@ symbols:
     limit_sell_price: 42.8
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0
+    stop_loss_dollar: 5.0
     stop_loss_pct: 15.5
     fixed_shares: 400
   USAR:
@@ -35,6 +39,7 @@ symbols:
     limit_sell_price: 21.0
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0
+    stop_loss_dollar: 3.0
     stop_loss_pct: 15.5
     fixed_shares: 38
 
@@ -45,10 +50,3 @@ risk:
   max_daily_loss_pct: 3.0
   default_shares: 1
 
-
-# After BUY fill, it immediately places a bracket OCO oder. The limit sell price is calculated as 
-# limit_price = round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
-# When the price hits the calculated limit or the stop, Schwab executes the sell automatically (you don’t see the bot “deciding” to sell — it’s a real live order at Schwab)
-# After the sell fills, the bot resets the buy flag and will buy again later if the price drops below `buy_target_price` or the `buy_drop_pct` from the last buy.
-
-  # USAR {"buy_target_price": 15.5,"limit_sell_price": 21.0,"buy_drop_pct": 5.0,"limit_sell_pct": 5.0,"stop_loss_pct": 5.5,"fixed_shares": 38}
