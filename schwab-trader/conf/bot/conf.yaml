@@ -1,0 +1,46 @@
+
+# schwab-trader/conf/bot/conf.yaml
+
+symbols:
+  ACHR:
+    buy_target_price: 6.20
+    limit_sell_price: 6.30
+    buy_drop_pct: 5.0
+    limit_sell_pct: 5.0
+    stop_loss_pct: 5.5
+    fixed_shares: 2900
+  # NBIS:
+  #   buy_target_price: 145.0
+  #   limit_sell_price: 155.0
+  #   buy_drop_pct: 7.0
+  #   limit_sell_pct: 5.0
+  #   stop_loss_pct: 5.5
+  #   fixed_shares: 1
+  IREN:
+    buy_target_price: 40.8
+    limit_sell_price: 44.8
+    buy_drop_pct: 5.0
+    limit_sell_pct: 5.0
+    stop_loss_pct: 5.5
+    fixed_shares: 400
+  USAR:
+    buy_target_price: 17.5
+    limit_sell_price: 21.0
+    buy_drop_pct: 5.0
+    limit_sell_pct: 5.0
+    stop_loss_pct: 5.5
+    fixed_shares: 38
+
+risk:
+  risk_per_trade_pct: 1.0
+  max_positions: 4
+  min_account_equity: 5000.0
+  max_daily_loss_pct: 3.0
+  default_shares: 1
+
+
+# After BUY fill, it immediately places a bracket OCO oder. The limit sell price is calculated as 
+# limit_price = round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
+# When the price hits the calculated limit or the stop, Schwab executes the sell automatically (you don’t see the bot “deciding” to sell — it’s a real live order at Schwab)
+# After the sell fills, the bot resets the buy flag and will buy again later if the price drops below `buy_target_price` or the `buy_drop_pct` from the last buy.
+
