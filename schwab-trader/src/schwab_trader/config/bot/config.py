@@ -16,7 +16,7 @@ class SymbolConfig(BaseModel):
     limit_sell_pct: float = Field(ge=0)
     stop_loss_pct: float = Field(ge=0)
     fixed_shares: int = Field(default=0, ge=0)
-    stop_loss_dollar: float = Field(default=0.0, ge=0)   # fixed $ amount below entry
+    stop_loss_dollar: float = Field(default=0.0, ge=0)  # fixed $ amount below entry
     # If > 0, use this as primary stop distance; otherwise fall back to %
 
     @model_validator(mode="after")

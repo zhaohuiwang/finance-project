@@ -55,15 +55,28 @@ After BUY fill, it immediately places a bracket OCO oder. The limit sell price i
 When the price hits the calculated limit or the stop, Schwab executes the sell automatically (you don’t see the bot “deciding” to sell — it’s a real live order at Schwab)
 After the sell fills, the bot resets the buy flag and will buy again later if the price drops below `buy_target_price` or the `buy_drop_pct` from the last buy.
 
-Within the place_bracket_orders() method
+Within the submit_sell_bracket_oco() method
 ```Python
-  limit_price = (
-    limit_sell_price
-    if limit_sell_price > buy_price > 1
-    else round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
-) # Caution: buy_price is from API averagePrice
-
-  stop_price = round(buy_price * (1 - cfg.stop_loss_pct / 100), 2)
+        limit_price = (
+            limit_sell_price
+            if limit_sell_price is not None
+            else round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
+        )
+        if cfg.stop_loss_dollar > 0:
+            if buy_price > limit_price:
+                stop_price = round(limit_price - cfg.stop_loss_dollar, 2)
+            else:
+                stop_price = round(buy_price - cfg.stop_loss_dollar, 2)
+            console.print(
+                f"[dim cyan]Using fixed $ stop for {symbol}: "
+                f"${cfg.stop_loss_dollar:.2f} below entry → stop @ ${stop_price:.2f}[/dim cyan]"
+            )
+        else:
+            stop_price = round(buy_price * (1 - cfg.stop_loss_pct / 100), 2)
+            console.print(
+                f"[dim]Using % stop for {symbol}: "
+                f"{cfg.stop_loss_pct}% below entry → stop @ ${stop_price:.2f}[/dim]"
+            )
 ```
 within monitor_logic()
 ```Pyhton

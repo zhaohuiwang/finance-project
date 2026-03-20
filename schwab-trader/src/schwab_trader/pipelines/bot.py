@@ -553,14 +553,14 @@ class TradingBot:
             )
 
             matched_fill = None
-            for exec in recent_execs:
+            for execution in recent_execs:  # ← changed name
                 if (
-                    exec["symbol"] == symbol
-                    and exec["side"]
+                    execution["symbol"] == symbol
+                    and execution["side"]
                     == ("BUY" if instruction in ("BUY", "BUY_TO_COVER") else "SELL")
-                    and abs(exec["quantity"] - qty_stream) < 0.01
-                ):  # allow tiny float diff
-                    matched_fill = exec
+                    and abs(execution["quantity"] - qty_stream) < 0.01
+                ):
+                    matched_fill = execution
                     break
 
             if matched_fill:
@@ -616,7 +616,7 @@ class TradingBot:
                         order_id=order_id,
                         order_status="FILLED",
                     )
-                    self.place_bracket_orders(
+                    self.submit_sell_bracket_oco(
                         symbol, price, self.symbols_config[symbol].limit_sell_price
                     )
                     self.save_state(symbol, price, qty)
@@ -737,7 +737,7 @@ class TradingBot:
                         continue
 
                 # Reuse your bracket placement logic (with fixed limit_sell_price)
-                self.place_bracket_orders(
+                self.submit_sell_bracket_oco(
                     symbol, buy_price, self.symbols_config[symbol].limit_sell_price
                 )
                 console.print(
@@ -787,21 +787,27 @@ class TradingBot:
                 self.pending_buy_orders.discard((symbol, qty))  # cleanup
             return False
 
-    def place_bracket_orders(self, symbol, buy_price, limit_sell_price):
-        """Place OCO bracket (LIMIT SELL + STOP LOSS) """
+    def submit_sell_bracket_oco(self, symbol, buy_price, limit_sell_price):
+        """Place OCO bracket (LIMIT SELL + STOP LOSS)"""
         cfg: SymbolConfig = self.symbols_config[symbol]
         qty = self.holdings[symbol]["shares"]
-        
+
         # Confirm the logic here
         # limit_sell_price has high priority, otherwise fallback to limit_sell_pct
         limit_price = (
             limit_sell_price
-            if limit_sell_price > buy_price > 1
+            if limit_sell_price is not None
             else round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
         )
-        # stop_loss_dollar has high priority, otherwise fallback to stop_loss_pct
+        console.print(
+            f"[dim cyan]Using limit_price for {symbol}: "
+            f"→ sell limit price @ ${limit_sell_price:.2f}[/dim cyan]"
+        )
         if cfg.stop_loss_dollar > 0:
-            stop_price = round(buy_price - cfg.stop_loss_dollar, 2)
+            if buy_price > limit_price:
+                stop_price = round(limit_price - cfg.stop_loss_dollar, 2)
+            else:
+                stop_price = round(buy_price - cfg.stop_loss_dollar, 2)
             console.print(
                 f"[dim cyan]Using fixed $ stop for {symbol}: "
                 f"${cfg.stop_loss_dollar:.2f} below entry → stop @ ${stop_price:.2f}[/dim cyan]"
@@ -815,9 +821,11 @@ class TradingBot:
 
         # Prevent invalid stop (shouldn't happen with config validation, but safety)
         if stop_price >= buy_price or stop_price <= 0:
-            console.print(f"[yellow]Invalid stop price calculated for {symbol} — skipping bracket[/yellow]")
+            console.print(
+                f"[yellow]Invalid stop price calculated for {symbol} — skipping bracket[/yellow]"
+            )
             return
-    
+
         stoplimit_price = round(stop_price * 0.99, 2)
         # Requirement: order above $1 can be entered in no more than two decimals.
 
@@ -1240,8 +1248,8 @@ class TradingBot:
             update in-memory config, affect monitoring loop (buy/sell triggers), updates streaming subscription, affect trading logic, persis to conf.yaml.
         reload-config command
             can be applied after you updated any values in the conf.yaml file, like limit price, stop price etc.
-        
-        
+
+
         """
         console.print(
             "[bold cyan]CLI mode active - type 'help' for commands[/bold cyan]"
@@ -1273,7 +1281,9 @@ class TradingBot:
 
                 elif command == "list":
                     with self.lock:
-                        active = ", ".join(sorted(self.symbols_config.keys())) or "(none)"
+                        active = (
+                            ", ".join(sorted(self.symbols_config.keys())) or "(none)"
+                        )
                     console.print(f"[cyan]Currently monitoring: {active}[/cyan]")
                     continue
 
@@ -1327,7 +1337,10 @@ class TradingBot:
                         )
                         self.save_config_to_yaml()
                         # Re-attach bracket if holding
-                        if sym in self.holdings and self.holdings[sym].get("shares", 0) > 0:
+                        if (
+                            sym in self.holdings
+                            and self.holdings[sym].get("shares", 0) > 0
+                        ):
                             console.print(
                                 f"[cyan]Re-attaching bracket to existing {sym} position[/cyan]"
                             )
@@ -1335,8 +1348,10 @@ class TradingBot:
                                 "buy_price", self.current_prices.get(sym, 0)
                             )
                             if buy_price > 0:
-                                self.place_bracket_orders(
-                                    sym, buy_price, self.symbols_config[sym].limit_sell_price
+                                self.submit_sell_bracket_oco(
+                                    sym,
+                                    buy_price,
+                                    self.symbols_config[sym].limit_sell_price,
                                 )
                             else:
                                 console.print(
@@ -1357,22 +1372,35 @@ class TradingBot:
                 elif command == "attach-brackets":
                     if len(parts) > 1:
                         sym = parts[1].strip().upper()
-                        if sym in self.holdings and self.holdings[sym].get("shares", 0) > 0:
+                        if (
+                            sym in self.holdings
+                            and self.holdings[sym].get("shares", 0) > 0
+                        ):
                             buy_price = self.holdings[sym].get(
                                 "buy_price", self.current_prices.get(sym, 0)
                             )
                             if buy_price > 0:
-                                self.place_bracket_orders(
-                                    sym, buy_price, self.symbols_config[sym].limit_sell_price
+                                self.submit_sell_bracket_oco(
+                                    sym,
+                                    buy_price,
+                                    self.symbols_config[sym].limit_sell_price,
                                 )
-                                console.print(f"[green]Bracket attached to {sym}[/green]")
+                                console.print(
+                                    f"[green]Bracket attached to {sym}[/green]"
+                                )
                             else:
-                                console.print(f"[yellow]No buy price available for {sym}[/yellow]")
+                                console.print(
+                                    f"[yellow]No buy price available for {sym}[/yellow]"
+                                )
                         else:
-                            console.print(f"[yellow]No current position in {sym}[/yellow]")
+                            console.print(
+                                f"[yellow]No current position in {sym}[/yellow]"
+                            )
                     else:
                         self.attach_brackets_to_existing_holdings()
-                        console.print("[green]Checked and attached brackets where needed[/green]")
+                        console.print(
+                            "[green]Checked and attached brackets where needed[/green]"
+                        )
                     continue
 
                 elif command == "fills":
@@ -1393,9 +1421,13 @@ class TradingBot:
                         return
                     fills = self.get_recent_fills(lookback_minutes=mins, symbol=sym)
                     if not fills:
-                        console.print("[yellow]No fills found in the selected period.[/yellow]")
+                        console.print(
+                            "[yellow]No fills found in the selected period.[/yellow]"
+                        )
                         return
-                    console.print(f"[bold cyan]Recent fills ({len(fills)} found):[/bold cyan]")
+                    console.print(
+                        f"[bold cyan]Recent fills ({len(fills)} found):[/bold cyan]"
+                    )
                     for f in fills:
                         t = f.get("executedTime", "—")
                         console.print(
@@ -1406,11 +1438,11 @@ class TradingBot:
                     continue
 
                 elif command in ("pause", "resume"):
-                    self.trading_paused = (command == "pause")
+                    self.trading_paused = command == "pause"
                     console.print(
                         "[yellow]Trading paused (no new buys)[/yellow]"
-                        if self.trading_paused else
-                        "[green]Trading resumed[/green]"
+                        if self.trading_paused
+                        else "[green]Trading resumed[/green]"
                     )
                     continue
 
@@ -1424,62 +1456,125 @@ class TradingBot:
 
                 elif command in ("reload-config", "reload"):
                     try:
-                        config_path = Path(__file__).parents[3] / "conf/bot/conf.yaml"  # adjust if your path differs
+                        config_path = (
+                            Path(__file__).parents[3] / "conf/bot/conf.yaml"
+                        )  # adjust parents count if path is different
+                        console.print(
+                            f"[yellow]Reloading config from: {config_path.resolve()}[/yellow]"
+                        )
+
+                        # Load the NEW configuration ───────────────────────────────
                         new_cfg = TradingConfig.load_from_file(config_path)
-                        
+                        new_symbols = set(new_cfg.symbols.keys())
+
+                        # Get current open orders (fresh) ──────────────────────────
+                        open_orders = self.get_open_orders()
+                        if not open_orders:
+                            console.print(
+                                "[dim]No open orders found — nothing to cancel[/dim]"
+                            )
+                        else:
+                            # Only consider orders for symbols that are in the NEW config
+                            relevant_orders = [
+                                o for o in open_orders if o["symbol"] in new_symbols
+                            ]
+
+                            if not relevant_orders:
+                                console.print(
+                                    "[dim]No open orders for symbols in the new config — skipping cancellation[/dim]"
+                                )
+                            else:
+                                console.print(
+                                    f"[bold yellow]Found {len(relevant_orders)} cancelable order(s) for watched symbols[/bold yellow]"
+                                )
+
+                                canceled_count = 0
+                                for order in relevant_orders:
+                                    order_id = order.get("orderId")
+                                    sym = order["symbol"]
+                                    side = order.get("instruction", "—")
+                                    if order_id and order.get("cancelable", True):
+                                        try:
+                                            self.client.cancel_order(
+                                                self.account_hash, order_id
+                                            )
+                                            console.print(
+                                                f"[green]Cancelled {order_id}  ({sym} {side})[/green]"
+                                            )
+                                            canceled_count += 1
+                                        except Exception as e:
+                                            console.print(
+                                                f"[red]Failed to cancel {order_id} ({sym}): {e}[/red]"
+                                            )
+                                    else:
+                                        console.print(
+                                            f"[dim]Order {order_id} ({sym}) not cancelable — skipped[/dim]"
+                                        )
+
+                                if canceled_count > 0:
+                                    self.invalidate_open_orders_cache()
+                                    time.sleep(1.2)
+                                    console.print(
+                                        f"[green]Cancelled {canceled_count} order(s)[/green]"
+                                    )
+                                else:
+                                    console.print(
+                                        "[yellow]No orders were actually cancelled[/yellow]"
+                                    )
+
+                        # Apply the new configuration ──────────────────────────────
                         with self.lock:
                             old_symbols = set(self.symbols_config.keys())
                             self.symbols_config = new_cfg.symbols
-                            new_symbols = set(self.symbols_config.keys())
 
-                            # Re-init caches for symbols
-                            for sym in new_symbols:
-                                if sym not in self.current_prices:
-                                    self.current_prices[sym] = None
-                                    self.auto_buy_allowed[sym] = True
-                            # Clean up removed symbols
+                            # Initialize new symbols
+                            for sym in new_symbols - old_symbols:
+                                self.current_prices.setdefault(sym, None)
+                                self.auto_buy_allowed[sym] = True
+
+                            # Clean removed symbols
                             for sym in old_symbols - new_symbols:
                                 self.current_prices.pop(sym, None)
                                 self.auto_buy_allowed.pop(sym, None)
                                 self.pending_buy_orders = {
-                                    t for t in self.pending_buy_orders if t[0] != sym
+                                    (s, q)
+                                    for s, q in self.pending_buy_orders
+                                    if s != sym
                                 }
 
-                        # If symbol set changed → restart stream subscriptions
+                        # Re-attach brackets using NEW config values ───────────────
+                        console.print(
+                            "[cyan]Re-attaching exit brackets to current positions using updated config...[/cyan]"
+                        )
+                        self.attach_brackets_to_existing_holdings()
+
+                        # Stream subscription only if symbol list actually changed ─
                         if old_symbols != new_symbols:
                             console.print(
-                                "[yellow]Symbol list changed → restarting stream subscriptions[/yellow]"
+                                "[yellow]Watched symbols changed → restarting stream[/yellow]"
                             )
                             self.start_stream()
                         else:
-                            console.print("[dim]No symbol changes detected[/dim]")
+                            console.print("[dim]Symbol list unchanged[/dim]")
 
                         console.print(
-                            "[green]Configuration reloaded from conf.yaml[/green]"
+                            "[bold green]Reload complete — config updated + brackets refreshed for watched symbols[/bold green]"
                         )
                         console.print(
-                            f"Active symbols now: {', '.join(sorted(self.symbols)) or '(none)'}"
+                            f"Active symbols: {', '.join(sorted(self.symbols)) or '(none)'}"
                         )
+
                     except Exception as e:
-                        console.print(f"[red]Failed to reload config: {e}[/red]")
-                    continue
-
-                elif command == "config":
-                    with self.lock:
-                        console.print(self.symbols_config)
-                    continue
-
-                else:
-                    console.print(
-                        "[dim yellow]Unknown command — type 'help' for list[/dim yellow]"
-                    )
-
+                        console.print(f"[bold red]Reload failed: {e}[/bold red]")
+                        console.print(
+                            "[dim]Partial state changes may have occurred — check open orders manually[/dim]"
+                        )
             except KeyboardInterrupt:
-                self.graceful_shutdown()
+                self.stop()
                 break
             except Exception as e:
                 console.print(f"[dim red]CLI error: {e}[/dim red]")
-                
+
     def stream_watchdog(self):
         """Background thread: monitors stream health and auto-reconnects if silent too long."""
         console.print("[dim cyan]Streamer watchdog started[/dim cyan]")
@@ -1514,9 +1609,7 @@ class TradingBot:
         """Persist current symbols_config back to conf.yaml"""
         console.print("[dim]Saving updated config to conf_insession.yaml...[/dim]")
         try:
-            path = (
-                Path(__file__).parents[3] / "conf/bot/conf_insession.yaml"
-            )
+            path = Path(__file__).parents[3] / "conf/bot/conf_insession.yaml"
             data = {
                 "symbols": {
                     sym: cfg.model_dump() for sym, cfg in self.symbols_config.items()
@@ -1537,16 +1630,18 @@ class TradingBot:
             return
 
         with self.lock:
-            self.symbols_config[symbol] = cfg # Now new symbol added to in-memory configuration
+            self.symbols_config[symbol] = (
+                cfg  # Now new symbol added to in-memory configuration
+            )
             self.current_prices[symbol] = None  # ready to receive real-time prices
-            self.auto_buy_allowed[symbol] = True    # can auto-buy once
+            self.auto_buy_allowed[symbol] = True  # can auto-buy once
 
         try:
             self.streamer.send(
                 self.streamer.level_one_equities(symbol, "0,1,2,3,4,5,6,7,8")
             )
             console.print(f"[green]✅ Added {symbol} and subscribed[/green]")
-            self.save_config_to_yaml() # the change is persisted to disk
+            self.save_config_to_yaml()  # the change is persisted to disk
 
         except Exception as e:
             console.print(f"[red]Stream subscribe failed: {e}[/red]")
@@ -1596,7 +1691,7 @@ class TradingBot:
         """Only to recover from stream/API issues (reconnect websocket, restart loops)."""
         console.print("[bold yellow]Restarting bot...[/bold yellow]")
         self.graceful_shutdown()
-        
+
         # ── Critical: re-init caches like in __init__ ──────────────────────
         with self.lock:
             self.current_prices = {sym: None for sym in self.symbols}
@@ -1604,7 +1699,7 @@ class TradingBot:
             self.all_holdings = {}
             self.auto_buy_allowed = {sym: True for sym in self.symbols}
             self.pending_buy_orders = set()
-        
+
         # Reset other state
         self.running = True
         self.trading_paused = False
@@ -1612,17 +1707,17 @@ class TradingBot:
         self.last_holdings_sync = time.time()
         self.invalidate_open_orders_cache()
         self._account_snapshot_cache_time = None
-        self._account_snapshot_cache = None          # ← added
+        self._account_snapshot_cache = None  # ← added
         self._open_orders_cache = None
         self._open_orders_cache_time = None
-        
+
         # Re-fetch account hash
         try:
             self.account_hash = self._get_account_hash()
         except Exception as e:
             console.print(f"[red]Failed to refresh account hash: {e}[/red]")
             return
-        
+
         # Re-start stream (this will also call attach_brackets_to_existing_holdings)
         try:
             self.start_stream()
@@ -1630,16 +1725,16 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Failed to restart stream: {e}[/red]")
             return
-        
+
         # Re-start threads
         logic_thread = threading.Thread(target=self.monitor_logic, daemon=True)
         logic_thread.start()
-        
+
         if self.mode == "full":
             display_thread = threading.Thread(target=self.monitor_display, daemon=True)
             display_thread.start()
         else:
             cli_thread = threading.Thread(target=self.cli_loop, daemon=True)
             cli_thread.start()
-        
+
         console.print("[bold green]Bot restarted successfully[/bold green]")

@@ -19,29 +19,29 @@ symbols:
   #   stop_loss_pct: 15.5
   #   fixed_shares: 1
   JOBY:
-    buy_target_price: 9.26
-    limit_sell_price: 10.26
+    buy_target_price: 9.2
+    limit_sell_price: 10.2
+    stop_loss_dollar: 2.0
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0
-    stop_loss_dollar: 2.0
     stop_loss_pct: 15.5
     fixed_shares: 1800
   IREN:
-    buy_target_price: 38.8
-    limit_sell_price: 42.8
+    buy_target_price: 41.5
+    limit_sell_price: 42.0
+    stop_loss_dollar: 5.0
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0
-    stop_loss_dollar: 5.0
     stop_loss_pct: 15.5
     fixed_shares: 400
-  USAR:
-    buy_target_price: 15.5
-    limit_sell_price: 21.0
-    buy_drop_pct: 20.0
-    limit_sell_pct: 15.0
-    stop_loss_dollar: 3.0
-    stop_loss_pct: 15.5
-    fixed_shares: 38
+  # USAR:
+  #   buy_target_price: 15.5
+  #   limit_sell_price: 21.0
+  #   buy_drop_pct: 20.0
+  #   limit_sell_pct: 15.0
+  #   stop_loss_dollar: 3.0
+  #   stop_loss_pct: 15.5
+  #   fixed_shares: 38
 
 risk:
   risk_per_trade_pct: 1.0
