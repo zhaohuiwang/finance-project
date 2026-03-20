@@ -1,3 +1,4 @@
+## Steps to setup project Direcotry including monrepo and hierarchy of projects
 ###  A: The standard uv workspace setup
 * There is only one shared virtual environment. It lives at the workspace root level → my-monorepo/.venv/
 * All workspace members (your my-dev-project, the github-lib, and any future ones) install their dependencies into this single .venv.
