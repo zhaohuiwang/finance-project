@@ -17,6 +17,7 @@ Duration = Literal[
     "UNKNOWN",
 ]
 
+# status
 OrderRequest = Literal[
     "AWAITING_PARENT_ORDER",
     "AWAITING_CONDITION",
@@ -31,7 +32,8 @@ OrderRequest = Literal[
     "PENDING_CANCEL",
     "CANCELED",
     "PENDING_REPLACE",
-    "REPLACED, FILLED",
+    "REPLACED",
+    "FILLED",
     "EXPIRED",
     "NEW",
     "AWAITING_RELEASE_TIME",
@@ -178,7 +180,8 @@ ComplexOrderStrategyType = Literal[
 #         "PENDING_CANCEL",
 #         "CANCELED",
 #         "PENDING_REPLACE",
-#         "REPLACED, FILLED",
+#         "REPLACED",
+#         "FILLED",
 #         "EXPIRED",
 #         "NEW",
 #         "AWAITING_RELEASE_TIME",

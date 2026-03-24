@@ -26,7 +26,7 @@ from schwab_trader.utils.db import (
     get_last_buy_price,
     load_state,
 )
-from schwab_trader.orders.utils import extract_final_executions
+from schwab_trader.orders.utils import get_orders
 from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
 
 load_dotenv()
@@ -46,15 +46,13 @@ class TradingBot:
         self.risk_config = cfg.risk
         self.symbols_config = cfg.symbols
 
-        self.current_prices = {
+        self.current_market_prices = {
             sym: None for sym in self.symbols
-        }  # a live in-memory price cache. It is updated in `handle_price_message()`, statement `self.current_prices[symbol] = last_price`
-        self.holdings = (
-            {}
-        )  # im-memory representation of the positions the account currently holds. It is updated by update_holdings_from_api(), statement self.client.account_details()
-        self.all_holdings = {}  # full account positions (ANY symbol, updated via API)
+        }  # in-memory catch stores the latest known market price.
+        self.holdings = {}  # symbols in conf.yaml
+        self.all_holdings = {}  # all positions in the entire account
 
-        # ── Duplicate-buy protection + manual approval ─────────────────────
+        # Duplicate-buy protection + manual approval
         self.auto_buy_allowed = {
             sym: True for sym in self.symbols
         }  # True = next trigger is AUTO
@@ -97,13 +95,9 @@ class TradingBot:
         self.last_reconnect_attempt = 0
         self.stream_running = False  # flag
 
-        # console.print(
-        #     f"[bold cyan]Account Equity at start: ${self.daily_start_equity:,.2f}[/bold cyan]"
-        # )
-
     @property
     def symbols(self):
-        """for easy access like for sym in self.symbols"""
+        """for easy access self.symbols in a statement like `for sym in self.symbols:`"""
         return list(self.symbols_config.keys())
 
     # =============================================================
@@ -161,8 +155,6 @@ class TradingBot:
             }
         return account_snapshot
 
-    # SUGGESTION: Consider calling load_state() once here (or in monitor_logic)
-    # to cache last_buy_price/qty in memory instead of 4 separate DB hits per loop.
     def update_holdings_from_api(self):
         """Sync current positions from Schwab API (called on startup + every 60 s)."""
         try:
@@ -202,10 +194,14 @@ class TradingBot:
             with self.lock:
                 self.holdings = new_watched
                 self.all_holdings = new_all
-                # unlock auto-buy flag for any watched symbol that is now flat
+                # unlock auto-buy flag for any watched symbol that is now flat (zero shares, no current position)
                 for sym in list(self.auto_buy_allowed.keys()):
                     if sym not in new_watched:
                         self.auto_buy_allowed[sym] = True
+                        # clear any lingering pending buy orders
+                        self.pending_buy_orders = {
+                            t for t in self.pending_buy_orders if t[0] != sym
+                        }
         except Exception as e:
             console.print(f"[dim red]Holdings sync failed: {e}[/dim red]")
 
@@ -339,16 +335,16 @@ class TradingBot:
         max_results: int = 20,
     ) -> list[dict]:
         """
-        Fetch confirmed filled executions using the reliable extract_final_executions utility.
+        Fetch confirmed filled executions using the reliable get_orders utility.
         Returns sorted list (newest first).
         """
         since = datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
 
         try:
-            fills = extract_final_executions(
+            fills = get_orders(
                 hashValue=self.account_hash,
                 status="FILLED",
-                fromEnteredTime=since.isoformat() + "Z",
+                fromTime=since.isoformat() + "Z",
             )
         except Exception as e:
             console.print(f"[red]Failed to fetch recent fills: {e}[/red]")
@@ -435,8 +431,9 @@ class TradingBot:
             return False
 
         # Buying power check - Use real calculated qty instead
-        qty = self.calculate_shares(symbol, self.current_prices.get(symbol, 0))
-        estimated_cost = self.current_prices.get(symbol, 0) * qty
+        estimated_cost = self.current_market_prices.get(
+            symbol, 0
+        ) * self.calculate_shares(symbol, self.current_market_prices.get(symbol, 0))
 
         if bp < estimated_cost * 1.05:
             console.print(
@@ -484,14 +481,14 @@ class TradingBot:
                 self.handle_account_activity(data_item)
 
     def handle_price_message(self, item):
-        """Update self.current_prices from LEVELONE_EQUITIES stream (field 3 = last)."""
+        """Update self.current_market_prices from LEVELONE_EQUITIES stream (field 3 = last)."""
         content_list = item.get("content", [])
         if not content_list:
             return
 
         for content in content_list:
             symbol = content.get("key")
-            if symbol not in self.current_prices:
+            if symbol not in self.current_market_prices:
                 continue
 
             # prev_close = content.get("16")  # previous close
@@ -501,7 +498,7 @@ class TradingBot:
                     last_price = float(last_str)
                     if last_price > 0:
                         with self.lock:
-                            self.current_prices[symbol] = last_price
+                            self.current_market_prices[symbol] = last_price
                 except (ValueError, TypeError):
                     pass
 
@@ -515,7 +512,7 @@ class TradingBot:
             #             mid = (float(bid) + float(ask)) / 2
             #             if mid > 0:
             #                 with self.lock:
-            #                     self.current_prices[symbol] = mid
+            #                     self.current_market_prices[symbol] = mid
             #         except:
             #             pass
 
@@ -546,14 +543,14 @@ class TradingBot:
             lookback = datetime.now(timezone.utc) - timedelta(
                 minutes=10
             )  # recent window
-            recent_execs = extract_final_executions(
+            recent_execs = get_orders(
                 hashValue=self.account_hash,
                 status="FILLED",
                 fromEnteredTime=lookback.isoformat() + "Z",
             )
 
             matched_fill = None
-            for execution in recent_execs:  # ← changed name
+            for execution in recent_execs:  #
                 if (
                     execution["symbol"] == symbol
                     and execution["side"]
@@ -598,6 +595,14 @@ class TradingBot:
                         )
                         self.auto_buy_allowed[symbol] = True
                         self.force_sync_holdings()
+
+                        # update so that a buy order wont be blocked
+                        self.pending_buy_orders = {
+                            t for t in self.pending_buy_orders if t[0] != symbol
+                        }
+                        console.print(
+                            f"[dim green]Cleared stale pending buys for {symbol} after sell[/dim green]"
+                        )
 
                 elif side in ("BUY", "BUY_TO_COVER"):
                     self.pending_buy_orders.discard((symbol, qty))
@@ -650,7 +655,7 @@ class TradingBot:
             self.streamer.start(receiver=self.unified_receiver)
 
             # (Re)subscribe quotes for ALL current symbols
-            symbols_str = ",".join(self.symbols_config.keys())
+            symbols_str = ",".join(self.symbols)
             if symbols_str:
                 self.streamer.send(
                     self.streamer.level_one_equities(
@@ -724,7 +729,7 @@ class TradingBot:
                 buy_price = holding.get("buy_price", 0)  # fallback if missing
                 if buy_price <= 0:
                     # If no avg buy price known, skip or use current price (your choice)
-                    current_price = self.current_prices.get(symbol, 0)
+                    current_price = self.current_market_prices.get(symbol, 0)
                     if current_price > 0:
                         buy_price = current_price
                         console.print(
@@ -771,7 +776,7 @@ class TradingBot:
                 action="BUY_SUBMITTED",
                 symbol=symbol,
                 qty=qty,
-                price=self.current_prices.get(symbol, 0),
+                price=self.current_market_prices.get(symbol, 0),
                 note=f"Risk-sized: {qty} shares | session={order.get('session', 'NORMAL')}",
                 order_id=order_id,
                 order_status="PENDING",
@@ -894,7 +899,7 @@ class TradingBot:
 
         with self.lock:
             for sym in self.symbols:
-                price = self.current_prices.get(sym)
+                price = self.current_market_prices.get(sym)
                 h = self.holdings.get(sym, {})
                 shares = h.get("shares", 0)
                 buy_p = h.get("buy_price")
@@ -968,7 +973,7 @@ class TradingBot:
                 self.all_holdings.items(), key=lambda item: item[0]
             )
             for sym, h in sorted_holdings:
-                price = self.current_prices.get(sym) or h.get("current_price")
+                price = self.current_market_prices.get(sym) or h.get("current_price")
                 shares = h.get("shares", 0)
                 buy_p = h.get("buy_price")
                 pl = (
@@ -1024,7 +1029,7 @@ class TradingBot:
 
                 with self.lock:
                     holdings_copy = dict(self.holdings)
-                    prices_copy = dict(self.current_prices)
+                    prices_copy = dict(self.current_market_prices)
                     view = {}
                     for sym in self.symbols:
                         p = prices_copy.get(sym)
@@ -1066,7 +1071,7 @@ class TradingBot:
                 holdings_copy = dict(self.holdings)
                 pending_copy = set(self.pending_buy_orders)
                 auto_copy = dict(self.auto_buy_allowed)
-                prices_copy = dict(self.current_prices)
+                prices_copy = dict(self.current_market_prices)
 
             # ── Buy trigger logic ──
             for sym in self.symbols:
@@ -1144,7 +1149,7 @@ class TradingBot:
                     holdings_copy = dict(self.holdings)
                     pending_copy = set(self.pending_buy_orders)
                     auto_copy = dict(self.auto_buy_allowed)
-                    prices_copy = dict(self.current_prices)
+                    prices_copy = dict(self.current_market_prices)
 
                     view = {}
                     for sym in self.symbols:
@@ -1201,7 +1206,7 @@ class TradingBot:
                         )  # ← your existing function
 
                         # Check if this exact (symbol, qty) is already pending
-                        if (sym, qty) in self.pending_copy:
+                        if (sym, qty) in pending_copy:
                             console.print(
                                 f"[dim yellow]Exact same order ({sym}, {qty} shares) already pending — skipping[/dim yellow]"
                             )
@@ -1345,7 +1350,7 @@ class TradingBot:
                                 f"[cyan]Re-attaching bracket to existing {sym} position[/cyan]"
                             )
                             buy_price = self.holdings[sym].get(
-                                "buy_price", self.current_prices.get(sym, 0)
+                                "buy_price", self.current_market_prices.get(sym, 0)
                             )
                             if buy_price > 0:
                                 self.submit_sell_bracket_oco(
@@ -1377,7 +1382,7 @@ class TradingBot:
                             and self.holdings[sym].get("shares", 0) > 0
                         ):
                             buy_price = self.holdings[sym].get(
-                                "buy_price", self.current_prices.get(sym, 0)
+                                "buy_price", self.current_market_prices.get(sym, 0)
                             )
                             if buy_price > 0:
                                 self.submit_sell_bracket_oco(
@@ -1529,12 +1534,12 @@ class TradingBot:
 
                             # Initialize new symbols
                             for sym in new_symbols - old_symbols:
-                                self.current_prices.setdefault(sym, None)
+                                self.current_market_prices.setdefault(sym, None)
                                 self.auto_buy_allowed[sym] = True
 
                             # Clean removed symbols
                             for sym in old_symbols - new_symbols:
-                                self.current_prices.pop(sym, None)
+                                self.current_market_prices.pop(sym, None)
                                 self.auto_buy_allowed.pop(sym, None)
                                 self.pending_buy_orders = {
                                     (s, q)
@@ -1633,7 +1638,9 @@ class TradingBot:
             self.symbols_config[symbol] = (
                 cfg  # Now new symbol added to in-memory configuration
             )
-            self.current_prices[symbol] = None  # ready to receive real-time prices
+            self.current_market_prices[symbol] = (
+                None  # ready to receive real-time prices
+            )
             self.auto_buy_allowed[symbol] = True  # can auto-buy once
 
         try:
@@ -1657,7 +1664,7 @@ class TradingBot:
         with self.lock:
 
             self.symbols_config.pop(symbol, None)
-            self.current_prices.pop(symbol, None)
+            self.current_market_prices.pop(symbol, None)
             self.auto_buy_allowed.pop(symbol, None)
 
             if symbol in self.holdings:
@@ -1694,7 +1701,7 @@ class TradingBot:
 
         # ── Critical: re-init caches like in __init__ ──────────────────────
         with self.lock:
-            self.current_prices = {sym: None for sym in self.symbols}
+            self.current_market_prices = {sym: None for sym in self.symbols}
             self.holdings = {}
             self.all_holdings = {}
             self.auto_buy_allowed = {sym: True for sym in self.symbols}

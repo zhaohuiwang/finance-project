@@ -32,7 +32,7 @@ from schwab_trader.orders.utils import (
     cancel_order,
     get_utc_time_range,
     iter_keys_path_tuple,
-    extract_final_executions,
+    get_orders,
 )
 
 # Specified an accout number, instiate a client, the client will fetch the matching account hashValue for later identification
@@ -73,6 +73,7 @@ print(json.dumps(data, indent=4))
 # ========================================================================
 
 # create an order configuration dictionary
+# Buy order configurations
 order_b1 = buy_market_dict(
     symbol="THISISADEMO",
     quantity=1,
@@ -103,16 +104,17 @@ order_b5 = buy_limit_trigger_sell_limit_dict(
 order_b7 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
     symbol="IREN",
     quantity=400,
-    buy_limit_price=44.3,  # 14.97
+    buy_limit_price=4.3,  # 14.97
     sell_limit_price=47.88,  # 15.27
     sell_stop_price=40.0,  # 11.27
     session_buy_limit="NORMAL",
     session_sell_limit="NORMAL",
     session_sell_stop="NORMAL",
     buy_duration="DAY",
-    sell_duration="GOOD_TILL_CANCEL",
+    sell_duration="DAY",
 )
 
+# Sell order configurations
 order_s2 = sell_market_dict(
     symbol="THISISADEMO",
     quantity=1,
@@ -149,7 +151,7 @@ order_s8 = sell_limit_sell_stoplimit_oco_dict(
 
 
 # submit an order
-order = order_s8
+order = order_b7
 
 
 status_code, date, order_id = place_order(
@@ -202,10 +204,10 @@ status_code, date, order_id = place_order(
 
 from_time, to_time = get_utc_time_range(
     # to_time= dt.datetime(2026, 3, 6, 10, 0)
-    offset=dt.timedelta(days=2, hours=1, minutes=5)
+    offset=dt.timedelta(days=0, hours=1, minutes=5)
 )
 # or simply
-from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=0, hours=2, minutes=5)
+from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=0, hours=8, minutes=5)
 to_time = dt.datetime.now(dt.timezone.utc)
 
 orders = client.account_orders(
@@ -219,16 +221,18 @@ orders = client.account_orders(
 print(json.dumps(orders, indent=4))
 
 
-executions = extract_final_executions(
+all_orders = get_orders(
     hashValue,
-    fromEnteredTime=from_time,
-    toEnteredTime=to_time,
+    fromTime=from_time,
+    toTime=to_time,
     # status='WORKING',
-    # status="FILLED"
+    # status="FILLED",
+    # status="AWAITING_PARENT_ORDER",
+    # status="PENDING_ACTIVATION"
 )
+# Return a list of dictionary
 
-
-df = pd.DataFrame(executions)
+df = pd.DataFrame(all_orders)
 
 # orders_all_account = client.account_orders_all(
 #     fromEnteredTime=from_time,
@@ -271,12 +275,12 @@ order_ids = [
 ]
 
 # Examine an order details - the 1st in the list
-orders = client.order_details(
+order = client.order_details(
     accountHash=hashValue,
     # orderId=order_ids[0],
-    orderId="1005645558838",
+    orderId="1005789269420",
 ).json()
-
+print(json.dumps(order, indent=4))
 
 # Cancel an order
 status_code, date = cancel_order(
@@ -289,6 +293,13 @@ status_code, date = cancel_order(
 if status_code == 200:
     order_ids.pop(0)  # cancellation succeed, remove it (the 1st) from the list
 
+for order in all_orders:
+    if order.get("cancelable"):
+        status_code, date = cancel_order(
+            client=client,
+            accountHash=hashValue,
+            order_id=order.get("orderId"),
+        )
 
 # ========================================================================
 # Other client methods

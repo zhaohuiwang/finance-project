@@ -27,8 +27,8 @@ symbols:
     stop_loss_pct: 15.5
     fixed_shares: 1800
   IREN:
-    buy_target_price: 42.5
-    limit_sell_price: 43.5
+    buy_target_price: 42.4
+    limit_sell_price: 42.8
     stop_loss_dollar: 5.0
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0

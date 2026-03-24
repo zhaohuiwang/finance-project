@@ -217,11 +217,11 @@ def to_iso_utc(dt_obj: datetime) -> str:
     return dt_obj.astimezone(timezone.utc).isoformat(timespec="milliseconds")
 
 
-def extract_final_executions(
+def get_orders(
     hashValue: str,
     status: str | None = None,
-    fromEnteredTime: Any = None,
-    toEnteredTime: Any = None,
+    fromTime: Any = None,
+    toTime: Any = None,
 ) -> list[dict[str, Any]]:
     """
     Extracts all executed orders (including nested child orders) for a given account,
@@ -230,18 +230,25 @@ def extract_final_executions(
     Args:
         hashValue (str): Account hash to fetch orders for.
         status (str | None, optional): Filter orders by status (e.g., 'FILLED'). Defaults to None.
-        fromEnteredTime (Any, optional): Start time filter for orders. Defaults to None.
-        toEnteredTime (Any, optional): End time filter for orders. Defaults to None.
+        fromTime (Any, optional): Start time filter for orders. Defaults to None.
+        toTime (Any, optional): End time filter for orders. Defaults to None.
 
     Returns:
-        List[Dict[str, Any]]: A list of execution dictionaries.
+        List[Dict[str, Any]]: A list of execution dictionaries. Other keys may have None or missing value but "orderId" will always has a value.
+    Example:
+        all_orders = get_orders(
+        hashValue,
+        fromTime=from_time,
+        toTime=to_time,
+        # status='WORKING',
+        # status="FILLED"
+    )
     """
-    from datetime import datetime
 
     orders = client.account_orders(
         accountHash=hashValue,
-        fromEnteredTime=fromEnteredTime,
-        toEnteredTime=toEnteredTime,
+        fromEnteredTime=fromTime,
+        toEnteredTime=toTime,
         status=status,
     ).json()
 
@@ -251,68 +258,116 @@ def extract_final_executions(
         order_list: list[dict[str, Any]], parent_id: int | None = None
     ) -> None:
         for order in order_list:
-            order_id = order.get("orderId")
+            # All submitted orders have orderLegCollection section
+            order_legs = [
+                (
+                    leg.get("instruction"),
+                    leg.get("quantity"),
+                    leg.get("instrument", {}).get("symbol"),
+                    leg.get("orderLegType"),
+                )
+                for leg in order.get("orderLegCollection", [])
+            ]
+
+            symbols = {leg[2] for leg in order_legs if leg[2] is not None}
+            asset_types = {leg[3] for leg in order_legs if leg[3] is not None}
+            instructions = {leg[0] for leg in order_legs if leg[0] is not None}
+
+            # Symbol classification
+            if len(symbols) == 1:
+                symbol = next(iter(symbols))
+                symbol_type = "single_symbol"
+            elif len(symbols) > 1:
+                symbol = None
+                symbol_type = "multi_symbol"
+            else:
+                symbol = None
+                symbol_type = "unknown"
+
+            # Asset type classification
+            if len(asset_types) == 1:
+                asset_type = next(iter(asset_types))
+                asset_consistent = True
+            else:
+                asset_type = None
+                asset_consistent = False
+
+            # Leg structure classification
+            num_legs = len(order_legs)
+
+            if num_legs == 1:
+                structure = "single_leg"
+            elif num_legs > 1:
+                structure = "multi_leg"
+            else:
+                structure = "no_legs"
+
+            # Side - BUY or SELL or MIXED
+            if len(instructions) == 1:
+                side = next(iter(instructions))  # all same → BUY or SELL
+            elif len(instructions) > 1:
+                side = "MIXED"  # e.g., spreads (BUY + SELL)
+            else:
+                side = None
+
+            # For orders with a follow-up actions: manual or triggered
+            order_activities = [
+                (
+                    activity.get("executionType"),
+                    leg.get("quantity"),
+                    leg.get("price"),
+                    datetime.fromisoformat(leg["time"]) if leg.get("time") else None,
+                )
+                for activity in order.get("orderActivityCollection", [])
+                for leg in activity.get("executionLegs", [])
+            ]
+
             order_status = order.get("status")
-            cancelable = order.get("cancelable")
-            editable = order.get("editable")
-            order_type = order.get("orderType")
-            duration = order.get("duration")
-            placed_time = (
-                datetime.fromisoformat(order["enteredTime"].replace("Z", "+00:00"))
-                if order.get("enteredTime")
-                else None
-            )
-            note = "simple" if parent_id is None else f"child_of_{parent_id}"
 
-            # Map legId → instrument info
-            leg_map = {}
-            for leg in order.get("orderLegCollection", []):
-                leg_map[leg["legId"]] = {
-                    "symbol": leg["instrument"]["symbol"],
-                    "instruction": leg["instruction"],
+            if order_status in ["EXPIRED", "CANCELED", "REJECTED"]:
+                continue  # Most of the time, we do not care about these
+
+            order_info = {
+                "orderId": order.get("orderId"),
+                "duration": order.get("duration"),
+                "quantity": order.get("quantity"),
+                "orderType": order.get("orderType"),
+                "price": order.get("price") or order.get("stopPrice"),
+                "status": order_status,
+                "cancelable": order.get("cancelable"),
+                "editable": order.get("editable"),
+                "filledQuantity": order.get("filledQuantity"),
+                "note": "simple" if parent_id is None else f"child_of_{parent_id}",
+                "placed_time": (
+                    datetime.fromisoformat(order["enteredTime"].replace("Z", "+00:00"))
+                    if order.get("enteredTime")
+                    else None
+                ),
+                "order_legs": order_legs,  #
+                "order_activities": order_activities,  #
+            }
+            # Additional info
+            order_info.update(
+                {
+                    "symbol": symbol,
+                    "symbol_type": symbol_type,
+                    "asset_type": asset_type,
+                    "asset_consistent": asset_consistent,
+                    "num_legs": num_legs,
+                    "structure": structure,
+                    "side": side,
                 }
+            )
 
-            for activity in order.get("orderActivityCollection", []):
-                if activity.get("activityType") != "EXECUTION":
-                    continue
-
-                for exec_leg in activity.get("executionLegs", []):
-                    leg_id = exec_leg.get("legId")
-                    leg_info = leg_map.get(leg_id, {})
-                    instruction = leg_info.get("instruction", "")
-                    side = "BUY" if instruction.startswith("BUY") else "SELL"
-
-                    executed_time = (
-                        datetime.fromisoformat(exec_leg["time"].replace("Z", "+00:00"))
-                        if exec_leg.get("time")
-                        else None
-                    )
-
-                    results.append(
-                        {
-                            "orderId": order_id,
-                            "symbol": leg_info.get("symbol"),
-                            "instruction": instruction,
-                            "side": side,
-                            "orderType": order_type,
-                            "duration": duration,
-                            "price": exec_leg.get("price"),
-                            "quantity": exec_leg.get("quantity"),
-                            "status": order_status,
-                            "cancelable": cancelable,
-                            "editable": editable,
-                            "note": note,
-                            "placedTime": placed_time,
-                            "executedTime": executed_time,
-                        }
-                    )
+            results.append(order_info)
 
             # Recurse nested orders
             if "childOrderStrategies" in order:
-                parse_orders(order["childOrderStrategies"], parent_id=order_id)
+                parse_orders(
+                    order["childOrderStrategies"], parent_id=order.get("orderId")
+                )
 
     parse_orders(orders)
-
     return results
 
 
