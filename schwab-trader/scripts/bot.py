@@ -268,7 +268,9 @@ def update_dashboard(n_interval, n_clicks):
         all_holdings_data = []
         with bot.lock:
             for sym, h in bot.all_holdings.items():
-                price = bot.current_prices.get(sym) or h.get("current_price", None)
+                price = bot.current_market_prices.get(sym) or h.get(
+                    "current_price", None
+                )
                 shares = h.get("shares", 0)
                 buy_p = h.get("buy_price")
                 price_safe = price if price is not None else 0.0

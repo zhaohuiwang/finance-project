@@ -293,6 +293,17 @@ status_code, date = cancel_order(
 if status_code == 200:
     order_ids.pop(0)  # cancellation succeed, remove it (the 1st) from the list
 
+
+# To cancel all recent orders
+from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=0, hours=8, minutes=5)
+to_time = dt.datetime.now(dt.timezone.utc)
+
+all_orders = get_orders(
+    hashValue,
+    fromTime=from_time,
+    toTime=to_time,
+)
+
 for order in all_orders:
     if order.get("cancelable"):
         status_code, date = cancel_order(
@@ -300,6 +311,7 @@ for order in all_orders:
             accountHash=hashValue,
             order_id=order.get("orderId"),
         )
+        print(status_code)
 
 # ========================================================================
 # Other client methods
