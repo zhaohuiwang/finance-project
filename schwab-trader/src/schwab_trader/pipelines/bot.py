@@ -1274,18 +1274,22 @@ class TradingBot:
 
                 if command == "help":
                     console.print("""Available commands:
-    help             Show this help
-    list             List currently monitored symbols
-    add SYMBOL {json}   Add a new symbol with config
-    update SYMBOL {json} Update config for existing symbol
-    remove SYMBOL    Remove a symbol from monitoring
-    attach-brackets [SYMBOL] Attach OCO brackets to current holdings
-    pause            Pause new buy orders
-    resume           Resume trading
-    stop             Gracefully stop the bot
-    restart          Restart streaming and threads
-    reload-config    Reload configuration from conf.yaml
-    config           Show current full configuration
+    help                        Show this help
+    list                        List currently monitored symbols
+    config                      Show current full configuration
+    add SYMBOL {json}           Add a new symbol with config
+    update SYMBOL {json}        Update config for existing symbol
+    remove SYMBOL               Remove a symbol from monitoring
+    attach-brackets [SYMBOL]    Attach OCO brackets to current holdings
+    pause                       Pause new buy orders
+    resume                      Resume trading
+    reload-config               Reload (updated) configuration from conf.yaml
+    stop                        Gracefully stop the bot (Cancel open orders, UI stays active)
+    restart                     Restart streaming and threads
+    
+    Ctl + c or z                Shut down the bot completely
+    lsof -i :8050               Clean up localHost  
+    kill -i <pid>
                     """)
                     continue
 
@@ -1458,7 +1462,7 @@ class TradingBot:
 
                 elif command == "stop":
                     self.graceful_shutdown()
-                    break
+                    # break
 
                 elif command == "restart":
                     self.restart()
@@ -1466,97 +1470,50 @@ class TradingBot:
 
                 elif command in ("reload-config", "reload"):
                     try:
-                        config_path = (
-                            Path(__file__).parents[3] / "conf/bot/conf.yaml"
-                        )  # adjust parents count if path is different
+                        config_path = Path(__file__).parents[3] / "conf/bot/conf.yaml"
                         console.print(
-                            f"[yellow]Reloading config from: {config_path.resolve()}[/yellow]"
+                            f"[yellow]Reloading configuration from: {config_path.resolve()}[/yellow]"
                         )
 
-                        # Handle shutdown settings first
-                        old_shutdown_enabled = getattr(
-                            self, "auto_shutdown_after_close", True
-                        )
+                        new_cfg = TradingConfig.load_from_file(config_path)
+
+                        # Apply new shutdown settings
                         self._load_shutdown_config(new_cfg)
 
-                        # Restart shutdown timer only if setting changed or was disabled → enabled
-                        if (
-                            not old_shutdown_enabled and self.auto_shutdown_after_close
-                        ) or (
-                            hasattr(self, "_shutdown_timer") and self._shutdown_timer
-                        ):
-                            console.print(
-                                "[cyan]Shutdown settings changed → restarting timer[/cyan]"
-                            )
-                            self.start_market_close_timer()
-
-                        # Load the NEW configuration ───────────────────────────────
-                        new_cfg = TradingConfig.load_from_file(config_path)
+                        # === Symbol & order handling ===
                         new_symbols = set(new_cfg.symbols.keys())
-
-                        # Get current open orders (fresh) ──────────────────────────
                         open_orders = self.get_open_orders()
-                        if not open_orders:
-                            console.print(
-                                "[dim]No open orders found — nothing to cancel[/dim]"
-                            )
-                        else:
-                            # Only consider orders for symbols that are in the NEW config
-                            relevant_orders = [
-                                o for o in open_orders if o["symbol"] in new_symbols
-                            ]
 
-                            if not relevant_orders:
-                                console.print(
-                                    "[dim]No open orders for symbols in the new config — skipping cancellation[/dim]"
-                                )
-                            else:
-                                console.print(
-                                    f"[bold yellow]Found {len(relevant_orders)} cancelable order(s) for watched symbols[/bold yellow]"
-                                )
-
-                                canceled_count = 0
-                                for order in relevant_orders:
-                                    order_id = order.get("orderId")
-                                    sym = order["symbol"]
-                                    side = order.get("instruction", "—")
-                                    if order_id and order.get("cancelable", True):
-                                        try:
-                                            self.client.cancel_order(
-                                                self.account_hash, order_id
-                                            )
-                                            console.print(
-                                                f"[green]Cancelled {order_id}  ({sym} {side})[/green]"
-                                            )
-                                            canceled_count += 1
-                                        except Exception as e:
-                                            console.print(
-                                                f"[red]Failed to cancel {order_id} ({sym}): {e}[/red]"
-                                            )
-                                    else:
-                                        console.print(
-                                            f"[dim]Order {order_id} ({sym}) not cancelable — skipped[/dim]"
-                                        )
-
-                                if canceled_count > 0:
-                                    self.invalidate_open_orders_cache()
-                                    time.sleep(1.2)
-                                    console.print(
-                                        f"[green]Cancelled {canceled_count} order(s)[/green]"
+                        canceled_count = 0
+                        for order in open_orders:
+                            if order["symbol"] in new_symbols and order.get(
+                                "cancelable", True
+                            ):
+                                try:
+                                    self.client.cancel_order(
+                                        self.account_hash, order["orderId"]
                                     )
-                                else:
                                     console.print(
-                                        "[yellow]No orders were actually cancelled[/yellow]"
+                                        f"[dim green]Cancelled order {order['orderId']} for {order['symbol']}[/dim green]"
+                                    )
+                                    canceled_count += 1
+                                except Exception as e:
+                                    console.print(
+                                        f"[dim red]Failed to cancel {order.get('orderId')}: {e}[/dim red]"
                                     )
 
-                        # Apply the new configuration ──────────────────────────────
+                        if canceled_count > 0:
+                            self.invalidate_open_orders_cache()
+                            time.sleep(1.2)
+
+                        # Update in-memory symbol config
                         with self.lock:
                             old_symbols = set(self.symbols_config.keys())
                             self.symbols_config = new_cfg.symbols
 
-                            # Initialize new symbols
+                            # Add new symbols
                             for sym in new_symbols - old_symbols:
-                                self.current_market_prices.setdefault(sym, None)
+                                self.current_market_prices[sym] = None
                                 self.auto_buy_allowed[sym] = True
 
                             # Clean removed symbols
@@ -1569,32 +1526,32 @@ class TradingBot:
                                     if s != sym
                                 }
 
-                        # Re-attach brackets using NEW config values ───────────────
-                        console.print(
-                            "[cyan]Re-attaching exit brackets to current positions using updated config...[/cyan]"
-                        )
+                        # Re-attach brackets with new config
                         self.attach_brackets_to_existing_holdings()
 
-                        # Stream subscription only if symbol list actually changed ─
-                        if old_symbols != new_symbols:
-                            console.print(
-                                "[yellow]Watched symbols changed → restarting stream[/yellow]"
-                            )
-                            self.start_stream()
-                        else:
-                            console.print("[dim]Symbol list unchanged[/dim]")
+                        # Summary
+                        console.print(
+                            "[bold green]Configuration reloaded successfully![/bold green]"
+                        )
+                        console.print(
+                            f"Active symbols : {', '.join(sorted(self.symbols)) or '(none)'}"
+                        )
+                        console.print(
+                            f"Auto-shutdown  : {'ENABLED' if self.auto_shutdown_after_close else 'DISABLED'} "
+                            f"(buffer: {self.shutdown_buffer_minutes} min)"
+                        )
 
+                        # Final step: Restart bot so new settings (including timer) take full effect
                         console.print(
-                            "[bold green]Reload complete — config updated + brackets refreshed for watched symbols[/bold green]"
+                            "[yellow]Restarting bot to apply new configuration...[/yellow]"
                         )
-                        console.print(
-                            f"Active symbols: {', '.join(sorted(self.symbols)) or '(none)'}"
-                        )
+                        time.sleep(1.0)
+                        self.restart()
 
                     except Exception as e:
                         console.print(f"[bold red]Reload failed: {e}[/bold red]")
                         console.print(
-                            "[dim]Partial state changes may have occurred — check open orders manually[/dim]"
+                            "[dim]You can manually type 'restart' if needed.[/dim]"
                         )
             except KeyboardInterrupt:
                 self.stop()
@@ -1776,9 +1733,9 @@ class TradingBot:
         )
 
         # If running in CLI mode, you can optionally exit the process here
-        import sys
+        # import sys
 
-        sys.exit(0)  # Only if you want the entire script to terminate
+        # sys.exit(0)  # Only if you want the entire script to terminate
 
     def restart(self):
         """Only to recover from stream/API issues (reconnect websocket, restart loops)."""
@@ -1829,6 +1786,8 @@ class TradingBot:
         else:
             cli_thread = threading.Thread(target=self.cli_loop, daemon=True)
             cli_thread.start()
+
+        self.start_market_close_timer()
 
         console.print("[bold green]Bot restarted successfully[/bold green]")
 

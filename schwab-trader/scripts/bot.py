@@ -343,8 +343,6 @@ if __name__ == "__main__":
     logic_thread = threading.Thread(target=bot.monitor_logic, daemon=True)
     logic_thread.start()
 
-    bot.start_market_close_timer()
-
     # Add the watchdog thread
     watchdog_thread = threading.Thread(target=bot.stream_watchdog, daemon=True)
     watchdog_thread.start()
