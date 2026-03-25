@@ -11,4 +11,4 @@ tokens.json
 /docs/examples/tests
 uv.lock
 
-gitmodules/
+/schwab-trader/logs/

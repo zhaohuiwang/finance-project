@@ -698,61 +698,33 @@ class TradingBot:
     # ORDER PLACEMENT
     # =============================================================
     def attach_brackets_to_existing_holdings(self):
-        """
-        On startup (or when needed): place OCO brackets on any current holdings that don't already have them.
-        """
-
-        console.print(
-            "[cyan]Checking for existing holdings to attach brackets...[/cyan]"
-        )
-
-        self.update_holdings_from_api()  # Ensure fresh data
-
+        """Attach OCO brackets to existing holdings that don't have them."""
+        console.print("[cyan]Checking and attaching brackets to existing holdings...[/cyan]")
+        time.sleep(0.8)                    # small buffer after restart
+        self.update_holdings_from_api()    # ensure fresh data
+        self.invalidate_open_orders_cache()
+        
         open_orders = self.get_open_orders()
-        symbols_with_open_sell = set()
-
-        # Simple check: if there's already a SELL LIMIT or STOP for the symbol, assume bracket exists
-        for order in open_orders:
-            if order.get("instruction") in ("SELL", "SELL_SHORT"):
-                symbols_with_open_sell.add(order.get("symbol"))
+        symbols_with_open_sell = {o.get("symbol") for o in open_orders if o.get("instruction") in ("SELL", "SELL_SHORT")}
 
         with self.lock:
             for symbol, holding in list(self.holdings.items()):
                 if symbol not in self.symbols_config:
-                    continue  # ignore non-watched symbols
-
-                if symbol in symbols_with_open_sell:
-                    console.print(
-                        f"[dim yellow]Skipping {symbol} — appears to have open sell orders already[/dim yellow]"
-                    )
                     continue
+                if symbol in symbols_with_open_sell:
+                    continue  # already has bracket
 
-                qty = holding["shares"]
+                qty = holding.get("shares", 0)
                 if qty <= 0:
                     continue
 
-                buy_price = holding.get("buy_price", 0)  # fallback if missing
+                buy_price = holding.get("buy_price") or self.current_market_prices.get(symbol, 0)
                 if buy_price <= 0:
-                    # If no avg buy price known, skip or use current price (your choice)
-                    current_price = self.current_market_prices.get(symbol, 0)
-                    if current_price > 0:
-                        buy_price = current_price
-                        console.print(
-                            f"[yellow]Using current price as fallback for {symbol} bracket[/yellow]"
-                        )
-                    else:
-                        console.print(
-                            f"[red]Cannot attach bracket for {symbol} — no buy price available[/red]"
-                        )
-                        continue
+                    console.print(f"[yellow]Skipping bracket for {symbol} — no valid buy price[/yellow]")
+                    continue
 
-                # Reuse your bracket placement logic (with fixed limit_sell_price)
-                self.submit_sell_bracket_oco(
-                    symbol, buy_price, self.symbols_config[symbol].limit_sell_price
-                )
-                console.print(
-                    f"[green]Attached bracket to existing {symbol} position ({qty} shares)[/green]"
-                )
+                self.submit_sell_bracket_oco(symbol, buy_price, self.symbols_config[symbol].limit_sell_price)
+                console.print(f"[green]Attached new bracket to {symbol} ({qty} shares)[/green]")
 
     def place_buy_order(self, symbol: str, qty: float) -> bool:
         """Submit a MARKET BUY order (used only after all safety checks pass)."""
@@ -1471,42 +1443,16 @@ class TradingBot:
                 elif command in ("reload-config", "reload"):
                     try:
                         config_path = Path(__file__).parents[3] / "conf/bot/conf.yaml"
-                        console.print(
-                            f"[yellow]Reloading configuration from: {config_path.resolve()}[/yellow]"
-                        )
+                        console.print(f"[yellow]Reloading configuration from: {config_path.resolve()}[/yellow]")
 
                         new_cfg = TradingConfig.load_from_file(config_path)
 
                         # Apply new shutdown settings
                         self._load_shutdown_config(new_cfg)
 
-                        # === Symbol & order handling ===
+                        # Update symbol configuration (no cancellation here)
                         new_symbols = set(new_cfg.symbols.keys())
-                        open_orders = self.get_open_orders()
 
-                        canceled_count = 0
-                        for order in open_orders:
-                            if order["symbol"] in new_symbols and order.get(
-                                "cancelable", True
-                            ):
-                                try:
-                                    self.client.cancel_order(
-                                        self.account_hash, order["orderId"]
-                                    )
-                                    console.print(
-                                        f"[dim green]Cancelled order {order['orderId']} for {order['symbol']}[/dim green]"
-                                    )
-                                    canceled_count += 1
-                                except Exception as e:
-                                    console.print(
-                                        f"[dim red]Failed to cancel {order.get('orderId')}: {e}[/dim red]"
-                                    )
-
-                        if canceled_count > 0:
-                            self.invalidate_open_orders_cache()
-                            time.sleep(1.2)
-
-                        # Update in-memory symbol config
                         with self.lock:
                             old_symbols = set(self.symbols_config.keys())
                             self.symbols_config = new_cfg.symbols
@@ -1520,39 +1466,25 @@ class TradingBot:
                             for sym in old_symbols - new_symbols:
                                 self.current_market_prices.pop(sym, None)
                                 self.auto_buy_allowed.pop(sym, None)
-                                self.pending_buy_orders = {
-                                    (s, q)
-                                    for s, q in self.pending_buy_orders
-                                    if s != sym
-                                }
+                                self.pending_buy_orders = {(s, q) for s, q in self.pending_buy_orders if s != sym}
 
-                        # Re-attach brackets with new config
+                        # Re-attach brackets using NEW config (will be done again cleanly in restart)
                         self.attach_brackets_to_existing_holdings()
 
                         # Summary
-                        console.print(
-                            "[bold green]Configuration reloaded successfully![/bold green]"
-                        )
-                        console.print(
-                            f"Active symbols : {', '.join(sorted(self.symbols)) or '(none)'}"
-                        )
-                        console.print(
-                            f"Auto-shutdown  : {'ENABLED' if self.auto_shutdown_after_close else 'DISABLED'} "
-                            f"(buffer: {self.shutdown_buffer_minutes} min)"
-                        )
+                        console.print("[bold green]Configuration reloaded successfully![/bold green]")
+                        console.print(f"Active symbols : {', '.join(sorted(self.symbols)) or '(none)'}")
+                        console.print(f"Auto-shutdown  : {'ENABLED' if self.auto_shutdown_after_close else 'DISABLED'} "
+                                      f"(buffer: {self.shutdown_buffer_minutes} min)")
 
-                        # Final step: Restart bot so new settings (including timer) take full effect
-                        console.print(
-                            "[yellow]Restarting bot to apply new configuration...[/yellow]"
-                        )
+                        # Restart bot — this will cleanly cancel old orders once, then re-attach fresh brackets
+                        console.print("[yellow]Restarting bot to apply new config and refresh orders/streamer...[/yellow]")
                         time.sleep(1.0)
                         self.restart()
 
                     except Exception as e:
                         console.print(f"[bold red]Reload failed: {e}[/bold red]")
-                        console.print(
-                            "[dim]You can manually type 'restart' if needed.[/dim]"
-                        )
+                        console.print("[dim]Manual 'restart' recommended if brackets look wrong.[/dim]")
             except KeyboardInterrupt:
                 self.stop()
                 break
@@ -1662,54 +1594,43 @@ class TradingBot:
     # SHUTDOWN & RESTART
     # ============================================================
 
-    def graceful_shutdown(self):
-        """Gracefully shut down the bot — called automatically after market close or manually via 'stop' command."""
+    def graceful_shutdown(self, reason: str = "User requested"):
+        """Gracefully shut down the bot. Safe to call multiple times."""
         if not self.running:
-            console.print("[dim yellow]Shutdown already in progress...[/dim yellow]")
+            console.print("[dim yellow]Shutdown already in progress or completed.[/dim yellow]")
             return
 
-        console.print("[bold red]=== INITIATING GRACEFUL SHUTDOWN ===[/bold red]")
+        console.print(f"[bold red]=== GRACEFUL SHUTDOWN INITIATED ({reason}) ===[/bold red]")
         self.running = False
 
-        # 1. Cancel all DAY orders (important before close)
+        # Cancel all DAY orders
         try:
-            console.print("[yellow]Cancelling all open DAY orders...[/yellow]")
+            console.print("[yellow]Cancelling open DAY orders...[/yellow]")
             open_orders = self.get_open_orders()
-            canceled_count = 0
-
+            canceled = 0
             for order in open_orders:
                 if order.get("duration") == "DAY" and order.get("orderId"):
                     try:
                         self.client.cancel_order(self.account_hash, order["orderId"])
-                        console.print(
-                            f"[green]✓ Cancelled DAY order {order['orderId']} for {order['symbol']}[/green]"
-                        )
-                        canceled_count += 1
+                        console.print(f"[green]✓ Cancelled {order['orderId']} ({order['symbol']})[/green]")
+                        canceled += 1
                     except Exception as e:
-                        console.print(
-                            f"[dim red]Failed to cancel order {order.get('orderId')}: {e}[/dim red]"
-                        )
-
-            if canceled_count > 0:
+                        console.print(f"[dim red]Cancel failed for {order.get('orderId')}: {e}[/dim red]")
+            if canceled > 0:
                 self.invalidate_open_orders_cache()
-                time.sleep(1.0)  # give Schwab a moment to process cancellations
-                console.print(
-                    f"[green]Successfully canceled {canceled_count} DAY order(s)[/green]"
-                )
-            else:
-                console.print("[dim]No DAY orders to cancel[/dim]")
+                console.print(f"[green]Cancelled {canceled} DAY order(s)[/green]")
         except Exception as e:
-            console.print(f"[dim red]Error while cancelling DAY orders: {e}[/dim red]")
+            console.print(f"[dim red]Error cancelling orders: {e}[/dim red]")
 
-        # 2. Stop the streamer (websocket)
+        # Stop streamer
         try:
-            if hasattr(self, "streamer") and self.streamer:
+            if hasattr(self, 'streamer') and self.streamer:
                 self.streamer.stop()
-                console.print("[yellow]Streamer stopped successfully[/yellow]")
+                console.print("[yellow]Streamer stopped[/yellow]")
         except Exception as e:
             console.print(f"[dim red]Error stopping streamer: {e}[/dim red]")
 
-        # 3. Optional: Log final shutdown
+        # Log final shutdown
         try:
             equity = self.get_account_snapshot()["equity"]
             log_transaction(
@@ -1717,32 +1638,27 @@ class TradingBot:
                 symbol="SYSTEM",
                 qty=0,
                 price=equity,
-                note=f"Bot shutdown at {datetime.now(timezone.utc).isoformat()} | Equity: ${equity:,.2f}",
+                note=f"Shutdown ({reason}) | Equity: ${equity:,.2f}",
                 order_id=None,
-                order_status="SHUTDOWN",
+                order_status="SHUTDOWN"
             )
         except:
-            pass  # don't let logging failure break shutdown
+            pass
 
-        # 4. Final cleanup
-        time.sleep(1.5)  # give threads time to exit cleanly
-
+        time.sleep(1.2)
         console.print("[bold green]=== GRACEFUL SHUTDOWN COMPLETED ===[/bold green]")
-        console.print(
-            f"[cyan]Final Equity: ${self.get_account_snapshot()['equity']:,.2f}[/cyan]"
-        )
-
-        # If running in CLI mode, you can optionally exit the process here
-        # import sys
-
-        # sys.exit(0)  # Only if you want the entire script to terminate
 
     def restart(self):
-        """Only to recover from stream/API issues (reconnect websocket, restart loops)."""
-        console.print("[bold yellow]Restarting bot...[/bold yellow]")
-        self.graceful_shutdown()
+        """Restart the bot cleanly: shutdown → full re-initialization."""
+        console.print("[bold yellow]=== RESTARTING BOT ===[/bold yellow]")
 
-        # ── Critical: re-init caches like in __init__ ──────────────────────
+        # Perform shutdown ONLY if still running
+        if self.running:
+            self.graceful_shutdown(reason="Restart requested")
+        else:
+            console.print("[dim]Bot already stopped — proceeding with restart[/dim]")
+
+        # ── Full re-initialization ─────────────────────────────────────
         with self.lock:
             self.current_market_prices = {sym: None for sym in self.symbols}
             self.holdings = {}
@@ -1750,46 +1666,29 @@ class TradingBot:
             self.auto_buy_allowed = {sym: True for sym in self.symbols}
             self.pending_buy_orders = set()
 
-        # Reset other state
         self.running = True
         self.trading_paused = False
         self.first_api_pull = True
         self.last_holdings_sync = time.time()
         self.invalidate_open_orders_cache()
         self._account_snapshot_cache_time = None
-        self._account_snapshot_cache = None  # ← added
+        self._account_snapshot_cache = None
         self._open_orders_cache = None
         self._open_orders_cache_time = None
 
-        # Re-fetch account hash
         try:
             self.account_hash = self._get_account_hash()
         except Exception as e:
             console.print(f"[red]Failed to refresh account hash: {e}[/red]")
             return
 
-        # Re-start stream (this will also call attach_brackets_to_existing_holdings)
+        # Re-start stream + timer
         try:
             self.start_stream()
-            console.print("[green]Streamer restarted and re-subscribed[/green]")
+            self.start_market_close_timer()        # ← Important: restart timer with latest config
+            console.print("[bold green]Bot restarted successfully[/bold green]")
         except Exception as e:
-            console.print(f"[red]Failed to restart stream: {e}[/red]")
-            return
-
-        # Re-start threads
-        logic_thread = threading.Thread(target=self.monitor_logic, daemon=True)
-        logic_thread.start()
-
-        if self.mode == "full":
-            display_thread = threading.Thread(target=self.monitor_display, daemon=True)
-            display_thread.start()
-        else:
-            cli_thread = threading.Thread(target=self.cli_loop, daemon=True)
-            cli_thread.start()
-
-        self.start_market_close_timer()
-
-        console.print("[bold green]Bot restarted successfully[/bold green]")
+            console.print(f"[bold red]Restart failed: {e}[/bold red]")
 
     def start_market_close_timer(self):
         """Start (or restart) the configurable auto-shutdown timer based on current config."""
@@ -1846,7 +1745,7 @@ class TradingBot:
                         console.print(
                             f"[bold red]🛑 Market close + {self.shutdown_buffer_minutes} min buffer reached → initiating graceful shutdown[/bold red]"
                         )
-                        self.graceful_shutdown()
+                        self.graceful_shutdown(reason="Market close + buffer")
                         break
 
                 except Exception as e:
