@@ -28,6 +28,7 @@ from schwab_trader.utils.db import (
 )
 from schwab_trader.orders.utils import get_orders
 from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 console = Console()
@@ -94,6 +95,10 @@ class TradingBot:
         self.reconnect_cooldown = 10  # min seconds between reconnect attempts
         self.last_reconnect_attempt = 0
         self.stream_running = False  # flag
+
+        # Shutdown config
+        self._load_shutdown_config(cfg)
+        self._shutdown_timer = None
 
     @property
     def symbols(self):
@@ -1468,6 +1473,23 @@ class TradingBot:
                             f"[yellow]Reloading config from: {config_path.resolve()}[/yellow]"
                         )
 
+                        # Handle shutdown settings first
+                        old_shutdown_enabled = getattr(
+                            self, "auto_shutdown_after_close", True
+                        )
+                        self._load_shutdown_config(new_cfg)
+
+                        # Restart shutdown timer only if setting changed or was disabled → enabled
+                        if (
+                            not old_shutdown_enabled and self.auto_shutdown_after_close
+                        ) or (
+                            hasattr(self, "_shutdown_timer") and self._shutdown_timer
+                        ):
+                            console.print(
+                                "[cyan]Shutdown settings changed → restarting timer[/cyan]"
+                            )
+                            self.start_market_close_timer()
+
                         # Load the NEW configuration ───────────────────────────────
                         new_cfg = TradingConfig.load_from_file(config_path)
                         new_symbols = set(new_cfg.symbols.keys())
@@ -1684,15 +1706,79 @@ class TradingBot:
     # ============================================================
 
     def graceful_shutdown(self):
-        """Helper to cleanly stop streaming and threads without killing the process. The Dashboard in browser stays up. The corre buy-trigger monitor loop, rich terminal dashboard, CLI inpu, streaming are to be deactivated."""
+        """Gracefully shut down the bot — called automatically after market close or manually via 'stop' command."""
+        if not self.running:
+            console.print("[dim yellow]Shutdown already in progress...[/dim yellow]")
+            return
+
+        console.print("[bold red]=== INITIATING GRACEFUL SHUTDOWN ===[/bold red]")
         self.running = False
+
+        # 1. Cancel all DAY orders (important before close)
         try:
-            self.streamer.stop()
-            console.print("[yellow]Streamer stopped[/yellow]")
+            console.print("[yellow]Cancelling all open DAY orders...[/yellow]")
+            open_orders = self.get_open_orders()
+            canceled_count = 0
+
+            for order in open_orders:
+                if order.get("duration") == "DAY" and order.get("orderId"):
+                    try:
+                        self.client.cancel_order(self.account_hash, order["orderId"])
+                        console.print(
+                            f"[green]✓ Cancelled DAY order {order['orderId']} for {order['symbol']}[/green]"
+                        )
+                        canceled_count += 1
+                    except Exception as e:
+                        console.print(
+                            f"[dim red]Failed to cancel order {order.get('orderId')}: {e}[/dim red]"
+                        )
+
+            if canceled_count > 0:
+                self.invalidate_open_orders_cache()
+                time.sleep(1.0)  # give Schwab a moment to process cancellations
+                console.print(
+                    f"[green]Successfully canceled {canceled_count} DAY order(s)[/green]"
+                )
+            else:
+                console.print("[dim]No DAY orders to cancel[/dim]")
+        except Exception as e:
+            console.print(f"[dim red]Error while cancelling DAY orders: {e}[/dim red]")
+
+        # 2. Stop the streamer (websocket)
+        try:
+            if hasattr(self, "streamer") and self.streamer:
+                self.streamer.stop()
+                console.print("[yellow]Streamer stopped successfully[/yellow]")
         except Exception as e:
             console.print(f"[dim red]Error stopping streamer: {e}[/dim red]")
-        # Give threads a moment to notice running=False
-        time.sleep(1.5)
+
+        # 3. Optional: Log final shutdown
+        try:
+            equity = self.get_account_snapshot()["equity"]
+            log_transaction(
+                action="BOT_SHUTDOWN",
+                symbol="SYSTEM",
+                qty=0,
+                price=equity,
+                note=f"Bot shutdown at {datetime.now(timezone.utc).isoformat()} | Equity: ${equity:,.2f}",
+                order_id=None,
+                order_status="SHUTDOWN",
+            )
+        except:
+            pass  # don't let logging failure break shutdown
+
+        # 4. Final cleanup
+        time.sleep(1.5)  # give threads time to exit cleanly
+
+        console.print("[bold green]=== GRACEFUL SHUTDOWN COMPLETED ===[/bold green]")
+        console.print(
+            f"[cyan]Final Equity: ${self.get_account_snapshot()['equity']:,.2f}[/cyan]"
+        )
+
+        # If running in CLI mode, you can optionally exit the process here
+        import sys
+
+        sys.exit(0)  # Only if you want the entire script to terminate
 
     def restart(self):
         """Only to recover from stream/API issues (reconnect websocket, restart loops)."""
@@ -1745,3 +1831,80 @@ class TradingBot:
             cli_thread.start()
 
         console.print("[bold green]Bot restarted successfully[/bold green]")
+
+    def start_market_close_timer(self):
+        """Start (or restart) the configurable auto-shutdown timer based on current config."""
+        # Stop any existing timer thread safely
+        if (
+            hasattr(self, "_shutdown_timer")
+            and self._shutdown_timer
+            and self._shutdown_timer.is_alive()
+        ):
+            console.print(
+                "[dim yellow]Stopping previous shutdown timer...[/dim yellow]"
+            )
+            # We can't easily kill daemon threads, so we rely on the flag + new thread
+
+        if not self.auto_shutdown_after_close:  # We'll add this attribute below
+            console.print(
+                "[yellow]Auto-shutdown after market close is currently DISABLED[/yellow]"
+            )
+            return
+
+        def shutdown_at_close():
+            while self.running:
+                try:
+                    now_et = datetime.now(ZoneInfo("America/New_York"))
+
+                    # Skip weekends if configured
+                    if (
+                        not self.shutdown_on_weekends and now_et.weekday() >= 5
+                    ):  # Sat=5, Sun=6
+                        time.sleep(3600)
+                        continue
+
+                    # Calculate shutdown time today (4:00 PM ET + buffer)
+                    shutdown_time = now_et.replace(
+                        hour=16, minute=0, second=0, microsecond=0
+                    )
+                    shutdown_time += timedelta(minutes=self.shutdown_buffer_minutes)
+
+                    # If already past today's shutdown time, schedule for tomorrow
+                    if now_et > shutdown_time:
+                        shutdown_time += timedelta(days=1)
+
+                    seconds_to_wait = (shutdown_time - now_et).total_seconds()
+
+                    console.print(
+                        f"[dim cyan]Auto-shutdown timer active → "
+                        f"Next shutdown at {shutdown_time.strftime('%Y-%m-%d %H:%M ET')} "
+                        f"({int(seconds_to_wait//3600)}h {int((seconds_to_wait%3600)//60)}m)[/dim cyan]"
+                    )
+
+                    time.sleep(seconds_to_wait)
+
+                    if self.running and self.auto_shutdown_after_close:
+                        console.print(
+                            f"[bold red]🛑 Market close + {self.shutdown_buffer_minutes} min buffer reached → initiating graceful shutdown[/bold red]"
+                        )
+                        self.graceful_shutdown()
+                        break
+
+                except Exception as e:
+                    console.print(f"[red]Shutdown timer error: {e}[/red]")
+                    time.sleep(300)  # retry after 5 min
+
+        # Store reference so we can detect/restart it later
+        self._shutdown_timer = threading.Thread(
+            target=shutdown_at_close, daemon=True, name="MarketCloseAutoShutdown"
+        )
+        self._shutdown_timer.start()
+        console.print(
+            f"[bold green]✅ Auto-shutdown timer (re)started — buffer: {self.shutdown_buffer_minutes} min[/bold green]"
+        )
+
+    def _load_shutdown_config(self, cfg: TradingConfig):
+        """Internal helper to apply shutdown settings from config object."""
+        self.auto_shutdown_after_close = cfg.auto_shutdown_after_close
+        self.shutdown_buffer_minutes = cfg.shutdown_buffer_minutes
+        self.shutdown_on_weekends = cfg.shutdown_on_weekends

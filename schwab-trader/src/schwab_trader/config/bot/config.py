@@ -43,6 +43,19 @@ class RiskConfig(BaseModel):
 class TradingConfig(BaseModel):
     symbols: Dict[str, SymbolConfig]
     risk: RiskConfig
+    auto_shutdown_after_close: bool = Field(
+        default=True,
+        description="Enable automatic graceful shutdown after regular market close",
+    )
+    shutdown_buffer_minutes: int = Field(
+        default=5,
+        ge=0,
+        le=60,
+        description="Minutes after 4:00 PM ET to wait before shutdown",
+    )
+    shutdown_on_weekends: bool = Field(
+        default=True, description="If False, skip auto-shutdown on Saturday and Sunday"
+    )
 
     @classmethod
     def load_from_file(cls, path: str | Path) -> "TradingConfig":

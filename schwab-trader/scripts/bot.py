@@ -336,9 +336,14 @@ if __name__ == "__main__":
     bot = TradingBot(cfg, mode=args.mode)
     bot.start_stream()
 
+    # Start the configurable market-close shutdown timer
+    bot.start_market_close_timer()
+
     # Start logic thread
     logic_thread = threading.Thread(target=bot.monitor_logic, daemon=True)
     logic_thread.start()
+
+    bot.start_market_close_timer()
 
     # Add the watchdog thread
     watchdog_thread = threading.Thread(target=bot.stream_watchdog, daemon=True)

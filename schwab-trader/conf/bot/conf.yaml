@@ -19,16 +19,16 @@ symbols:
   #   stop_loss_pct: 15.5
   #   fixed_shares: 1
   JOBY:
-    buy_target_price: 9.2
-    limit_sell_price: 10.2
+    buy_target_price: 9.1
+    limit_sell_price: 9.8
     stop_loss_dollar: 2.0
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0
     stop_loss_pct: 15.5
     fixed_shares: 1800
   IREN:
-    buy_target_price: 40.4
-    limit_sell_price: 44.8
+    buy_target_price: 41.4
+    limit_sell_price: 43.4
     stop_loss_dollar: 5.0
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0
@@ -50,3 +50,7 @@ risk:
   max_daily_loss_pct: 3.0
   default_shares: 1
 
+# Auto-shutdown configuration
+auto_shutdown_after_close: true
+shutdown_buffer_minutes: 5
+shutdown_on_weekends: true
