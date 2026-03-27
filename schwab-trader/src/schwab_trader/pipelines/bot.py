@@ -190,7 +190,7 @@ class TradingBot:
                         "shares": long_qty,
                         "buy_price": avg_price,
                         "current_price": current_price,
-                        "day_change_pct": day_pct,  # calculated price %
+                        "day_change_pct": day_pct,  
                     }
                     new_all[sym] = entry
                     if sym in self.symbols_config:
@@ -331,43 +331,6 @@ class TradingBot:
         """Extra safety net: check Schwab API (cached) for any live BUY order."""
         orders = self.get_open_orders()
         return any(o["symbol"] == symbol and o["instruction"] == "BUY" for o in orders)
-
-    def get_recent_fills(
-        self,
-        lookback_minutes: int = 60,
-        symbol: str | None = None,
-        side: str | None = None,
-        max_results: int = 20,
-    ) -> list[dict]:
-        """
-        Fetch confirmed filled executions using the reliable get_orders utility.
-        Returns sorted list (newest first).
-        """
-        since = datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
-
-        try:
-            fills = get_orders(
-                hashValue=self.account_hash,
-                status="FILLED",
-                fromTime=since.isoformat() + "Z",
-            )
-        except Exception as e:
-            console.print(f"[red]Failed to fetch recent fills: {e}[/red]")
-            return []
-
-        if symbol:
-            fills = [f for f in fills if f.get("symbol", "").upper() == symbol.upper()]
-
-        if side:
-            fills = [f for f in fills if f.get("side", "").upper() == side.upper()]
-
-        # Sort by executedTime descending (newest first)
-        MIN_DT = datetime.min.replace(
-            tzinfo=timezone.utc
-        )  # MIN_DT is the earliest possible datetime value in Python, explicitly set to use the UTC timezone. It is used as a default "earliest" timestamp or a sentinel value for comparisons.
-        return sorted(
-            fills, key=lambda x: x.get("executedTime") or MIN_DT, reverse=True
-        )[:max_results]
 
     # =============================================================
     # RISK MANAGEMENT
@@ -528,10 +491,7 @@ class TradingBot:
             if msg_type not in ("EXECUTION", "FILL", "ORDER_FILL"):
                 continue
 
-            # Extract rough info from stream (still useful as fast trigger)
-            symbol = content.get("symbol") or content.get("instrument", {}).get(
-                "symbol", ""
-            )
+            symbol = content.get("symbol") or content.get("instrument", {}).get("symbol", "")
             if not symbol or symbol not in self.symbols:
                 continue
 
@@ -544,29 +504,25 @@ class TradingBot:
                 continue
 
             instruction = content.get("instruction", "").upper()
-
-            lookback = datetime.now(timezone.utc) - timedelta(
-                minutes=10
-            )  # recent window
+            lookback = datetime.now(timezone.utc) - timedelta(minutes=10)
             recent_execs = get_orders(
                 hashValue=self.account_hash,
                 status="FILLED",
                 fromEnteredTime=lookback.isoformat() + "Z",
             )
 
+            # Use API-confirmed values when possible
             matched_fill = None
-            for execution in recent_execs:  #
+            for execution in recent_execs:
                 if (
                     execution["symbol"] == symbol
-                    and execution["side"]
-                    == ("BUY" if instruction in ("BUY", "BUY_TO_COVER") else "SELL")
+                    and execution["side"] == ("BUY" if instruction in ("BUY", "BUY_TO_COVER") else "SELL")
                     and abs(execution["quantity"] - qty_stream) < 0.01
                 ):
                     matched_fill = execution
                     break
 
             if matched_fill:
-                # Use the **API-confirmed** values instead of stream approximation
                 qty = matched_fill["quantity"]
                 price = matched_fill["price"]
                 side = matched_fill["side"]
@@ -574,7 +530,6 @@ class TradingBot:
                 executed_time = matched_fill["executedTime"]
                 note_suffix = f" (API-confirmed at {executed_time})"
             else:
-                # Fallback to stream values if API lookup didn't match yet
                 qty = qty_stream
                 price = price_stream
                 side = "BUY" if instruction in ("BUY", "BUY_TO_COVER") else "SELL"
@@ -589,25 +544,19 @@ class TradingBot:
                 if side in ("SELL", "SELL_SHORT"):
                     if symbol in self.holdings:
                         del self.holdings[symbol]
-                        log_transaction(
-                            action="SELL_FILLED",
-                            symbol=symbol,
-                            qty=qty,
-                            price=price,
-                            note=f"OCO fill {note_suffix}",
-                            order_id=order_id,
-                            order_status="FILLED",
-                        )
-                        self.auto_buy_allowed[symbol] = True
-                        self.force_sync_holdings()
-
-                        # update so that a buy order wont be blocked
-                        self.pending_buy_orders = {
-                            t for t in self.pending_buy_orders if t[0] != symbol
-                        }
-                        console.print(
-                            f"[dim green]Cleared stale pending buys for {symbol} after sell[/dim green]"
-                        )
+                    log_transaction(
+                        action="SELL_FILLED",
+                        symbol=symbol,
+                        qty=qty,
+                        price=price,
+                        note=f"OCO fill {note_suffix}",
+                        order_id=order_id,
+                        order_status="FILLED",
+                    )
+                    self.auto_buy_allowed[symbol] = True
+                    self.force_sync_holdings()
+                    self.pending_buy_orders = {t for t in self.pending_buy_orders if t[0] != symbol}
+                    console.print(f"[green]✅ Sell complete — ready for next buy cycle on {symbol}[/green]")
 
                 elif side in ("BUY", "BUY_TO_COVER"):
                     self.pending_buy_orders.discard((symbol, qty))
@@ -626,16 +575,17 @@ class TradingBot:
                         order_id=order_id,
                         order_status="FILLED",
                     )
+
+                    # 
+                    console.print(f"[bold green]Buy filled — placing OCO bracket for {symbol} now...[/bold green]")
+                    time.sleep(1.0)  # give Schwab a moment to register the position
                     self.submit_sell_bracket_oco(
                         symbol, price, self.symbols_config[symbol].limit_sell_price
                     )
                     self.save_state(symbol, price, qty)
                     self.force_sync_holdings()
                     self.invalidate_open_orders_cache()
-                    # # Clear pending
-                    # if symbol in self.pending_buy_orders:
-                    #     self.pending_buy_orders.remove(symbol)
-
+                    
     def start_stream(self):
         """
         Start (or restart) the streamer and (re)subscribe.
@@ -771,45 +721,29 @@ class TradingBot:
 
     def submit_sell_bracket_oco(self, symbol, buy_price, limit_sell_price):
         """Place OCO bracket (LIMIT SELL + STOP LOSS)"""
+        if symbol not in self.holdings or self.holdings[symbol].get("shares", 0) <= 0:
+            console.print(f"[yellow]No position in {symbol} — skipping OCO[/yellow]")
+            return
+
         cfg: SymbolConfig = self.symbols_config[symbol]
         qty = self.holdings[symbol]["shares"]
 
-        # Confirm the logic here
-        # limit_sell_price has high priority, otherwise fallback to limit_sell_pct
         limit_price = (
             limit_sell_price
             if limit_sell_price is not None
             else round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
         )
-        console.print(
-            f"[dim cyan]Using limit_price for {symbol}: "
-            f"→ sell limit price @ ${limit_sell_price:.2f}[/dim cyan]"
-        )
+
         if cfg.stop_loss_dollar > 0:
-            if buy_price > limit_price:
-                stop_price = round(limit_price - cfg.stop_loss_dollar, 2)
-            else:
-                stop_price = round(buy_price - cfg.stop_loss_dollar, 2)
-            console.print(
-                f"[dim cyan]Using fixed $ stop for {symbol}: "
-                f"${cfg.stop_loss_dollar:.2f} below entry → stop @ ${stop_price:.2f}[/dim cyan]"
-            )
+            stop_price = round(buy_price - cfg.stop_loss_dollar, 2)
         else:
             stop_price = round(buy_price * (1 - cfg.stop_loss_pct / 100), 2)
-            console.print(
-                f"[dim]Using % stop for {symbol}: "
-                f"{cfg.stop_loss_pct}% below entry → stop @ ${stop_price:.2f}[/dim]"
-            )
 
-        # Prevent invalid stop (shouldn't happen with config validation, but safety)
         if stop_price >= buy_price or stop_price <= 0:
-            console.print(
-                f"[yellow]Invalid stop price calculated for {symbol} — skipping bracket[/yellow]"
-            )
+            console.print(f"[red]Invalid stop price for {symbol} — skipping OCO[/red]")
             return
 
         stoplimit_price = round(stop_price * 0.99, 2)
-        # Requirement: order above $1 can be entered in no more than two decimals.
 
         oco = sell_limit_sell_stoplimit_oco_dict(
             symbol=symbol,
@@ -826,7 +760,9 @@ class TradingBot:
             resp = self.client.place_order(self.account_hash, oco)
             location = resp.headers.get("Location")
             order_id = location.split("/")[-1] if location else None
-            self.invalidate_open_orders_cache()  # Invalidate the cache after order
+
+            self.invalidate_open_orders_cache()
+
             log_transaction(
                 action="OCO_PLACED",
                 symbol=symbol,
@@ -836,12 +772,16 @@ class TradingBot:
                 order_id=order_id,
                 order_status="WORKING",
             )
+
             with self.lock:
-                self.holdings[symbol].update(
-                    {"limit_price": limit_price, "stop_price": stop_price}
-                )
+                self.holdings[symbol].update({"limit_price": limit_price, "stop_price": stop_price})
+
+            console.print(f"[bold green]✅ OCO BRACKET PLACED for {symbol} → Sell Limit ${limit_price:.2f}[/bold green]")
+
         except Exception as e:
-            console.print(f"[red]OCO failed: {e}[/red]")
+            console.print(f"[bold red]Failed to place OCO for {symbol}: {e}[/bold red]")
+            import traceback
+            console.print(traceback.format_exc())
 
     def _confirm_manual_buy(self, symbol: str, price: float) -> bool:
         """Ask user in terminal for manual approval when auto_buy_allowed is False."""
@@ -1027,7 +967,7 @@ class TradingBot:
     # MONITORING LOGIC (core buy-trigger loop)
     # =============================================================
     def monitor_logic(self):
-        """Pure background logic thread (runs every 6 s). Handles all buy triggers."""
+        """Pure background logic thread — handles BOTH buy triggers AND sell safety net."""
         while self.running:
             time.sleep(6)
 
@@ -1039,6 +979,7 @@ class TradingBot:
             if self.first_api_pull:
                 self.update_holdings_from_api()
                 self.first_api_pull = False
+
             now = time.time()
             if now - self.last_holdings_sync > self.holding_sync_interval:
                 self.update_holdings_from_api()
@@ -1050,41 +991,34 @@ class TradingBot:
                 auto_copy = dict(self.auto_buy_allowed)
                 prices_copy = dict(self.current_market_prices)
 
-            # ── Buy trigger logic ──
+            # === BUY LOGIC  ===
             for sym in self.symbols:
                 if sym in holdings_copy and holdings_copy[sym].get("shares", 0) > 0:
                     continue
+
                 price = prices_copy.get(sym)
                 if not price:
                     continue
+
                 cfg: SymbolConfig = self.symbols_config.get(sym)
                 if not cfg:
                     continue
+
                 last_buy = get_last_buy_price(sym)
                 trigger = price <= cfg.buy_target_price or (
                     last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100)
                 )
 
-                if not (
-                    trigger and not self.trading_paused and self.risk_checks_pass(sym)
-                ):
+                if not (trigger and not self.trading_paused and self.risk_checks_pass(sym)):
                     continue
 
                 console.print(f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]")
-
                 qty = self.calculate_shares(sym, price)
 
                 if (sym, qty) in pending_copy or self.has_open_buy_order(sym):
-                    console.print(
-                        f"[dim yellow]Order already pending/open for {sym} — skipping[/dim yellow]"
-                    )
                     continue
 
-                if auto_copy[sym]:
-                    approved = True
-                else:
-                    approved = self._confirm_manual_buy(sym, price)
-
+                approved = auto_copy[sym] or self._confirm_manual_buy(sym, price)
                 if approved:
                     with self.lock:
                         self.pending_buy_orders.add((sym, qty))
@@ -1092,146 +1026,44 @@ class TradingBot:
                     if success:
                         with self.lock:
                             self.auto_buy_allowed[sym] = False
-                            # REMOVED: self.last_buy_time (unused – we use DB)
                     else:
                         with self.lock:
                             self.pending_buy_orders.discard((sym, qty))
-                else:
-                    console.print("[dim]Manual buy declined.[/dim]")
 
-    def monitor_loop(self):
-        """Legacy combined monitor (display + logic). No longer used — kept for reference only."""
-        last_hash = None
+            # === SELL SAFETY NET  ===
+            # If we hold the stock but have no open SELL order → check if we should sell
+            open_orders = self.get_open_orders()
+            symbols_with_sell_order = {
+                o["symbol"] for o in open_orders
+                if o.get("instruction") in ("SELL", "SELL_SHORT")
+            }
 
-        with Live(console=console, refresh_per_second=4, screen=True) as live:
-            while self.running:
-                time.sleep(6)
+            for sym, holding in list(holdings_copy.items()):
+                if sym not in self.symbols_config:
+                    continue
+                if sym in symbols_with_sell_order:
+                    continue  # already has bracket
 
-                if date.today() != self.today:  # in case of overnight runs
-                    self.daily_start_equity = self.get_account_snapshot()["equity"]
-                    self.today = date.today()
-                    self.trading_paused = False
+                current_price = prices_copy.get(sym)
+                if not current_price:
+                    continue
 
-                # only sync after holding_sync_interval
-                if self.first_api_pull:  # No waiting when first start
-                    self.update_holdings_from_api()
-                    self.first_api_pull = False
-                now = time.time()
-                if now - self.last_holdings_sync > self.holding_sync_interval:
-                    self.update_holdings_from_api()
-                    self.last_holdings_sync = now
+                cfg = self.symbols_config[sym]
+                limit_target = cfg.limit_sell_price
 
-                with self.lock:
-                    # # Copy all mutable state UNDER LOCK so streamer thread can't change it while we decide
-                    holdings_copy = dict(self.holdings)
-                    pending_copy = set(self.pending_buy_orders)
-                    auto_copy = dict(self.auto_buy_allowed)
-                    prices_copy = dict(self.current_market_prices)
-
-                    view = {}
-                    for sym in self.symbols:
-                        p = prices_copy.get(sym)
-                        h = holdings_copy.get(sym, {})
-                        view[sym] = (p, h.get("shares", 0), h.get("buy_price"))
-
-                    view["equity"] = self.get_account_snapshot()["equity"]
-                    view["paused"] = self.trading_paused
-                    view["orders"] = len(self.get_open_orders())
-
-                state_str = str(sorted(view.items()))
-                current_hash = hashlib.md5(state_str.encode()).hexdigest()
-
-                if current_hash != last_hash:
-                    last_hash = current_hash
-                    live.update(self.make_dashboard())
-
-                    # Buy logic (only when changed or periodically)
-                    for sym in self.symbols:
-                        if (
-                            sym in holdings_copy
-                            and holdings_copy[sym].get("shares", 0) > 0
-                        ):
-                            continue
-
-                        price = prices_copy.get(sym)
-                        if not price:
-                            continue
-
-                        cfg: SymbolConfig = self.symbols_config.get(sym)
-                        if not cfg:
-                            continue
-                        last_buy = get_last_buy_price(sym)
-                        trigger = (price <= cfg.buy_target_price or float("inf")) or (
-                            last_buy
-                            and price <= last_buy * (1 - cfg.buy_drop_pct / 100)
-                        )
-
-                        if not (
-                            trigger
-                            and not self.trading_paused
-                            and self.risk_checks_pass(sym)
-                        ):
-                            continue
-
-                        console.print(
-                            f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]"
-                        )
-
-                        # Decide quantity
-                        qty = self.calculate_shares(
-                            sym, price
-                        )  # ← your existing function
-
-                        # Check if this exact (symbol, qty) is already pending
-                        if (sym, qty) in pending_copy:
-                            console.print(
-                                f"[dim yellow]Exact same order ({sym}, {qty} shares) already pending — skipping[/dim yellow]"
-                            )
-                            continue
-                        if self.has_open_buy_order(sym):
-                            console.print(
-                                f"[dim yellow]Open BUY order already exists for {sym} — skipping[/dim yellow]"
-                            )
-                            continue
-
-                        # Decide AUTO vs MANUAL
-                        if auto_copy[sym]:
-                            console.print(
-                                f"[green]→ AUTO BUY allowed for {sym}[/green]"
-                            )
-                            approved = True
-                        else:
-                            approved = self._confirm_manual_buy(sym, price)
-
-                        if approved:
-                            with self.lock:
-                                self.pending_buy_orders.add((sym, qty))
-
-                            success = self.place_buy_order(
-                                sym, qty
-                            )  # ← pass qty explicitly (see next step)
-
-                            if success:
-                                with self.lock:
-                                    self.auto_buy_allowed[sym] = False
-                                    self.last_buy_time[sym] = time.time()
-                            else:
-                                with self.lock:
-                                    self.pending_buy_orders.discard(
-                                        (sym, qty)
-                                    )  # rollback on failure
-                        else:
-                            console.print(f"[dim]Manual buy declined.[/dim]")
+                if current_price >= limit_target:
+                    console.print(
+                        f"[bold green]SELL SAFETY TRIGGER: {sym} @ ${current_price:.2f} ≥ limit ${limit_target:.2f}[/bold green]"
+                    )
+                    self.submit_sell_bracket_oco(
+                        sym,
+                        holding.get("buy_price", current_price),
+                        limit_target
+                    )
 
     def cli_loop(self):
         """
-        CLI command loop (add/remove/update/pause/stop/etc.) — runs in its own thread.
-        add and remove commands
-            update in-memory config, affect monitoring loop (buy/sell triggers), updates streaming subscription, affect trading logic, persis to conf.yaml.
-        reload-config command
-            can be applied after you updated any values in the conf.yaml file, like limit price, stop price etc.
-
-
+        CLI command loop — runs in its own thread.
         """
         console.print(
             "[bold cyan]CLI mode active - type 'help' for commands[/bold cyan]"
@@ -1248,13 +1080,6 @@ class TradingBot:
                     console.print("""Available commands:
     help                        Show this help
     list                        List currently monitored symbols
-    config                      Show current full configuration
-    add SYMBOL {json}           Add a new symbol with config
-    update SYMBOL {json}        Update config for existing symbol
-    remove SYMBOL               Remove a symbol from monitoring
-    attach-brackets [SYMBOL]    Attach OCO brackets to current holdings
-    pause                       Pause new buy orders
-    resume                      Resume trading
     reload-config               Reload (updated) configuration from conf.yaml
     stop                        Gracefully stop the bot (Cancel open orders, UI stays active)
     restart                     Restart streaming and threads
@@ -1273,168 +1098,9 @@ class TradingBot:
                     console.print(f"[cyan]Currently monitoring: {active}[/cyan]")
                     continue
 
-                elif command == "add":
-                    if len(parts) < 2:
-                        console.print(
-                            "[yellow]Usage: add SYMBOL {json-config-dict}[/yellow]\n"
-                            'Example: add AAPL {"buy_target_price": 10.0, "limit_sell_price": 25.0, '
-                            '"buy_drop_pct": 5.0, "limit_sell_pct": 10.0, "stop_loss_pct": 5.0, "fixed_shares": 10}'
-                        )
-                        continue
-                    try:
-                        rest = parts[1]
-                        sym_part, json_part = rest.split(" ", 1)
-                        sym = sym_part.strip().upper()
-                        cfg_dict = json.loads(json_part.strip())
-                        cfg = SymbolConfig(**cfg_dict)
-                        self.add_new_symbol(sym, cfg)
-                    except Exception as e:
-                        console.print(f"[red]Add error: {e}[/red]")
-                        console.print(
-                            "[yellow]Make sure there's a SPACE between SYMBOL and the {json} part[/yellow]"
-                        )
-                    continue
-
-                elif command == "update":
-                    if len(parts) < 2:
-                        console.print(
-                            "[yellow]Usage: update SYMBOL {new-json-config}[/yellow]\n"
-                            'Example: update IREN {"buy_target_price": 0.75, "limit_sell_price": 80.0}'
-                        )
-                        continue
-                    try:
-                        rest = parts[1]
-                        sym_part, json_part = rest.split(" ", 1)
-                        sym = sym_part.strip().upper()
-                        if sym not in self.symbols_config:
-                            console.print(
-                                f"[red]{sym} not found — use 'add' to create it[/red]"
-                            )
-                            continue
-                        cfg_dict = json.loads(json_part.strip())
-                        new_cfg = SymbolConfig(**cfg_dict)
-                        with self.lock:
-                            old_cfg = self.symbols_config[sym]
-                            self.symbols_config[sym] = new_cfg
-                        console.print(
-                            f"[green]Updated {sym}:[/green]\n"
-                            f" Old → {old_cfg.model_dump()}\n"
-                            f" New → {new_cfg.model_dump()}"
-                        )
-                        self.save_config_to_yaml()
-                        # Re-attach bracket if holding
-                        if (
-                            sym in self.holdings
-                            and self.holdings[sym].get("shares", 0) > 0
-                        ):
-                            console.print(
-                                f"[cyan]Re-attaching bracket to existing {sym} position[/cyan]"
-                            )
-                            buy_price = self.holdings[sym].get(
-                                "buy_price", self.current_market_prices.get(sym, 0)
-                            )
-                            if buy_price > 0:
-                                self.submit_sell_bracket_oco(
-                                    sym,
-                                    buy_price,
-                                    self.symbols_config[sym].limit_sell_price,
-                                )
-                            else:
-                                console.print(
-                                    f"[yellow]No valid buy price for {sym} — bracket not re-attached[/yellow]"
-                                )
-                    except Exception as e:
-                        console.print(f"[red]Update failed: {e}[/red]")
-                    continue
-
-                elif command == "remove":
-                    if len(parts) < 2:
-                        console.print("[yellow]Usage: remove SYMBOL[/yellow]")
-                        continue
-                    sym = parts[1].strip().upper()
-                    self.remove_symbol(sym)
-                    continue
-
-                elif command == "attach-brackets":
-                    if len(parts) > 1:
-                        sym = parts[1].strip().upper()
-                        if (
-                            sym in self.holdings
-                            and self.holdings[sym].get("shares", 0) > 0
-                        ):
-                            buy_price = self.holdings[sym].get(
-                                "buy_price", self.current_market_prices.get(sym, 0)
-                            )
-                            if buy_price > 0:
-                                self.submit_sell_bracket_oco(
-                                    sym,
-                                    buy_price,
-                                    self.symbols_config[sym].limit_sell_price,
-                                )
-                                console.print(
-                                    f"[green]Bracket attached to {sym}[/green]"
-                                )
-                            else:
-                                console.print(
-                                    f"[yellow]No buy price available for {sym}[/yellow]"
-                                )
-                        else:
-                            console.print(
-                                f"[yellow]No current position in {sym}[/yellow]"
-                            )
-                    else:
-                        self.attach_brackets_to_existing_holdings()
-                        console.print(
-                            "[green]Checked and attached brackets where needed[/green]"
-                        )
-                    continue
-
-                elif command == "fills":
-                    if len(parts) < 2:
-                        console.print(
-                            "[yellow]Usage: fills [SYMBOL] [minutes-back (default 60)][/yellow]"
-                        )
-                        return
-                    sym = None
-                    mins = 60
-                    try:
-                        if len(parts) >= 2:
-                            sym = parts[1].strip().upper()
-                        if len(parts) >= 3:
-                            mins = int(parts[2])
-                    except ValueError:
-                        console.print("[red]Invalid minutes value[/red]")
-                        return
-                    fills = self.get_recent_fills(lookback_minutes=mins, symbol=sym)
-                    if not fills:
-                        console.print(
-                            "[yellow]No fills found in the selected period.[/yellow]"
-                        )
-                        return
-                    console.print(
-                        f"[bold cyan]Recent fills ({len(fills)} found):[/bold cyan]"
-                    )
-                    for f in fills:
-                        t = f.get("executedTime", "—")
-                        console.print(
-                            f" {t} | {f['side']:4} {f['quantity']:>6.0f} {f['symbol']:6} "
-                            f"@ ${f['price']:>7.2f} (order {f.get('orderId','—')}) "
-                            f"[{f.get('note','—')}]"
-                        )
-                    continue
-
-                elif command in ("pause", "resume"):
-                    self.trading_paused = command == "pause"
-                    console.print(
-                        "[yellow]Trading paused (no new buys)[/yellow]"
-                        if self.trading_paused
-                        else "[green]Trading resumed[/green]"
-                    )
-                    continue
-
                 elif command == "stop":
                     self.graceful_shutdown()
-                    # break
+                    break
 
                 elif command == "restart":
                     self.restart()
@@ -1445,46 +1111,43 @@ class TradingBot:
                         config_path = Path(__file__).parents[3] / "conf/bot/conf.yaml"
                         console.print(f"[yellow]Reloading configuration from: {config_path.resolve()}[/yellow]")
 
+                        # Load exactly like at startup
                         new_cfg = TradingConfig.load_from_file(config_path)
 
-                        # Apply new shutdown settings
+                        # Update shutdown settings
                         self._load_shutdown_config(new_cfg)
 
-                        # Update symbol configuration (no cancellation here)
-                        new_symbols = set(new_cfg.symbols.keys())
+                        # Create fresh SymbolConfig objects
+                        fresh_symbols = {
+                            sym: SymbolConfig.model_validate(cfg.model_dump())
+                            for sym, cfg in new_cfg.symbols.items()
+                        }
 
+                        # Replace config in memory (just like __init__)
                         with self.lock:
-                            old_symbols = set(self.symbols_config.keys())
-                            self.symbols_config = new_cfg.symbols
+                            self.symbols_config = fresh_symbols
+                            self.current_market_prices = {sym: None for sym in fresh_symbols}
+                            self.auto_buy_allowed = {sym: True for sym in fresh_symbols}
+                            self.pending_buy_orders.clear()
 
-                            # Add new symbols
-                            for sym in new_symbols - old_symbols:
-                                self.current_market_prices[sym] = None
-                                self.auto_buy_allowed[sym] = True
-
-                            # Clean removed symbols
-                            for sym in old_symbols - new_symbols:
-                                self.current_market_prices.pop(sym, None)
-                                self.auto_buy_allowed.pop(sym, None)
-                                self.pending_buy_orders = {(s, q) for s, q in self.pending_buy_orders if s != sym}
-
-                        # Re-attach brackets using NEW config (will be done again cleanly in restart)
+                        # Re-attach brackets with new settings
                         self.attach_brackets_to_existing_holdings()
 
-                        # Summary
-                        console.print("[bold green]Configuration reloaded successfully![/bold green]")
-                        console.print(f"Active symbols : {', '.join(sorted(self.symbols)) or '(none)'}")
-                        console.print(f"Auto-shutdown  : {'ENABLED' if self.auto_shutdown_after_close else 'DISABLED'} "
-                                      f"(buffer: {self.shutdown_buffer_minutes} min)")
+                        # Show what was loaded
+                        console.print("[bold green]✅ Configuration reloaded successfully![/bold green]")
+                        for sym, cfg in sorted(self.symbols_config.items()):
+                            console.print(f"   {sym}: fixed_shares={cfg.fixed_shares}, "
+                                          f"buy_target={cfg.buy_target_price}, "
+                                          f"limit_sell={cfg.limit_sell_price}")
 
-                        # Restart bot — this will cleanly cancel old orders once, then re-attach fresh brackets
-                        console.print("[yellow]Restarting bot to apply new config and refresh orders/streamer...[/yellow]")
+                        # Restart bot so monitor_logic() uses the new config
+                        console.print("[yellow]Restarting bot to activate new settings...[/yellow]")
                         time.sleep(1.0)
                         self.restart()
 
                     except Exception as e:
                         console.print(f"[bold red]Reload failed: {e}[/bold red]")
-                        console.print("[dim]Manual 'restart' recommended if brackets look wrong.[/dim]")
+                        console.print("[dim]Please check conf.yaml for errors.[/dim]")
             except KeyboardInterrupt:
                 self.stop()
                 break
@@ -1519,83 +1182,11 @@ class TradingBot:
                     console.print(f"[red]Watchdog reconnect failed: {e}[/red]")
 
     # =============================================================
-    # DYNAMIC SYMBOL MANAGEMENT
+    # SHUTDOWN, RESTART & RELOAD - CLEAN VERSION
     # =============================================================
-    def save_config_to_yaml(self):
-        """Persist current symbols_config back to conf.yaml"""
-        console.print("[dim]Saving updated config to conf_insession.yaml...[/dim]")
-        try:
-            path = Path(__file__).parents[3] / "conf/bot/conf_insession.yaml"
-            data = {
-                "symbols": {
-                    sym: cfg.model_dump() for sym, cfg in self.symbols_config.items()
-                },
-                "risk": self.risk_config.model_dump(),
-            }
-            with open(path, "w") as f:
-                yaml.safe_dump(data, f, sort_keys=False)
-            console.print("[green]Configuration saved to conf_insession.yaml[/green]")
-        except Exception as e:
-            console.print(f"[red]Failed to save config: {e}[/red]")
-
-    def add_new_symbol(self, symbol: str, cfg: SymbolConfig):
-        """Add a symbol dynamically"""
-
-        if symbol in self.symbols_config:
-            console.print(f"[yellow]{symbol} already exists[/yellow]")
-            return
-
-        with self.lock:
-            self.symbols_config[symbol] = (
-                cfg  # Now new symbol added to in-memory configuration
-            )
-            self.current_market_prices[symbol] = (
-                None  # ready to receive real-time prices
-            )
-            self.auto_buy_allowed[symbol] = True  # can auto-buy once
-
-        try:
-            self.streamer.send(
-                self.streamer.level_one_equities(symbol, "0,1,2,3,4,5,6,7,8")
-            )
-            console.print(f"[green]✅ Added {symbol} and subscribed[/green]")
-            self.save_config_to_yaml()  # the change is persisted to disk
-
-        except Exception as e:
-            console.print(f"[red]Stream subscribe failed: {e}[/red]")
-
-    def remove_symbol(self, symbol: str):
-        """Dynamically remove a symbol from monitoring (unsubscribes + cleans up state)"""
-        symbol = symbol.upper()
-
-        if symbol not in self.symbols_config:
-            console.print(f"[yellow]{symbol} not found[/yellow]")
-            return
-
-        with self.lock:
-
-            self.symbols_config.pop(symbol, None)
-            self.current_market_prices.pop(symbol, None)
-            self.auto_buy_allowed.pop(symbol, None)
-
-            if symbol in self.holdings:
-                console.print(
-                    f"[yellow]{symbol} has open position (not closing automatically)[/yellow]"
-                )
-
-            self.pending_buy_orders = {
-                (s, q) for s, q in self.pending_buy_orders if s != symbol
-            }
-
-        self.save_config_to_yaml()
-        console.print(f"[green]Removed {symbol}[/green]")
-
-    # =============================================================
-    # SHUTDOWN & RESTART
-    # ============================================================
 
     def graceful_shutdown(self, reason: str = "User requested"):
-        """Gracefully shut down the bot. Safe to call multiple times."""
+        """Clean and safe graceful shutdown."""
         if not self.running:
             console.print("[dim yellow]Shutdown already in progress or completed.[/dim yellow]")
             return
@@ -1605,24 +1196,24 @@ class TradingBot:
 
         # Cancel all DAY orders
         try:
-            console.print("[yellow]Cancelling open DAY orders...[/yellow]")
+            console.print("[yellow]Cancelling all open DAY orders...[/yellow]")
             open_orders = self.get_open_orders()
             canceled = 0
             for order in open_orders:
                 if order.get("duration") == "DAY" and order.get("orderId"):
                     try:
                         self.client.cancel_order(self.account_hash, order["orderId"])
-                        console.print(f"[green]✓ Cancelled {order['orderId']} ({order['symbol']})[/green]")
+                        console.print(f"[green]✓ Cancelled order {order['orderId']} for {order['symbol']}[/green]")
                         canceled += 1
                     except Exception as e:
-                        console.print(f"[dim red]Cancel failed for {order.get('orderId')}: {e}[/dim red]")
+                        console.print(f"[dim red]Failed to cancel order {order.get('orderId')}: {e}[/dim red]")
             if canceled > 0:
                 self.invalidate_open_orders_cache()
                 console.print(f"[green]Cancelled {canceled} DAY order(s)[/green]")
         except Exception as e:
-            console.print(f"[dim red]Error cancelling orders: {e}[/dim red]")
+            console.print(f"[dim red]Error while cancelling orders: {e}[/dim red]")
 
-        # Stop streamer
+        # Stop the streamer
         try:
             if hasattr(self, 'streamer') and self.streamer:
                 self.streamer.stop()
@@ -1630,7 +1221,7 @@ class TradingBot:
         except Exception as e:
             console.print(f"[dim red]Error stopping streamer: {e}[/dim red]")
 
-        # Log final shutdown
+        # Log shutdown
         try:
             equity = self.get_account_snapshot()["equity"]
             log_transaction(
@@ -1638,7 +1229,7 @@ class TradingBot:
                 symbol="SYSTEM",
                 qty=0,
                 price=equity,
-                note=f"Shutdown ({reason}) | Equity: ${equity:,.2f}",
+                note=f"Shutdown triggered by: {reason} | Final Equity: ${equity:,.2f}",
                 order_id=None,
                 order_status="SHUTDOWN"
             )
@@ -1648,65 +1239,52 @@ class TradingBot:
         time.sleep(1.2)
         console.print("[bold green]=== GRACEFUL SHUTDOWN COMPLETED ===[/bold green]")
 
+
     def restart(self):
-        """Restart the bot cleanly: shutdown → full re-initialization."""
+        """Clean restart: shutdown → reset state → start fresh."""
         console.print("[bold yellow]=== RESTARTING BOT ===[/bold yellow]")
 
-        # Perform shutdown ONLY if still running
+        # Shutdown first
         if self.running:
-            self.graceful_shutdown(reason="Restart requested")
-        else:
-            console.print("[dim]Bot already stopped — proceeding with restart[/dim]")
+            self.graceful_shutdown(reason="Restart")
 
-        # ── Full re-initialization ─────────────────────────────────────
+        # Reset internal state
         with self.lock:
             self.current_market_prices = {sym: None for sym in self.symbols}
             self.holdings = {}
             self.all_holdings = {}
             self.auto_buy_allowed = {sym: True for sym in self.symbols}
-            self.pending_buy_orders = set()
+            self.pending_buy_orders.clear()
 
         self.running = True
         self.trading_paused = False
         self.first_api_pull = True
         self.last_holdings_sync = time.time()
+
         self.invalidate_open_orders_cache()
-        self._account_snapshot_cache_time = None
         self._account_snapshot_cache = None
+        self._account_snapshot_cache_time = None
         self._open_orders_cache = None
         self._open_orders_cache_time = None
 
+        # Refresh account hash
         try:
             self.account_hash = self._get_account_hash()
         except Exception as e:
             console.print(f"[red]Failed to refresh account hash: {e}[/red]")
             return
 
-        # Re-start stream + timer
-        try:
-            self.start_stream()
-            self.start_market_close_timer()        # ← Important: restart timer with latest config
-            console.print("[bold green]Bot restarted successfully[/bold green]")
-        except Exception as e:
-            console.print(f"[bold red]Restart failed: {e}[/bold red]")
+        # Start fresh components
+        self.start_stream()
+        self.start_market_close_timer()
+
+        console.print("[bold green]=== BOT RESTARTED SUCCESSFULLY ===[/bold green]")
+
 
     def start_market_close_timer(self):
-        """Start (or restart) the configurable auto-shutdown timer based on current config."""
-        # Stop any existing timer thread safely
-        if (
-            hasattr(self, "_shutdown_timer")
-            and self._shutdown_timer
-            and self._shutdown_timer.is_alive()
-        ):
-            console.print(
-                "[dim yellow]Stopping previous shutdown timer...[/dim yellow]"
-            )
-            # We can't easily kill daemon threads, so we rely on the flag + new thread
-
-        if not self.auto_shutdown_after_close:  # We'll add this attribute below
-            console.print(
-                "[yellow]Auto-shutdown after market close is currently DISABLED[/yellow]"
-            )
+        """Clean auto-shutdown timer after regular market close (4:00 PM ET)."""
+        if not self.auto_shutdown_after_close:
+            console.print("[yellow]Auto-shutdown after market close is disabled in config[/yellow]")
             return
 
         def shutdown_at_close():
@@ -1715,54 +1293,49 @@ class TradingBot:
                     now_et = datetime.now(ZoneInfo("America/New_York"))
 
                     # Skip weekends if configured
-                    if (
-                        not self.shutdown_on_weekends and now_et.weekday() >= 5
-                    ):  # Sat=5, Sun=6
+                    if not self.shutdown_on_weekends and now_et.weekday() >= 5:
                         time.sleep(3600)
                         continue
 
-                    # Calculate shutdown time today (4:00 PM ET + buffer)
-                    shutdown_time = now_et.replace(
-                        hour=16, minute=0, second=0, microsecond=0
-                    )
+                    # Calculate shutdown time: 4:00 PM ET + buffer
+                    shutdown_time = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
                     shutdown_time += timedelta(minutes=self.shutdown_buffer_minutes)
 
-                    # If already past today's shutdown time, schedule for tomorrow
+                    # If past today's time, schedule for tomorrow
                     if now_et > shutdown_time:
                         shutdown_time += timedelta(days=1)
 
                     seconds_to_wait = (shutdown_time - now_et).total_seconds()
 
-                    console.print(
-                        f"[dim cyan]Auto-shutdown timer active → "
-                        f"Next shutdown at {shutdown_time.strftime('%Y-%m-%d %H:%M ET')} "
-                        f"({int(seconds_to_wait//3600)}h {int((seconds_to_wait%3600)//60)}m)[/dim cyan]"
-                    )
+                    console.print(f"[dim cyan]Auto-shutdown timer active → "
+                                  f"Next shutdown at {shutdown_time.strftime('%Y-%m-%d %H:%M ET')} "
+                                  f"({int(seconds_to_wait//3600)}h {int((seconds_to_wait%3600)//60)}m)[/dim cyan]")
 
                     time.sleep(seconds_to_wait)
 
                     if self.running and self.auto_shutdown_after_close:
-                        console.print(
-                            f"[bold red]🛑 Market close + {self.shutdown_buffer_minutes} min buffer reached → initiating graceful shutdown[/bold red]"
-                        )
-                        self.graceful_shutdown(reason="Market close + buffer")
+                        console.print(f"[bold red]🛑 Market close + {self.shutdown_buffer_minutes} min buffer reached → shutting down[/bold red]")
+                        self.graceful_shutdown(reason="Market close timer")
                         break
 
                 except Exception as e:
                     console.print(f"[red]Shutdown timer error: {e}[/red]")
-                    time.sleep(300)  # retry after 5 min
+                    time.sleep(300)
 
-        # Store reference so we can detect/restart it later
+        # Start timer thread
         self._shutdown_timer = threading.Thread(
-            target=shutdown_at_close, daemon=True, name="MarketCloseAutoShutdown"
+            target=shutdown_at_close,
+            daemon=True,
+            name="MarketCloseShutdownTimer"
         )
         self._shutdown_timer.start()
-        console.print(
-            f"[bold green]✅ Auto-shutdown timer (re)started — buffer: {self.shutdown_buffer_minutes} min[/bold green]"
-        )
+
+        console.print(f"[bold green]✅ Market close auto-shutdown timer started "
+                      f"(buffer: {self.shutdown_buffer_minutes} minutes)[/bold green]")
+
 
     def _load_shutdown_config(self, cfg: TradingConfig):
-        """Internal helper to apply shutdown settings from config object."""
+        """Apply shutdown-related settings from config."""
         self.auto_shutdown_after_close = cfg.auto_shutdown_after_close
         self.shutdown_buffer_minutes = cfg.shutdown_buffer_minutes
         self.shutdown_on_weekends = cfg.shutdown_on_weekends

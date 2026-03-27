@@ -21,10 +21,10 @@ console = Console()
 cfg = TradingConfig.load_from_file(Path(__file__).parent / "../conf/bot/conf.yaml")
 
 
-bot = TradingBot(cfg, mode="cli")  # your class instance
+bot = TradingBot(cfg, mode="cli")
 
 
-# ── Dash app ────────────────────────────────────────────────────────────────
+# Dash app
 app = Dash(
     __name__,
     external_stylesheets=[dbc.themes.DARKLY],  # SLATE, CYBORG or FLATLY, etc
@@ -34,9 +34,7 @@ app = Dash(
 app.layout = dbc.Container(
     [
         dbc.Row(
-            [
-                dbc.Col(html.H2("Schwab Trading Bot Dashboard"), width=12),
-            ],
+            [dbc.Col(html.H2("Schwab Trading Bot Dashboard"), width=12)],
             className="mb-4",
         ),
         dbc.Row(
@@ -193,7 +191,7 @@ app.layout = dbc.Container(
 )
 
 
-# ── FIXED CALLBACK ────────────────────────────────────────────────────────────
+# FIXED CALLBACK
 @app.callback(
     [
         Output("all-holdings-table", "data"),
@@ -322,7 +320,7 @@ def update_dashboard(n_interval, n_clicks):
         return [], [], [], "Dashboard error — check console"
 
 
-# ── Main ────────────────────────────────────────────────────────────────────
+# Main
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Schwab Trading Bot")
     parser.add_argument(
