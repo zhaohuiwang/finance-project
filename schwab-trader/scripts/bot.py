@@ -333,30 +333,23 @@ if __name__ == "__main__":
 
     bot = TradingBot(cfg, mode=args.mode)
     bot.start_stream()
-
-    # Start the configurable market-close shutdown timer
     bot.start_market_close_timer()
 
-    # Start logic thread
-    logic_thread = threading.Thread(target=bot.monitor_logic, daemon=True)
-    logic_thread.start()
+    # Start threads and store references so restart() can revive them
+    bot._logic_thread = threading.Thread(target=bot.monitor_logic, daemon=True, name="MonitorLogic")
+    bot._logic_thread.start()
 
-    # Add the watchdog thread
-    watchdog_thread = threading.Thread(target=bot.stream_watchdog, daemon=True)
-    watchdog_thread.start()
+    bot._watchdog_thread = threading.Thread(target=bot.stream_watchdog, daemon=True, name="StreamWatchdog")
+    bot._watchdog_thread.start()
 
     if args.mode == "full":
-        display_thread = threading.Thread(target=bot.monitor_display, daemon=True)
-        display_thread.start()
-        console.print(
-            "[bold green]FULL MODE - Terminal + Web dashboard active[/bold green]"
-        )
+        bot._display_thread = threading.Thread(target=bot.monitor_display, daemon=True, name="MonitorDisplay")
+        bot._display_thread.start()
+        console.print("[bold green]FULL MODE - Terminal + Web dashboard active[/bold green]")
     else:
         cli_thread = threading.Thread(target=bot.cli_loop, daemon=True)
         cli_thread.start()
-        console.print(
-            "[bold green]CLI MODE - Web dashboard only + terminal commands active[/bold green]"
-        )
+        console.print("[bold green]CLI MODE - Web dashboard only + terminal commands active[/bold green]")
 
     app.run(debug=True, use_reloader=False)
 

@@ -99,6 +99,11 @@ class TradingBot:
         # Shutdown config
         self._load_shutdown_config(cfg)
         self._shutdown_timer = None
+        
+        # Thread references so we can restart them on reload/restart
+        self._logic_thread = None
+        self._watchdog_thread = None
+        self._display_thread = None   # only used in full mode
 
     @property
     def symbols(self):
@@ -1239,10 +1244,9 @@ class TradingBot:
         time.sleep(1.2)
         console.print("[bold green]=== GRACEFUL SHUTDOWN COMPLETED ===[/bold green]")
 
-
     def restart(self):
-        """Clean restart: shutdown → reset state → start fresh."""
-        console.print("[bold yellow]=== RESTARTING BOT ===[/bold yellow]")
+        """Clean restart: shutdown → reset state → restart threads and stream."""
+        console.print("[bold yellow]=== RESTARTING BOT (config/logic will be refreshed) ===[/bold yellow]")
 
         # Shutdown first
         if self.running:
@@ -1260,7 +1264,6 @@ class TradingBot:
         self.trading_paused = False
         self.first_api_pull = True
         self.last_holdings_sync = time.time()
-
         self.invalidate_open_orders_cache()
         self._account_snapshot_cache = None
         self._account_snapshot_cache_time = None
@@ -1274,11 +1277,29 @@ class TradingBot:
             console.print(f"[red]Failed to refresh account hash: {e}[/red]")
             return
 
-        # Start fresh components
+        # === RESTART THREADS ===
+        console.print("[cyan]Restarting logic + watchdog threads...[/cyan]")
+
+        # Logic thread (buy/sell monitoring)
+        if self._logic_thread is None or not self._logic_thread.is_alive():
+            self._logic_thread = threading.Thread(target=self.monitor_logic, daemon=True, name="MonitorLogic")
+            self._logic_thread.start()
+
+        # Watchdog thread
+        if self._watchdog_thread is None or not self._watchdog_thread.is_alive():
+            self._watchdog_thread = threading.Thread(target=self.stream_watchdog, daemon=True, name="StreamWatchdog")
+            self._watchdog_thread.start()
+
+        # Display thread (only if in full mode)
+        if self.mode == "full" and (self._display_thread is None or not self._display_thread.is_alive()):
+            self._display_thread = threading.Thread(target=self.monitor_display, daemon=True, name="MonitorDisplay")
+            self._display_thread.start()
+
+        # Start fresh stream + timer
         self.start_stream()
         self.start_market_close_timer()
 
-        console.print("[bold green]=== BOT RESTARTED SUCCESSFULLY ===[/bold green]")
+        console.print("[bold green]=== BOT RESTARTED SUCCESSFULLY (new config active) ===[/bold green]")
 
 
     def start_market_close_timer(self):
