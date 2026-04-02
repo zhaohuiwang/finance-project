@@ -739,8 +739,10 @@ class TradingBot:
             else round(buy_price * (1 + cfg.limit_sell_pct / 100), 2)
         )
 
-        if cfg.stop_loss_dollar > 0:
-            stop_price = round(buy_price - cfg.stop_loss_dollar, 2)
+        if cfg.stop_loss_dollar > 0 and cfg.buy_target_price > 0:
+            stop_price = round(cfg.buy_target_price - cfg.stop_loss_dollar, 2)
+        elif cfg.stop_loss_pct > 0 and cfg.buy_target_price > 0:
+            stop_price = round(cfg.buy_target_price * (1 - cfg.stop_loss_pct / 100), 2)
         else:
             stop_price = round(buy_price * (1 - cfg.stop_loss_pct / 100), 2)
 
@@ -1060,6 +1062,7 @@ class TradingBot:
                     console.print(
                         f"[bold green]SELL SAFETY TRIGGER: {sym} @ ${current_price:.2f} ≥ limit ${limit_target:.2f}[/bold green]"
                     )
+                    
                     self.submit_sell_bracket_oco(
                         sym,
                         holding.get("buy_price", current_price),
