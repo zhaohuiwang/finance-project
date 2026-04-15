@@ -139,11 +139,23 @@ order_s6 = sell_trailing_stop_dict(
 )
 
 order_s8 = sell_limit_sell_stoplimit_oco_dict(
+    # A conditional OCO (One-Cancels-the-Other) order. It pairs a profit-taking limit order with a loss-limiting stop limit order. When the price climbs to sell_limit_price or higher, it triggers the sell limit order to take profit. When the stock falls to the sell_stop_price, a sell limit order is triggeredto sell at sell_stoplimit_price or better.
+    symbol="IREN",
+    quantity=800,
+    sell_limit_price=65,
+    sell_stop_price=42,
+    sell_stoplimit_price=41.8,
+    session_sell_limit="NORMAL",
+    session_sell_stoplimit="NORMAL",
+    duration="GOOD_TILL_CANCEL",
+)
+
+order_s8 = sell_limit_sell_stoplimit_oco_dict(
     symbol="JOBY",
-    quantity=1800,
-    sell_limit_price=10.25,  # 450.97
-    sell_stop_price=9.5,  # 37.00
-    sell_stoplimit_price=9.48,  # 37.03
+    quantity=3500,
+    sell_limit_price=16,
+    sell_stop_price=8.4,
+    sell_stoplimit_price=8.3,
     session_sell_limit="NORMAL",
     session_sell_stoplimit="NORMAL",
     duration="GOOD_TILL_CANCEL",
@@ -151,7 +163,7 @@ order_s8 = sell_limit_sell_stoplimit_oco_dict(
 
 
 # submit an order
-order = order_b7
+order = order_s8
 
 
 status_code, date, order_id = place_order(
