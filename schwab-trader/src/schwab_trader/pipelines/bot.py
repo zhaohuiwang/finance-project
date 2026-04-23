@@ -652,34 +652,73 @@ class TradingBot:
     # =============================================================
     # ORDER PLACEMENT
     # =============================================================
+    def place_immediate_sell(self, symbol: str, qty: float, current_price: float):
+        """Market or tight limit sell when limit price is hit."""
+        # Use MARKET sell for speed, or aggressive limit
+        order = {
+            "orderType": "MARKET",          # Change to LIMIT if you prefer
+            "session": "NORMAL",
+            "duration": "DAY",
+            "orderStrategyType": "SINGLE",
+            "orderLegCollection": [
+                {
+                    "instruction": "SELL",
+                    "quantity": int(qty),
+                    "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                }
+            ],
+        }
+
+        try:
+            resp = self.client.place_order(self.account_hash, order)
+            location = resp.headers.get("Location")
+            order_id = location.split("/")[-1] if location else None
+
+            console.print(f"[bold green]✅ MARKET SELL EXECUTED for {symbol} x {qty} @ ~${current_price:.2f}[/bold green]")
+
+            log_transaction(
+                action="SELL_TRIGGERED",
+                symbol=symbol,
+                qty=qty,
+                price=current_price,
+                note="Immediate sell on limit_price hit",
+                order_id=order_id,
+                order_status="SUBMITTED",
+            )
+
+            self.invalidate_open_orders_cache()
+            self.force_sync_holdings()
+
+        except Exception as e:
+            console.print(f"[red]Immediate sell failed for {symbol}: {e}[/red]")
+    
     def attach_brackets_to_existing_holdings(self):
-        """Attach OCO brackets to existing holdings that don't have them."""
-        console.print("[cyan]Checking and attaching brackets to existing holdings...[/cyan]")
-        time.sleep(0.8)                    # small buffer after restart
-        self.update_holdings_from_api()    # ensure fresh data
+        console.print("[cyan]Checking existing holdings for brackets or immediate sells...[/cyan]")
+        self.update_holdings_from_api()
         self.invalidate_open_orders_cache()
-        
         open_orders = self.get_open_orders()
-        symbols_with_open_sell = {o.get("symbol") for o in open_orders if o.get("instruction") in ("SELL", "SELL_SHORT")}
+        symbols_with_sell = {o.get("symbol") for o in open_orders if o.get("instruction") in ("SELL", "SELL_SHORT")}
 
         with self.lock:
             for symbol, holding in list(self.holdings.items()):
                 if symbol not in self.symbols_config:
                     continue
-                if symbol in symbols_with_open_sell:
-                    continue  # already has bracket
-
                 qty = holding.get("shares", 0)
                 if qty <= 0:
                     continue
 
-                buy_price = holding.get("buy_price") or self.current_market_prices.get(symbol, 0)
-                if buy_price <= 0:
-                    console.print(f"[yellow]Skipping bracket for {symbol} — no valid buy price[/yellow]")
+                price = self.current_market_prices.get(symbol) or holding.get("buy_price", 0)
+                cfg = self.symbols_config[symbol]
+
+                if symbol in symbols_with_sell:
                     continue
 
-                self.submit_sell_bracket_oco(symbol, buy_price, self.symbols_config[symbol].limit_sell_price)
-                console.print(f"[green]Attached new bracket to {symbol} ({qty} shares)[/green]")
+                # Immediate sell if already above limit
+                if price >= cfg.limit_sell_price:
+                    console.print(f"[bold green]Immediate sell on restart for {symbol}[/bold green]")
+                    self.place_immediate_sell(symbol, qty, price)
+                else:
+                    self.submit_sell_bracket_oco(symbol, holding.get("buy_price", price), cfg.limit_sell_price)
 
     def place_buy_order(self, symbol: str, qty: float) -> bool:
         """Submit a MARKET BUY order (used only after all safety checks pass)."""
@@ -1038,7 +1077,6 @@ class TradingBot:
                             self.pending_buy_orders.discard((sym, qty))
 
             # === SELL SAFETY NET  ===
-            # If we hold the stock but have no open SELL order → check if we should sell
             open_orders = self.get_open_orders()
             symbols_with_sell_order = {
                 o["symbol"] for o in open_orders
@@ -1048,26 +1086,32 @@ class TradingBot:
             for sym, holding in list(holdings_copy.items()):
                 if sym not in self.symbols_config:
                     continue
-                if sym in symbols_with_sell_order:
-                    continue  # already has bracket
 
                 current_price = prices_copy.get(sym)
                 if not current_price:
                     continue
 
                 cfg = self.symbols_config[sym]
-                limit_target = cfg.limit_sell_price
+                qty = holding.get("shares", 0)
+                if qty <= 0:
+                    continue
 
-                if current_price >= limit_target:
+                buy_price = holding.get("buy_price", current_price)
+
+                # 1. If we already have a sell order → skip
+                if sym in symbols_with_sell_order:
+                    continue
+
+                # 2. STRONG LIMIT SELL TRIGGER
+                if current_price >= cfg.limit_sell_price:
                     console.print(
-                        f"[bold green]SELL SAFETY TRIGGER: {sym} @ ${current_price:.2f} ≥ limit ${limit_target:.2f}[/bold green]"
+                        f"[bold green]🚀 LIMIT SELL TRIGGER HIT: {sym} @ ${current_price:.2f} ≥ ${cfg.limit_sell_price:.2f}[/bold green]"
                     )
-                    
-                    self.submit_sell_bracket_oco(
-                        sym,
-                        holding.get("buy_price", current_price),
-                        limit_target
-                    )
+                    self.place_immediate_sell(sym, qty, current_price)
+                    continue
+
+                # 3. Fallback: Place full OCO bracket if missing
+                self.submit_sell_bracket_oco(sym, buy_price, cfg.limit_sell_price)
 
     def cli_loop(self):
         """
