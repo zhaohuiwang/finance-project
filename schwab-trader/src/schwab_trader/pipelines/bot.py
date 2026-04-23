@@ -61,6 +61,9 @@ class TradingBot:
             set()
         )  # prevents double-submit while order is in flight
 
+        # Symbols with pre-existing holdings that must be sold before any new buy
+        self.must_sell_first = set()
+
         self.last_holdings_sync = time.time()
         self.first_api_pull = True
         self.holding_sync_interval = (
@@ -559,6 +562,8 @@ class TradingBot:
                         order_status="FILLED",
                     )
                     self.auto_buy_allowed[symbol] = True
+                    # Pre-existing holding sold — now allow normal buy cycle
+                    self.must_sell_first.discard(symbol)
                     self.force_sync_holdings()
                     self.pending_buy_orders = {t for t in self.pending_buy_orders if t[0] != symbol}
                     console.print(f"[green]✅ Sell complete — ready for next buy cycle on {symbol}[/green]")
@@ -691,13 +696,61 @@ class TradingBot:
 
         except Exception as e:
             console.print(f"[red]Immediate sell failed for {symbol}: {e}[/red]")
-    
+
+    def place_limit_sell_order(self, symbol: str, qty: float, limit_price: float) -> bool:
+        """Place a DAY LIMIT SELL at limit_price (used for pre-existing holdings)."""
+        order = {
+            "orderType": "LIMIT",
+            "session": "NORMAL",
+            "duration": "DAY",
+            "price": str(round(limit_price, 2)),
+            "orderStrategyType": "SINGLE",
+            "orderLegCollection": [
+                {
+                    "instruction": "SELL",
+                    "quantity": int(qty),
+                    "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                }
+            ],
+        }
+        try:
+            resp = self.client.place_order(self.account_hash, order)
+            location = resp.headers.get("Location")
+            order_id = location.split("/")[-1] if location else None
+            console.print(
+                f"[bold green]✅ LIMIT SELL PLACED for {symbol} x {int(qty)} @ ${limit_price:.2f}[/bold green]"
+            )
+            log_transaction(
+                action="SELL_TRIGGERED",
+                symbol=symbol,
+                qty=qty,
+                price=limit_price,
+                note=f"Limit sell for pre-existing holding @ ${limit_price:.2f}",
+                order_id=order_id,
+                order_status="WORKING",
+            )
+            self.invalidate_open_orders_cache()
+            return True
+        except Exception as e:
+            console.print(f"[red]Limit sell placement failed for {symbol}: {e}[/red]")
+            return False
+
     def attach_brackets_to_existing_holdings(self):
-        console.print("[cyan]Checking existing holdings for brackets or immediate sells...[/cyan]")
+        """On stream (re)start, detect pre-existing holdings and ensure sell orders are in place.
+
+        Pre-existing holdings are tagged in must_sell_first so the buy logic ignores them
+        until they have been sold. A simple LIMIT SELL at limit_sell_price is used (no OCO
+        stop-loss) because we don't know the original entry price for inherited positions.
+        After the fill the normal buy→OCO cycle takes over.
+        """
+        console.print("[cyan]Checking existing holdings for sell setup...[/cyan]")
         self.update_holdings_from_api()
         self.invalidate_open_orders_cache()
         open_orders = self.get_open_orders()
-        symbols_with_sell = {o.get("symbol") for o in open_orders if o.get("instruction") in ("SELL", "SELL_SHORT")}
+        symbols_with_sell = {
+            o.get("symbol") for o in open_orders
+            if o.get("instruction") in ("SELL", "SELL_SHORT")
+        }
 
         with self.lock:
             for symbol, holding in list(self.holdings.items()):
@@ -707,18 +760,29 @@ class TradingBot:
                 if qty <= 0:
                     continue
 
-                price = self.current_market_prices.get(symbol) or holding.get("buy_price", 0)
                 cfg = self.symbols_config[symbol]
 
+                # Block buying for this symbol until the existing holding is sold
+                self.must_sell_first.add(symbol)
+                console.print(
+                    f"[yellow]Pre-existing holding: {symbol} x {int(qty)} — "
+                    f"must sell at ${cfg.limit_sell_price:.2f} before new buys[/yellow]"
+                )
+
                 if symbol in symbols_with_sell:
+                    console.print(f"[dim]Sell order already open for {symbol} — skipping[/dim]")
                     continue
 
-                # Immediate sell if already above limit
-                if price >= cfg.limit_sell_price:
-                    console.print(f"[bold green]Immediate sell on restart for {symbol}[/bold green]")
+                # Use current stream price when available, fall back to avg cost
+                price = self.current_market_prices.get(symbol) or holding.get("buy_price") or 0
+
+                if price and price >= cfg.limit_sell_price:
+                    console.print(
+                        f"[bold green]Price already at/above limit — immediate sell for {symbol} @ ${price:.2f}[/bold green]"
+                    )
                     self.place_immediate_sell(symbol, qty, price)
                 else:
-                    self.submit_sell_bracket_oco(symbol, holding.get("buy_price", price), cfg.limit_sell_price)
+                    self.place_limit_sell_order(symbol, qty, cfg.limit_sell_price)
 
     def place_buy_order(self, symbol: str, qty: float) -> bool:
         """Submit a MARKET BUY order (used only after all safety checks pass)."""
@@ -1036,9 +1100,14 @@ class TradingBot:
                 pending_copy = set(self.pending_buy_orders)
                 auto_copy = dict(self.auto_buy_allowed)
                 prices_copy = dict(self.current_market_prices)
+                must_sell_first_copy = set(self.must_sell_first)
 
             # === BUY LOGIC  ===
             for sym in self.symbols:
+                # Never buy while an inherited pre-existing holding is awaiting its sell
+                if sym in must_sell_first_copy:
+                    continue
+
                 if sym in holdings_copy and holdings_copy[sym].get("shares", 0) > 0:
                     continue
 
@@ -1096,13 +1165,11 @@ class TradingBot:
                 if qty <= 0:
                     continue
 
-                buy_price = holding.get("buy_price", current_price)
-
                 # 1. If we already have a sell order → skip
                 if sym in symbols_with_sell_order:
                     continue
 
-                # 2. STRONG LIMIT SELL TRIGGER
+                # 2. STRONG LIMIT SELL TRIGGER (works for both pre-existing and bot-bought)
                 if current_price >= cfg.limit_sell_price:
                     console.print(
                         f"[bold green]🚀 LIMIT SELL TRIGGER HIT: {sym} @ ${current_price:.2f} ≥ ${cfg.limit_sell_price:.2f}[/bold green]"
@@ -1110,8 +1177,14 @@ class TradingBot:
                     self.place_immediate_sell(sym, qty, current_price)
                     continue
 
-                # 3. Fallback: Place full OCO bracket if missing
-                self.submit_sell_bracket_oco(sym, buy_price, cfg.limit_sell_price)
+                # 3. Fallback: ensure a sell order exists
+                if sym in must_sell_first_copy:
+                    # Pre-existing holding — use simple limit sell (no stop-loss OCO)
+                    self.place_limit_sell_order(sym, qty, cfg.limit_sell_price)
+                else:
+                    # Bot-managed position — full OCO bracket (limit + stop-loss)
+                    buy_price = holding.get("buy_price") or current_price
+                    self.submit_sell_bracket_oco(sym, buy_price, cfg.limit_sell_price)
 
     def cli_loop(self):
         """
@@ -1181,6 +1254,7 @@ class TradingBot:
                             self.current_market_prices = {sym: None for sym in fresh_symbols}
                             self.auto_buy_allowed = {sym: True for sym in fresh_symbols}
                             self.pending_buy_orders.clear()
+                            self.must_sell_first.clear()
 
                         # Re-attach brackets with new settings
                         self.attach_brackets_to_existing_holdings()
@@ -1306,6 +1380,7 @@ class TradingBot:
             self.all_holdings = {}
             self.auto_buy_allowed = {sym: True for sym in self.symbols}
             self.pending_buy_orders.clear()
+            self.must_sell_first.clear()
 
         self.running = True
         self.trading_paused = False
