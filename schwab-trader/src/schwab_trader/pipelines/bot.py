@@ -198,20 +198,34 @@ class TradingBot:
                         "shares": long_qty,
                         "buy_price": avg_price,
                         "current_price": current_price,
-                        "day_change_pct": day_pct,  
+                        "day_change_pct": day_pct,
                     }
                     new_all[sym] = entry
                     if sym in self.symbols_config:
                         new_watched[sym] = entry.copy()
 
+            # Identify symbols that have a pending buy but no filled position yet.
+            # Check their WORKING order status via API *outside* the lock so we never
+            # hold the lock across an HTTP call.
+            with self.lock:
+                pending_without_position = {
+                    t[0] for t in self.pending_buy_orders if t[0] not in new_watched
+                }
+
+            still_working = {
+                sym for sym in pending_without_position if self.has_open_buy_order(sym)
+            }
+
             with self.lock:
                 self.holdings = new_watched
                 self.all_holdings = new_all
-                # unlock auto-buy flag for any watched symbol that is now flat (zero shares, no current position)
                 for sym in list(self.auto_buy_allowed.keys()):
                     if sym not in new_watched:
+                        if sym in still_working:
+                            # Order is still WORKING — keep pending state to block re-submission
+                            continue
                         self.auto_buy_allowed[sym] = True
-                        # clear any lingering pending buy orders
+                        # Order is gone (expired/rejected) and no position — safe to clear
                         self.pending_buy_orders = {
                             t for t in self.pending_buy_orders if t[0] != sym
                         }
@@ -516,7 +530,7 @@ class TradingBot:
             recent_execs = get_orders(
                 hashValue=self.account_hash,
                 status="FILLED",
-                fromEnteredTime=lookback.isoformat() + "Z",
+                fromTime=lookback.isoformat() + "Z",
             )
 
             # Use API-confirmed values when possible
@@ -1130,7 +1144,13 @@ class TradingBot:
                 console.print(f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]")
                 qty = self.calculate_shares(sym, price)
 
-                if (sym, qty) in pending_copy or self.has_open_buy_order(sym):
+                # Fast path: in-memory pending set (order submitted this session and not yet expired)
+                if (sym, qty) in pending_copy:
+                    continue
+                # Slow path: pending was absent — bypass cache and hit the API directly so we
+                # never place a duplicate against a WORKING order that pending_copy missed.
+                self.invalidate_open_orders_cache()
+                if self.has_open_buy_order(sym):
                     continue
 
                 approved = auto_copy[sym] or self._confirm_manual_buy(sym, price)
