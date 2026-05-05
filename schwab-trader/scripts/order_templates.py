@@ -6,6 +6,11 @@ orderType string Enum:
     [ MARKET, LIMIT, STOP, STOP_LIMIT, TRAILING_STOP, CABINET, NON_MARKETABLE, MARKET_ON_CLOSE, EXERCISE, TRAILING_STOP_LIMIT, NET_DEBIT, NET_CREDIT, NET_ZERO, LIMIT_ON_CLOSE, UNKNOWN ]
 session string Enum:
     [ NORMAL, AM, PM, SEAMLESS ]
+NORMAL: Standard market hours (9:30 a.m. to 4:00 p.m. ET).
+AM: Pre-market session (8:00 a.m. to 9:30 a.m. ET).
+PM: After-market session (4:00 p.m. to 8:00 p.m. ET).
+SEAMLESS: Orders active across all sessions (NORMAL + AM + PM), though typically limited to limit orders.
+
 duration string Enum:
     [ DAY, GOOD_TILL_CANCEL, FILL_OR_KILL, IMMEDIATE_OR_CANCEL, END_OF_WEEK, END_OF_MONTH, NEXT_END_OF_MONTH, UNKNOWN ]
 orderStrategyType string Enum:

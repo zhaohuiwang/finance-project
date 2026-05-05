@@ -102,12 +102,12 @@ order_b5 = buy_limit_trigger_sell_limit_dict(
 )
 
 order_b7 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
-    symbol="IREN",
-    quantity=400,
-    buy_limit_price=4.3,  # 14.97
-    sell_limit_price=47.88,  # 15.27
-    sell_stop_price=40.0,  # 11.27
-    session_buy_limit="NORMAL",
+    symbol="NBIS",
+    quantity=250,
+    buy_limit_price=135,  # 14.97
+    sell_limit_price=145,  # 15.27
+    sell_stop_price=134,  # 11.27
+    session_buy_limit="SEAMLESS", # SEAMLESS - Day + ext
     session_sell_limit="NORMAL",
     session_sell_stop="NORMAL",
     buy_duration="DAY",
@@ -182,7 +182,7 @@ order_s8 = sell_limit_sell_stoplimit_oco_dict(
 )
 # submit an order
 order = order_s8
-order = order_b3
+order = order_b7
 
 status_code, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
