@@ -83,8 +83,8 @@ order_b1 = buy_market_dict(
 
 order_b3 = buy_limit_dict(
     symbol="ACHR",
-    quantity=3000,
-    limit_price=6.2,
+    quantity=2900,
+    limit_price=6.6,
     session="NORMAL",
     duration="DAY",
 )
@@ -123,9 +123,9 @@ order_s2 = sell_market_dict(
 )
 
 order_s4 = sell_limit_dict(
-    symbol="JOBY",
-    quantity=1800,
-    limit_price=9.4,
+    symbol="ACHR",
+    quantity=2900,
+    limit_price=6.68,
     session="NORMAL",
     duration="DAY",
 )
@@ -152,37 +152,23 @@ order_s8 = sell_limit_sell_stoplimit_oco_dict(
 
 order_s8 = sell_limit_sell_stoplimit_oco_dict(
     symbol="JOBY",
-    quantity=1700,
+    quantity=3500,
     sell_limit_price=16,
-    sell_stop_price=8.5,
-    sell_stoplimit_price=8.4,
+    sell_stop_price=8.4,
+    sell_stoplimit_price=8.3,
     session_sell_limit="NORMAL",
     session_sell_stoplimit="NORMAL",
     duration="GOOD_TILL_CANCEL",
 )
-order_s8 = sell_limit_sell_stoplimit_oco_dict(
-    symbol="ACHR",
-    quantity=2500,
-    sell_limit_price=11,
-    sell_stop_price=5.5,
-    sell_stoplimit_price=5.4,
-    session_sell_limit="NORMAL",
-    session_sell_stoplimit="NORMAL",
-    duration="GOOD_TILL_CANCEL",
-)
-order_s8 = sell_limit_sell_stoplimit_oco_dict(
-    symbol="IREN",
-    quantity=800,
-    sell_limit_price=56,
-    sell_stop_price=44.8,
-    sell_stoplimit_price=44.7,
-    session_sell_limit="NORMAL",
-    session_sell_stoplimit="NORMAL",
-    duration="GOOD_TILL_CANCEL",
-)
+
+
 # submit an order
 order = order_s8
+<<<<<<< HEAD
 order = order_b7
+=======
+
+>>>>>>> parent of 2d21024 (update config)
 
 status_code, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
