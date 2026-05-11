@@ -15,7 +15,7 @@ Duration = Literal[
     "END_OF_MONTH",
     "NEXT_END_OF_MONTH",
     "UNKNOWN",
-]
+    ]
 
 # status
 OrderRequest = Literal[
@@ -40,7 +40,7 @@ OrderRequest = Literal[
     "PENDING_ACKNOWLEDGEMENT",
     "PENDING_RECALL",
     "UNKNOWN",
-]
+    ]
 
 OrderStrategyType = Literal[
     "SINGLE",
@@ -52,7 +52,7 @@ OrderStrategyType = Literal[
     "BLAST_ALL",
     "OCO",
     "TRIGGER",
-]
+    ]
 
 OrderType = Literal[
     "MARKET",
@@ -70,7 +70,7 @@ OrderType = Literal[
     "NET_ZERO",
     "LIMIT_ON_CLOSE",
     "UNKNOWN",
-]
+    ]
 
 OrderLegInstruction = Literal[
     "BUY",
@@ -83,7 +83,7 @@ OrderLegInstruction = Literal[
     "SELL_TO_CLOSE",
     "EXCHANGE",
     "SELL_SHORT_EXEMPT",
-]
+    ]
 
 OrderLegCollectionInstrumentAssetType = Literal[
     "EQUITY",
@@ -94,7 +94,7 @@ OrderLegCollectionInstrumentAssetType = Literal[
     "FIXED_INCOME",
     "CURRENCY",
     "COLLECTIVE_INVESTMENT",
-]
+    ]
 
 ComplexOrderStrategyType = Literal[
     "NONE",
@@ -118,8 +118,16 @@ ComplexOrderStrategyType = Literal[
     "UNBALANCED_VERTICAL_ROLL",
     "MUTUAL_FUND_SWAP",
     "CUSTOM",
-]
+    ]
 
+
+StopPriceLinkType = Literal[
+    "VALUE",
+    "PERCENT",
+    "TICK",
+    ]
+    
+    
 # from enum import Enum
 # from typing import TYPE_CHECKING
 

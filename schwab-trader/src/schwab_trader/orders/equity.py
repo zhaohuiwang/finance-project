@@ -1,5 +1,5 @@
 from enum import Enum
-from schwab_trader.accounts.type_literal import OrderType, Session, Duration
+from schwab_trader.accounts.type_literal import OrderType, StopPriceLinkType, Session, Duration
 
 # Dictionary specification for equity orders.
 # Note: Prices must be string in the JSON for precision
@@ -285,28 +285,92 @@ def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
 def sell_trailing_stop_dict(
     symbol: str,
     quantity: int,
-    stop_price_offset: float,
+    stop_price_link_type: StopPriceLinkType = "PERCENTAGE",
+    stop_price_offset: float=5,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
     """
-    Sell Trailing Stop: Stock
-    Sell 10 shares of XYZ with a Trailing Stop where the trail is a -$10 offset from the time the order is submitted. As the stock price goes up, the -$10 trailing offset will follow. If stock XYZ goes from $110 to $130, your trail will automatically be adjusted to $120. If XYZ falls to $120 or below, a Market order is submitted. This order is good for the Day.
+    Build a Schwab API payload for an equity trailing stop sell order. A trailing stop order dynamically adjusts its stop trigger as the stock
+    price moves upward. The trailing offset is defined by
+    `stop_price_offset` and interpreted according to
+    `stop_price_link_type`.
 
+    Example behavior:
+        If XYZ is trading at $110 with a trailing offset of $10:
+        - Initial stop trigger = $100
+        - If XYZ rises to $130, the stop trigger adjusts to $120
+        - If XYZ later falls to $120 or below, a market sell order is sent
+
+    This function creates only the order payload dictionary and does not
+    submit the order to Schwab.
+
+    Args:
+        symbol (str):
+            Equity ticker symbol (e.g. "AAPL", "SPY").
+            The symbol is automatically converted to uppercase.
+
+        quantity (int):
+            Number of shares to sell.
+
+        stop_price_link_type (StopPriceLinkType, optional):
+            Method used to calculate the trailing offset.
+            Common values include: ["VALUE", "PERCENT"]
+            Defaults to "PERCENT".
+
+        stop_price_offset (float, optional):
+            Trailing offset amount used with
+            `stop_price_link_type`.
+
+            Examples:
+            - VALUE + 5       -> $5 trailing offset
+            - PERCENTAGE + 5  -> 5% trailing offset
+            Defaults to 5.
+
+        session (Session, optional):
+            Trading session in which the order is active.
+            Common values: ["NORMAL", "AM", "PM", "SEAMLESS"]
+            Defaults to "NORMAL".
+
+        duration (Duration, optional):
+            Length of time the order remains active.
+            Common values: ["DAY", "GOOD_TILL_CANCEL"]
+            Defaults to "DAY".
+
+    Returns:
+        dict:
+            Schwab-compatible order payload for a trailing stop
+            market sell order.
+
+    Example:
+        >>> order = sell_trailing_stop_dict(
+        ...     symbol="AAPL",
+        ...     quantity=10,
+        ...     stop_price_link_type="VALUE",
+        ...     stop_price_offset=5,
+        ... )
+        >>> client.order_place(account_hash, order)
+
+    Notes:
+        - Uses "BID" as the stop price link basis.
+        - The order type generated is "TRAILING_STOP".
+        - When triggered, Schwab submits a market order.
+        - Trailing stop orders may execute below the expected stop level
+          during fast-moving or illiquid market conditions.
     """
     return {
         "complexOrderStrategyType": "NONE",
         "orderType": "TRAILING_STOP",
         "session": session,
         "stopPriceLinkBasis": "BID",
-        "stopPriceLinkType": "VALUE",
-        "stopPriceOffset": stop_price_offset,  # 10
+        "stopPriceLinkType": stop_price_link_type,
+        "stopPriceOffset": stop_price_offset,
         "duration": duration,
         "orderStrategyType": "SINGLE",
         "orderLegCollection": [
             {
                 "instruction": "SELL",
-                "quantity": quantity,  # 10
+                "quantity": quantity,
                 "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
             }
         ],

@@ -30,6 +30,12 @@ complexOrderStrategyType string Enum:
 status string Enum:
 [ AWAITING_PARENT_ORDER, AWAITING_CONDITION, AWAITING_STOP_CONDITION, AWAITING_MANUAL_REVIEW, ACCEPTED, AWAITING_UR_OUT, PENDING_ACTIVATION, QUEUED, WORKING, REJECTED, PENDING_CANCEL, CANCELED, PENDING_REPLACE, REPLACED, FILLED, EXPIRED, NEW, AWAITING_RELEASE_TIME, PENDING_ACKNOWLEDGEMENT, PENDING_RECALL, UNKNOWN ]
 
+stopPriceLinkType string Enum:
+    [ VALUE, PERCENT, TICK ]
+stopPriceLinkBasis string Enum:
+    [ MANUAL, BASE, TRIGGER, LAST, BID, ASK, ASK_BID, MARK, AVERAGE ]
+stopPriceOffset number($double) 
+
 
 If an order format is not shown here, place an order from a different platform (e.g. TOS) and use client.order_details(...) to infer the format.
 
@@ -370,3 +376,29 @@ order = {
     "duration": "DAY",
     "session": "NORMAL",
 }
+
+
+# Trailing orders
+# sell 10 XYZ trailing stop order, by 5 percent 
+order = {
+    "session": "NORMAL",
+    "duration": "GOOD_TILL_CANCEL",
+    "orderType": "TRAILING_STOP",
+    "stopPriceLinkBasis": "BID",
+    "stopPriceLinkType": "PERCENT",
+    "stopPriceOffset": 5.0,
+    "orderStrategyType": "SINGLE",
+    "orderLegCollection": [
+        {
+            "instruction": "SELL",
+            "quantity": 10,
+            "instrument": {
+                "symbol": "XYZ",
+                "assetType": "EQUITY"
+            }
+        }
+    ]
+}
+
+# trailing stop limit order
+# sell 10 XYZ   

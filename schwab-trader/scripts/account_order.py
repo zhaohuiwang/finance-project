@@ -164,11 +164,9 @@ order_s8 = sell_limit_sell_stoplimit_oco_dict(
 
 # submit an order
 order = order_s8
-<<<<<<< HEAD
-order = order_b7
-=======
 
->>>>>>> parent of 2d21024 (update config)
+order = order_b7
+
 
 status_code, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
