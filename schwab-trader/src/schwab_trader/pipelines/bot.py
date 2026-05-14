@@ -53,13 +53,10 @@ class TradingBot:
         self.holdings = {}  # symbols in conf.yaml
         self.all_holdings = {}  # all positions in the entire account
 
-        # Duplicate-buy protection + manual approval
+        # Manual approval flag (per symbol)
         self.auto_buy_allowed = {
             sym: True for sym in self.symbols
-        }  # True = next trigger is AUTO
-        self.pending_buy_orders = (
-            set()
-        )  # prevents double-submit while order is in flight
+        }
 
         self.last_holdings_sync = time.time()
         self.first_api_pull = True
@@ -177,9 +174,9 @@ class TradingBot:
             new_all = {}
             for p in positions:
                 sym = p["instrument"]["symbol"]
-                net_change = p["instrument"].get("netChange", 0.0)  # today's $ change
-                day_pct = p["currentDayProfitLossPercentage"]  # positional level
+                net_change = p["instrument"].get("netChange", 0.0)
                 long_qty = float(p.get("longQuantity", 0))
+
                 if long_qty > 0:
                     avg_price = float(p.get("averagePrice") or 0)
                     market_val = float(p.get("marketValue") or 0)
@@ -195,7 +192,7 @@ class TradingBot:
                         "shares": long_qty,
                         "buy_price": avg_price,
                         "current_price": current_price,
-                        "day_change_pct": day_pct,  
+                        "day_change_pct": day_pct,
                     }
                     new_all[sym] = entry
                     if sym in self.symbols_config:
@@ -204,14 +201,12 @@ class TradingBot:
             with self.lock:
                 self.holdings = new_watched
                 self.all_holdings = new_all
-                # unlock auto-buy flag for any watched symbol that is now flat (zero shares, no current position)
+
+                # Unlock auto-buy flag for any watched symbol that is now flat
                 for sym in list(self.auto_buy_allowed.keys()):
                     if sym not in new_watched:
                         self.auto_buy_allowed[sym] = True
-                        # clear any lingering pending buy orders
-                        self.pending_buy_orders = {
-                            t for t in self.pending_buy_orders if t[0] != sym
-                        }
+
         except Exception as e:
             console.print(f"[dim red]Holdings sync failed: {e}[/dim red]")
 
@@ -370,7 +365,7 @@ class TradingBot:
         return shares
 
     def risk_checks_pass(self, symbol):
-        """All pre-trade risk validations (daily loss, min equity, max positions, BP)."""
+        """Enhanced risk checks optimized for margin accounts."""
         snapshot = self.get_account_snapshot()
         equity = snapshot["equity"]
         bp = snapshot["buyingPower"]
@@ -379,10 +374,10 @@ class TradingBot:
             return False
 
         # Daily loss limit
-        current_equity = self.get_account_snapshot()["equity"]
         daily_pnl_pct = (
-            (current_equity - self.daily_start_equity) / self.daily_start_equity * 100
-        )
+            (equity - self.daily_start_equity) / self.daily_start_equity * 100
+        ) if self.daily_start_equity > 0 else 0
+
         if daily_pnl_pct <= -self.risk_config.max_daily_loss_pct:
             console.print(
                 f"[bold red]🚨 DAILY LOSS LIMIT HIT ({daily_pnl_pct:.1f}%) — TRADING PAUSED[/bold red]"
@@ -391,9 +386,9 @@ class TradingBot:
             return False
 
         # Minimum equity guard
-        if current_equity < self.risk_config.min_account_equity:
+        if equity < self.risk_config.min_account_equity:
             console.print(
-                f"[bold red]🚨 ACCOUNT BELOW MIN EQUITY (${current_equity:,.0f}) — TRADING PAUSED[/bold red]"
+                f"[bold red]🚨 ACCOUNT BELOW MIN EQUITY (${equity:,.0f}) — TRADING PAUSED[/bold red]"
             )
             self.trading_paused = True
             return False
@@ -403,16 +398,21 @@ class TradingBot:
             console.print("[yellow]Max positions reached — skipping new buys[/yellow]")
             return False
 
-        # Buying power check - Use real calculated qty instead
-        estimated_cost = self.current_market_prices.get(
-            symbol, 0
-        ) * self.calculate_shares(symbol, self.current_market_prices.get(symbol, 0))
+        # === Buying Power Check (Margin Account Friendly) ===
+        price = self.current_market_prices.get(symbol, 0)
+        if price <= 0:
+            return False
 
-        if bp < estimated_cost * 1.05:
+        qty = self.calculate_shares(symbol, price)
+        estimated_cost = price * qty * 1.03   # 3% buffer for margin + slippage
+
+        if bp < estimated_cost:
             console.print(
-                f"[yellow]Insufficient buying power (${bp:,.0f}) — skipping[/yellow]"
+                f"[yellow]Insufficient buying power (${bp:,.0f}) for {qty} shares of {symbol} "
+                f"(est. ${estimated_cost:,.0f}) — skipping[/yellow]"
             )
             return False
+
         return True
 
     # SUGGESTION: The risk-based sizing code above is commented out.
@@ -560,11 +560,8 @@ class TradingBot:
                     )
                     self.auto_buy_allowed[symbol] = True
                     self.force_sync_holdings()
-                    self.pending_buy_orders = {t for t in self.pending_buy_orders if t[0] != symbol}
-                    console.print(f"[green]✅ Sell complete — ready for next buy cycle on {symbol}[/green]")
 
                 elif side in ("BUY", "BUY_TO_COVER"):
-                    self.pending_buy_orders.discard((symbol, qty))
                     self.holdings[symbol] = {
                         "shares": qty,
                         "buy_price": price,
@@ -681,20 +678,25 @@ class TradingBot:
                 self.submit_sell_bracket_oco(symbol, buy_price, self.symbols_config[symbol].limit_sell_price)
                 console.print(f"[green]Attached new bracket to {symbol} ({qty} shares)[/green]")
 
-    def place_buy_order(self, symbol: str, qty: float) -> bool:
-        """Submit a MARKET BUY order (used only after all safety checks pass)."""
+    def place_buy_order(self, symbol: str, qty: float, limit_price: float) -> bool:
+        """Submit a LIMIT BUY order."""
         if not self.risk_checks_pass(symbol):
             return False
 
+        # Use a small buffer above current price to improve fill probability
+        current_price = self.current_market_prices.get(symbol, limit_price)
+        order_price = round(current_price * 1.002, 2)   # 0.2% buffer
+
         order = {
-            "orderType": "MARKET",
+            "orderType": "LIMIT",
             "session": "NORMAL",
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
+            "price": str(order_price),
             "orderLegCollection": [
                 {
                     "instruction": "BUY",
-                    "quantity": qty,  # ← use the passed qty
+                    "quantity": int(qty),
                     "instrument": {"symbol": symbol, "assetType": "EQUITY"},
                 }
             ],
@@ -704,24 +706,23 @@ class TradingBot:
             resp = self.client.place_order(self.account_hash, order)
             location = resp.headers.get("Location")
             order_id = location.split("/")[-1] if location else None
+
             log_transaction(
                 action="BUY_SUBMITTED",
                 symbol=symbol,
                 qty=qty,
-                price=self.current_market_prices.get(symbol, 0),
-                note=f"Risk-sized: {qty} shares | session={order.get('session', 'NORMAL')}",
+                price=order_price,
+                note=f"Limit @ ${order_price:.2f} | Qty: {qty}",
                 order_id=order_id,
                 order_status="PENDING",
             )
-            console.print(f"[green]BUY SUBMITTED → {qty} shares of {symbol}[/green]")
 
+            console.print(f"[green]BUY ORDER SUBMITTED → {qty} shares of {symbol} @ ${order_price:.2f}[/green]")
             self.invalidate_open_orders_cache()
             return True
 
         except Exception as e:
-            console.print(f"[red]Buy failed: {e}[/red]")
-            with self.lock:
-                self.pending_buy_orders.discard((symbol, qty))  # cleanup
+            console.print(f"[red]Buy order failed: {e}[/red]")
             return False
 
     def submit_sell_bracket_oco(self, symbol, buy_price, limit_sell_price):
@@ -974,10 +975,11 @@ class TradingBot:
     # MONITORING LOGIC (core buy-trigger loop)
     # =============================================================
     def monitor_logic(self):
-        """Pure background logic thread — handles BOTH buy triggers AND sell safety net."""
+        """Simplified + improved monitoring logic for Margin Account."""
         while self.running:
-            time.sleep(6)
+            time.sleep(8)   # Increased from 6s → less spam, still responsive
 
+            # Daily reset
             if date.today() != self.today:
                 self.daily_start_equity = self.get_account_snapshot()["equity"]
                 self.today = date.today()
@@ -987,6 +989,7 @@ class TradingBot:
                 self.update_holdings_from_api()
                 self.first_api_pull = False
 
+            # Periodic holdings sync
             now = time.time()
             if now - self.last_holdings_sync > self.holding_sync_interval:
                 self.update_holdings_from_api()
@@ -994,51 +997,63 @@ class TradingBot:
 
             with self.lock:
                 holdings_copy = dict(self.holdings)
-                pending_copy = set(self.pending_buy_orders)
-                auto_copy = dict(self.auto_buy_allowed)
                 prices_copy = dict(self.current_market_prices)
 
-            # === BUY LOGIC  ===
+            # ===================== BUY LOGIC =====================
             for sym in self.symbols:
+                # Skip if we already hold the position
                 if sym in holdings_copy and holdings_copy[sym].get("shares", 0) > 0:
                     continue
 
                 price = prices_copy.get(sym)
-                if not price:
+                if not price or price <= 0:
                     continue
 
                 cfg: SymbolConfig = self.symbols_config.get(sym)
                 if not cfg:
                     continue
 
+                # Check buy condition
                 last_buy = get_last_buy_price(sym)
-                trigger = price <= cfg.buy_target_price or (
-                    last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100)
+                should_buy = (
+                    price <= cfg.buy_target_price or
+                    (last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100))
                 )
 
-                if not (trigger and not self.trading_paused and self.risk_checks_pass(sym)):
+                if not should_buy:
                     continue
 
-                console.print(f"[bold red]BUY TRIGGER {sym} @ ${price:.2f}[/bold red]")
+                console.print(f"[bold green]BUY CONDITION MET → {sym} @ ${price:.2f}[/bold green]")
+
+                # === Critical protections ===
+                if self.has_open_buy_order(sym):
+                    console.print(f"[yellow]→ Already has open BUY order for {sym} (skipping)[/yellow]")
+                    continue
+
+                if not self.risk_checks_pass(sym):
+                    continue
+
                 qty = self.calculate_shares(sym, price)
 
-                if (sym, qty) in pending_copy or self.has_open_buy_order(sym):
-                    continue
+                # Manual approval if needed
+                approved = self.auto_buy_allowed.get(sym, True)
+                if not approved:
+                    approved = self._confirm_manual_buy(sym, price)
 
-                approved = auto_copy[sym] or self._confirm_manual_buy(sym, price)
                 if approved:
-                    with self.lock:
-                        self.pending_buy_orders.add((sym, qty))
-                    success = self.place_buy_order(sym, qty)
+                    success = self.place_buy_order(sym, qty, round(price, 1))
                     if success:
                         with self.lock:
                             self.auto_buy_allowed[sym] = False
+                        # Force refresh account snapshot (important for margin accounts)
+                        self._account_snapshot_cache = None
+                        self._account_snapshot_cache_time = 0
+                        self.invalidate_open_orders_cache()
+                        console.print(f"[green]✓ Buy order submitted successfully for {sym}[/green]")
                     else:
-                        with self.lock:
-                            self.pending_buy_orders.discard((sym, qty))
+                        console.print(f"[red]✗ Failed to place buy order for {sym}[/red]")
 
-            # === SELL SAFETY NET  ===
-            # If we hold the stock but have no open SELL order → check if we should sell
+            # ===================== SELL SAFETY NET =====================
             open_orders = self.get_open_orders()
             symbols_with_sell_order = {
                 o["symbol"] for o in open_orders
@@ -1046,27 +1061,24 @@ class TradingBot:
             }
 
             for sym, holding in list(holdings_copy.items()):
-                if sym not in self.symbols_config:
+                if sym not in self.symbols_config or sym in symbols_with_sell_order:
                     continue
-                if sym in symbols_with_sell_order:
-                    continue  # already has bracket
 
                 current_price = prices_copy.get(sym)
                 if not current_price:
                     continue
 
                 cfg = self.symbols_config[sym]
-                limit_target = cfg.limit_sell_price
-
-                if current_price >= limit_target:
+                
+                # Sell safety net: price hit limit target
+                if current_price >= cfg.limit_sell_price:
                     console.print(
-                        f"[bold green]SELL SAFETY TRIGGER: {sym} @ ${current_price:.2f} ≥ limit ${limit_target:.2f}[/bold green]"
+                        f"[bold green]SELL SAFETY TRIGGER: {sym} @ ${current_price:.2f} ≥ Limit ${cfg.limit_sell_price:.2f}[/bold green]"
                     )
-                    
                     self.submit_sell_bracket_oco(
                         sym,
                         holding.get("buy_price", current_price),
-                        limit_target
+                        cfg.limit_sell_price
                     )
 
     def cli_loop(self):
@@ -1136,7 +1148,6 @@ class TradingBot:
                             self.symbols_config = fresh_symbols
                             self.current_market_prices = {sym: None for sym in fresh_symbols}
                             self.auto_buy_allowed = {sym: True for sym in fresh_symbols}
-                            self.pending_buy_orders.clear()
 
                         # Re-attach brackets with new settings
                         self.attach_brackets_to_existing_holdings()
@@ -1261,7 +1272,6 @@ class TradingBot:
             self.holdings = {}
             self.all_holdings = {}
             self.auto_buy_allowed = {sym: True for sym in self.symbols}
-            self.pending_buy_orders.clear()
 
         self.running = True
         self.trading_paused = False

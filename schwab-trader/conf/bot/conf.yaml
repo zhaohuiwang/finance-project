@@ -8,16 +8,16 @@
 symbols:
 
   NBIS:
-    buy_target_price: 190.1
-    buy_drop_pct: 10.0
+    buy_target_price: 221.2
+    buy_drop_pct: 2.0
 
-    limit_sell_price: 193.1
+    limit_sell_price: 225.2
     limit_sell_pct: 10.0
 
     # stop_loss_dollar: 10
-    stop_loss_pct: 5
+    stop_loss_pct: 5  
 
-    fixed_shares: 401
+    fixed_shares: 300
 
   # JOBY:
   #   buy_target_price: 9.01
@@ -50,7 +50,7 @@ risk:
   risk_per_trade_pct: 1.0
   max_positions: 4
   min_account_equity: 5000.0
-  max_daily_loss_pct: 3.0
+  max_daily_loss_pct: 10
   default_shares: 1
 
 # Auto-shutdown configuration

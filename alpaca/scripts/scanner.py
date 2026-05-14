@@ -1,14 +1,20 @@
 
 import asyncio
+import os
 from collections import deque
 from datetime import datetime, timedelta
 
 from alpaca_trade_api.stream import Stream # Uses WebSockets, not REST
 
-API_KEY = "YOUR_KEY"
-SECRET_KEY = "YOUR_SECRET"
+from alpaca.data.historical import CryptoHistoricalDataClient
+from alpaca.data.requests import CryptoBarsRequest
+from alpaca.data.timeframe import TimeFrame
+from datetime import datetime
 
-BASE_URL = "https://paper-api.alpaca.markets"
+from dotenv import load_dotenv
+load_dotenv()
+
+
 
 SYMBOLS = ["AAPL", "TSLA", "NVDA"]  # expand to 500+
 
@@ -70,7 +76,7 @@ async def trade_handler(data):
     check_drop(symbol)
 
 async def main():
-    stream = Stream(API_KEY, SECRET_KEY, base_url=BASE_URL, data_feed='iex')
+    stream = Stream(os.getenv("ALPACA_API_KEY"), os.getenv("ALPACA_SECRET_KEY"), base_url=os.getenv("ALPACA_BASE_URL"), data_feed='iex')
 
     for symbol in SYMBOLS:
         stream.subscribe_trades(trade_handler, symbol)
