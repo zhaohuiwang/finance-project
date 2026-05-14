@@ -46,6 +46,9 @@ class TradingBot:
 
         self.risk_config = cfg.risk
         self.symbols_config = cfg.symbols
+        
+        self.trading_mode = getattr(cfg, 'trading_mode', 'hardcoded')
+        console.print(f"[cyan]🚀 Bot started in [bold]{self.trading_mode.upper()}[/bold] mode[/cyan]")
 
         self.current_market_prices = {
             sym: None for sym in self.symbols
@@ -724,6 +727,51 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Buy order failed: {e}[/red]")
             return False
+        
+    def get_moving_average(self, symbol: str, period: int = 50, timeframe: str = "5min") -> float | None:
+        """Fetch recent candles and calculate Simple Moving Average."""
+        try:
+            # Map timeframe to Schwab API parameters
+            frequency_map = {
+                "1min": ("minute", 1),
+                "5min": ("minute", 5),
+                "15min": ("minute", 15),
+                "30min": ("minute", 30),
+            }
+            
+            freq_type, freq = frequency_map.get(timeframe, ("minute", 5))
+
+            # Get last 2-3 days to ensure enough data
+            end = datetime.now(timezone.utc)
+            start = end - timedelta(days=3)
+
+            response = self.client.get_price_history(
+                symbol=symbol,
+                period_type="day",
+                period=3,
+                frequency_type=freq_type,
+                frequency=freq,
+                start_datetime=start,
+                end_datetime=end,
+                need_extended_hours_data=False
+            )
+
+            data = response.json()
+            candles = data.get("candles", [])
+
+            if len(candles) < period:
+                console.print(f"[yellow]Not enough candles for {symbol} MA calculation[/yellow]")
+                return None
+
+            # Use closing prices
+            closes = [candle["close"] for candle in candles[-period:]]
+            ma_value = sum(closes) / len(closes)
+            
+            return round(ma_value, 4)
+
+        except Exception as e:
+            console.print(f"[dim red]MA calculation failed for {symbol}: {e}[/dim red]")
+            return None
 
     def submit_sell_bracket_oco(self, symbol, buy_price, limit_sell_price):
         """Place OCO bracket (LIMIT SELL + STOP LOSS)"""
@@ -843,7 +891,8 @@ class TradingBot:
         risk_used = len(self.holdings) / self.risk_config.get("max_positions") * 100
         footer = (
             f"Equity: ${equity:,.0f} | Daily: {daily_pnl:+.1f}% | "
-            f"Risk: {risk_used:.0f}% | {'PAUSED' if self.trading_paused else 'ACTIVE'}"
+            f"Risk: {risk_used:.0f}% | Mode: {self.trading_mode.upper()} | "
+            f"{'PAUSED' if self.trading_paused else 'ACTIVE'}"
         )
 
         orders = self.get_open_orders()
@@ -975,9 +1024,9 @@ class TradingBot:
     # MONITORING LOGIC (core buy-trigger loop)
     # =============================================================
     def monitor_logic(self):
-        """Simplified + improved monitoring logic for Margin Account."""
+        """Dual mode: Supports both 'hardcoded' and 'ma' trading logic."""
         while self.running:
-            time.sleep(8)   # Increased from 6s → less spam, still responsive
+            time.sleep(8)
 
             # Daily reset
             if date.today() != self.today:
@@ -989,7 +1038,6 @@ class TradingBot:
                 self.update_holdings_from_api()
                 self.first_api_pull = False
 
-            # Periodic holdings sync
             now = time.time()
             if now - self.last_holdings_sync > self.holding_sync_interval:
                 self.update_holdings_from_api()
@@ -999,9 +1047,10 @@ class TradingBot:
                 holdings_copy = dict(self.holdings)
                 prices_copy = dict(self.current_market_prices)
 
+            mode = getattr(self, 'trading_mode', 'hardcoded')   # default to old behavior
+
             # ===================== BUY LOGIC =====================
             for sym in self.symbols:
-                # Skip if we already hold the position
                 if sym in holdings_copy and holdings_copy[sym].get("shares", 0) > 0:
                     continue
 
@@ -1009,34 +1058,40 @@ class TradingBot:
                 if not price or price <= 0:
                     continue
 
-                cfg: SymbolConfig = self.symbols_config.get(sym)
+                cfg = self.symbols_config.get(sym)
                 if not cfg:
                     continue
 
-                # Check buy condition
-                last_buy = get_last_buy_price(sym)
-                should_buy = (
-                    price <= cfg.buy_target_price or
-                    (last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100))
-                )
+                should_buy = False
+                reason = ""
+
+                if mode == "ma":
+                    ma_value = self.get_moving_average(sym, cfg.ma_period, cfg.ma_timeframe)
+                    if ma_value:
+                        buy_threshold = ma_value * (1 + cfg.buy_threshold_pct / 100)
+                        if price <= buy_threshold:
+                            should_buy = True
+                            reason = f"MA Buy (MA=${ma_value:.2f})"
+                else:  # hardcoded mode
+                    last_buy = get_last_buy_price(sym)
+                    if (price <= cfg.buy_target_price or
+                        (last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100))):
+                        should_buy = True
+                        reason = "Hardcoded Target"
 
                 if not should_buy:
                     continue
 
-                console.print(f"[bold green]BUY CONDITION MET → {sym} @ ${price:.2f}[/bold green]")
+                console.print(f"[bold green]BUY SIGNAL ({mode.upper()}) → {sym} @ ${price:.2f} | {reason}[/bold green]")
 
-                # === Critical protections ===
                 if self.has_open_buy_order(sym):
-                    console.print(f"[yellow]→ Already has open BUY order for {sym} (skipping)[/yellow]")
                     continue
-
                 if not self.risk_checks_pass(sym):
                     continue
 
                 qty = self.calculate_shares(sym, price)
-
-                # Manual approval if needed
                 approved = self.auto_buy_allowed.get(sym, True)
+
                 if not approved:
                     approved = self._confirm_manual_buy(sym, price)
 
@@ -1045,40 +1100,43 @@ class TradingBot:
                     if success:
                         with self.lock:
                             self.auto_buy_allowed[sym] = False
-                        # Force refresh account snapshot (important for margin accounts)
                         self._account_snapshot_cache = None
                         self._account_snapshot_cache_time = 0
                         self.invalidate_open_orders_cache()
-                        console.print(f"[green]✓ Buy order submitted successfully for {sym}[/green]")
-                    else:
-                        console.print(f"[red]✗ Failed to place buy order for {sym}[/red]")
 
-            # ===================== SELL SAFETY NET =====================
+            # ===================== SELL LOGIC =====================
+            # (Same for both modes - uses safety net)
             open_orders = self.get_open_orders()
-            symbols_with_sell_order = {
-                o["symbol"] for o in open_orders
-                if o.get("instruction") in ("SELL", "SELL_SHORT")
-            }
+            symbols_with_sell_order = {o["symbol"] for o in open_orders 
+                                     if o.get("instruction") in ("SELL", "SELL_SHORT")}
 
             for sym, holding in list(holdings_copy.items()):
                 if sym not in self.symbols_config or sym in symbols_with_sell_order:
                     continue
 
-                current_price = prices_copy.get(sym)
-                if not current_price:
+                price = prices_copy.get(sym)
+                if not price:
                     continue
 
                 cfg = self.symbols_config[sym]
-                
-                # Sell safety net: price hit limit target
-                if current_price >= cfg.limit_sell_price:
-                    console.print(
-                        f"[bold green]SELL SAFETY TRIGGER: {sym} @ ${current_price:.2f} ≥ Limit ${cfg.limit_sell_price:.2f}[/bold green]"
-                    )
+
+                should_sell = False
+                if mode == "ma":
+                    ma_value = self.get_moving_average(sym, cfg.ma_period, cfg.ma_timeframe)
+                    if ma_value:
+                        sell_target = ma_value * (1 + cfg.sell_threshold_pct / 100)
+                        if price >= sell_target:
+                            should_sell = True
+                else:
+                    if price >= cfg.limit_sell_price:
+                        should_sell = True
+
+                if should_sell:
+                    console.print(f"[bold green]SELL SIGNAL ({mode.upper()}) → {sym} @ ${price:.2f}[/bold green]")
                     self.submit_sell_bracket_oco(
                         sym,
-                        holding.get("buy_price", current_price),
-                        cfg.limit_sell_price
+                        holding.get("buy_price", price),
+                        cfg.limit_sell_price if mode == "hardcoded" else round(price * 1.01, 2)
                     )
 
     def cli_loop(self):
@@ -1131,42 +1189,45 @@ class TradingBot:
                         config_path = Path(__file__).parents[3] / "conf/bot/conf.yaml"
                         console.print(f"[yellow]Reloading configuration from: {config_path.resolve()}[/yellow]")
 
-                        # Load exactly like at startup
                         new_cfg = TradingConfig.load_from_file(config_path)
 
-                        # Update shutdown settings
+                        # Update global settings
                         self._load_shutdown_config(new_cfg)
+                        new_mode = getattr(new_cfg, 'trading_mode', 'hardcoded')
 
-                        # Create fresh SymbolConfig objects
+                        # Update symbols
                         fresh_symbols = {
                             sym: SymbolConfig.model_validate(cfg.model_dump())
                             for sym, cfg in new_cfg.symbols.items()
                         }
 
-                        # Replace config in memory (just like __init__)
                         with self.lock:
                             self.symbols_config = fresh_symbols
+                            self.trading_mode = new_mode                     # ← Important
                             self.current_market_prices = {sym: None for sym in fresh_symbols}
                             self.auto_buy_allowed = {sym: True for sym in fresh_symbols}
 
-                        # Re-attach brackets with new settings
-                        self.attach_brackets_to_existing_holdings()
+                        console.print(f"[bold green]✅ Configuration reloaded successfully![/bold green]")
+                        console.print(f"[bold cyan]Current Mode: {self.trading_mode.upper()}[/bold cyan]")
 
-                        # Show what was loaded
-                        console.print("[bold green]✅ Configuration reloaded successfully![/bold green]")
+                        # Show loaded symbols info
                         for sym, cfg in sorted(self.symbols_config.items()):
-                            console.print(f"   {sym}: fixed_shares={cfg.fixed_shares}, "
-                                          f"buy_target={cfg.buy_target_price}, "
-                                          f"limit_sell={cfg.limit_sell_price}")
+                            if self.trading_mode == "ma":
+                                console.print(f"   {sym}: MA({cfg.ma_period}{cfg.ma_timeframe}) | "
+                                              f"Buy < {cfg.buy_threshold_pct}% | Sell > {cfg.sell_threshold_pct}%")
+                            else:
+                                console.print(f"   {sym}: Target ${cfg.buy_target_price} | "
+                                              f"Limit ${cfg.limit_sell_price}")
 
-                        # Restart bot so monitor_logic() uses the new config
-                        console.print("[yellow]Restarting bot to activate new settings...[/yellow]")
-                        time.sleep(1.0)
+                        # Restart bot threads + stream with new mode
+                        console.print("[yellow]Restarting bot to fully apply new mode...[/yellow]")
+                        time.sleep(1.2)
                         self.restart()
 
                     except Exception as e:
                         console.print(f"[bold red]Reload failed: {e}[/bold red]")
-                        console.print("[dim]Please check conf.yaml for errors.[/dim]")
+                        import traceback
+                        console.print(traceback.format_exc())
             except KeyboardInterrupt:
                 self.stop()
                 break
