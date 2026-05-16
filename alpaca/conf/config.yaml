@@ -1,0 +1,19 @@
+trading:
+  paper_trading: true          # Set to false for live real-money trading
+  trade_only_market_hours: false  # Set to true to restrict to 9:30–16:00 ET
+  symbol: "NBIS"
+  timeframe: "minute"          # Options: minute, hour, day
+  check_interval: 60           # Seconds between each trading loop iteration
+  log_file: "trade_log.csv"
+
+strategy:
+  fast_ma: 3                   # Fast SMA window (smaller = more responsive, more noise)
+  slow_ma: 8                   # Slow SMA window (larger = smoother, more lag)
+  rsi_period: 14
+  rsi_max_for_buy: 75          # Only buy when RSI is below this threshold
+
+risk:
+  risk_per_trade: 0.01         # Fraction of equity to risk per trade (1%)
+  stop_loss_pct: 0.015         # Initial stop loss distance from entry (1.5%)
+  trailing_stop_pct: 0.03      # Trailing stop percentage (3%)
+  take_profit_pct: 0.06        # Take profit target; set to null to rely solely on trailing stop

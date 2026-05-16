@@ -6,9 +6,15 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "alpaca-py>=0.43.4",
-    "dotenv>=0.9.9",
+    "python-dotenv>=1.0",
     "numpy>=2.4.4",
     "pandas>=3.0.2",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
     "ta-lib>=0.6.8",
     "yfinance>=0.2.58",
 ]
+
+[tool.pyright]
+pythonVersion = "3.13"
+extraPaths = ["src"]
