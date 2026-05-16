@@ -1,6 +1,7 @@
 
 # schwab-trader/conf/bot/conf.yaml
 
+trading_mode: "hardcoded"     # "ma" or "hardcoded"
 
 # Sell limit: limit_sell_price or buy_price * (1 + limit_sell_pct)
 # 
@@ -8,22 +9,20 @@
 symbols:
 
   NBIS:
-    buy_target_price: 220.2
+    fixed_shares: 300
+
+    buy_target_price: 215.2
     buy_drop_pct: 2.0
 
-    limit_sell_price: 223.2
+    limit_sell_price: 227.2
     limit_sell_pct: 10.0
 
     # stop_loss_dollar: 10
     stop_loss_pct: 5  
 
-    fixed_shares: 300
+    
 
-    ma_period: 50           # e.g., 50-period SMA
-    ma_timeframe: "5min"    # options: 1min, 5min, 15min, 30min
-    buy_threshold_pct: -4.0   # Buy when price is this % below MA
-    sell_threshold_pct: 2.0    # Sell when price is this % above MA (or when it crosses MA)
-    fixed_shares: 300
+
 
 
   # JOBY:

@@ -55,6 +55,11 @@ class TradingBot:
         }  # in-memory catch stores the latest known market price.
         self.holdings = {}  # symbols in conf.yaml
         self.all_holdings = {}  # all positions in the entire account
+        
+        # Caching for MA and RSI (reduce API calls)
+        self._ma_cache = {}      # {symbol: (value, timestamp)}
+        self.indicator_cache_ttl = 90   # seconds (1.5 minutes)
+        
 
         # Manual approval flag (per symbol)
         self.auto_buy_allowed = {
@@ -269,13 +274,7 @@ class TradingBot:
         }
 
     def get_open_orders(self):
-        """
-        Fetch open orders using client.account_orders() and handle both:
-        - Simple SINGLE orders
-        - orders with childOrderStrategies (brackets)
-        Returns flattened list of dicts suitable for table display.
-        """
-
+        """Fetch open orders with better error handling."""
         now = time.time()
 
         # Return cached result if still fresh
@@ -285,45 +284,52 @@ class TradingBot:
         ):
             return self._open_orders_cache
 
-        to_time = datetime.now(timezone.utc)
-        from_time = to_time - timedelta(days=30, hours=0, minutes=0)
-
         try:
-            # Use your confirmed method name
+            to_time = datetime.now(timezone.utc)
+            from_time = to_time - timedelta(days=30)
+
             response = self.client.account_orders(
                 self.account_hash,
-                fromEnteredTime=from_time,
-                toEnteredTime=to_time,
+                fromEnteredTime=from_time.isoformat() + "Z",
+                toEnteredTime=to_time.isoformat() + "Z",
                 status="WORKING",
             )
-            orders = response.json()
 
+            # ✅ Important: Make sure we get JSON
+            if isinstance(response, str):
+                orders = json.loads(response)
+            else:
+                orders = response.json() if hasattr(response, 'json') else response
+
+            if not isinstance(orders, list):
+                orders = []
+
+            # Flatten orders using iter_orders
             orders_flat_cancelable = [
-                o
-                for root in orders
+                o for root in orders 
                 for o in self.iter_orders(root, cancelable_only=True)
             ]
 
             displayed = []
-
             for order in orders_flat_cancelable:
-                displayed.append(
-                    {
-                        "orderId": order.get("orderId", "N/A"),
-                        "symbol": order.get("legs")[0].get("symbol"),
-                        "quantity": order.get("legs")[0].get("quantity", 0),
-                        "price": order.get("price"),
-                        "instruction": order.get("legs")[0].get("instruction", "N/A"),
-                        "type": order.get("orderType", "N/A"),
-                        "duration": order.get("duration", "N/A"),
-                    }
-                )
+                displayed.append({
+                    "orderId": order.get("orderId", "N/A"),
+                    "symbol": order.get("legs", [{}])[0].get("symbol", "N/A"),
+                    "quantity": order.get("legs", [{}])[0].get("quantity", 0),
+                    "price": order.get("price"),
+                    "instruction": order.get("legs", [{}])[0].get("instruction", "N/A"),
+                    "type": order.get("orderType", "N/A"),
+                    "duration": order.get("duration", "N/A"),
+                })
 
-            # Update cache
             self._open_orders_cache = displayed
             self._open_orders_cache_time = now
-
             return displayed
+
+        except Exception as e:
+            console.print(f"[red]Failed to fetch open orders: {e}[/red]")
+            # Return last known good cache if available
+            return self._open_orders_cache or []
 
         except Exception as e:
             console.print(f"[red]Failed to fetch open orders: {str(e)}[/red]")
@@ -655,31 +661,35 @@ class TradingBot:
     def attach_brackets_to_existing_holdings(self):
         """Attach OCO brackets to existing holdings that don't have them."""
         console.print("[cyan]Checking and attaching brackets to existing holdings...[/cyan]")
-        time.sleep(0.8)                    # small buffer after restart
-        self.update_holdings_from_api()    # ensure fresh data
-        self.invalidate_open_orders_cache()
+        time.sleep(1.0)
         
-        open_orders = self.get_open_orders()
-        symbols_with_open_sell = {o.get("symbol") for o in open_orders if o.get("instruction") in ("SELL", "SELL_SHORT")}
+        try:
+            self.update_holdings_from_api()
+            self.invalidate_open_orders_cache()
+            
+            open_orders = self.get_open_orders()
+            symbols_with_open_sell = {o.get("symbol") for o in open_orders 
+                                    if o.get("instruction") in ("SELL", "SELL_SHORT")}
 
-        with self.lock:
-            for symbol, holding in list(self.holdings.items()):
-                if symbol not in self.symbols_config:
-                    continue
-                if symbol in symbols_with_open_sell:
-                    continue  # already has bracket
+            with self.lock:
+                for symbol, holding in list(self.holdings.items()):
+                    if symbol not in self.symbols_config:
+                        continue
+                    if symbol in symbols_with_open_sell:
+                        continue
 
-                qty = holding.get("shares", 0)
-                if qty <= 0:
-                    continue
+                    qty = holding.get("shares", 0)
+                    if qty <= 0:
+                        continue
 
-                buy_price = holding.get("buy_price") or self.current_market_prices.get(symbol, 0)
-                if buy_price <= 0:
-                    console.print(f"[yellow]Skipping bracket for {symbol} — no valid buy price[/yellow]")
-                    continue
+                    buy_price = holding.get("buy_price") or self.current_market_prices.get(symbol, 0)
+                    if buy_price <= 0:
+                        continue
 
-                self.submit_sell_bracket_oco(symbol, buy_price, self.symbols_config[symbol].limit_sell_price)
-                console.print(f"[green]Attached new bracket to {symbol} ({qty} shares)[/green]")
+                    self.submit_sell_bracket_oco(symbol, buy_price, self.symbols_config[symbol].limit_sell_price)
+                    console.print(f"[green]Attached bracket to {symbol} ({qty} shares)[/green]")
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not attach brackets: {e}[/yellow]")
 
     def place_buy_order(self, symbol: str, qty: float, limit_price: float) -> bool:
         """Submit a LIMIT BUY order."""
@@ -728,51 +738,7 @@ class TradingBot:
             console.print(f"[red]Buy order failed: {e}[/red]")
             return False
         
-    def get_moving_average(self, symbol: str, period: int = 50, timeframe: str = "5min") -> float | None:
-        """Fetch recent candles and calculate Simple Moving Average."""
-        try:
-            # Map timeframe to Schwab API parameters
-            frequency_map = {
-                "1min": ("minute", 1),
-                "5min": ("minute", 5),
-                "15min": ("minute", 15),
-                "30min": ("minute", 30),
-            }
-            
-            freq_type, freq = frequency_map.get(timeframe, ("minute", 5))
-
-            # Get last 2-3 days to ensure enough data
-            end = datetime.now(timezone.utc)
-            start = end - timedelta(days=3)
-
-            response = self.client.get_price_history(
-                symbol=symbol,
-                period_type="day",
-                period=3,
-                frequency_type=freq_type,
-                frequency=freq,
-                start_datetime=start,
-                end_datetime=end,
-                need_extended_hours_data=False
-            )
-
-            data = response.json()
-            candles = data.get("candles", [])
-
-            if len(candles) < period:
-                console.print(f"[yellow]Not enough candles for {symbol} MA calculation[/yellow]")
-                return None
-
-            # Use closing prices
-            closes = [candle["close"] for candle in candles[-period:]]
-            ma_value = sum(closes) / len(closes)
-            
-            return round(ma_value, 4)
-
-        except Exception as e:
-            console.print(f"[dim red]MA calculation failed for {symbol}: {e}[/dim red]")
-            return None
-
+        
     def submit_sell_bracket_oco(self, symbol, buy_price, limit_sell_price):
         """Place OCO bracket (LIMIT SELL + STOP LOSS)"""
         if symbol not in self.holdings or self.holdings[symbol].get("shares", 0) <= 0:
@@ -1024,7 +990,7 @@ class TradingBot:
     # MONITORING LOGIC (core buy-trigger loop)
     # =============================================================
     def monitor_logic(self):
-        """Dual mode: Supports both 'hardcoded' and 'ma' trading logic."""
+        """Simple hardcoded buy/sell logic (MA and RSI completely disabled)."""
         while self.running:
             time.sleep(8)
 
@@ -1047,9 +1013,7 @@ class TradingBot:
                 holdings_copy = dict(self.holdings)
                 prices_copy = dict(self.current_market_prices)
 
-            mode = getattr(self, 'trading_mode', 'hardcoded')   # default to old behavior
-
-            # ===================== BUY LOGIC =====================
+            # ===================== BUY LOGIC (Hardcoded Only) =====================
             for sym in self.symbols:
                 if sym in holdings_copy and holdings_copy[sym].get("shares", 0) > 0:
                     continue
@@ -1062,27 +1026,17 @@ class TradingBot:
                 if not cfg:
                     continue
 
-                should_buy = False
-                reason = ""
-
-                if mode == "ma":
-                    ma_value = self.get_moving_average(sym, cfg.ma_period, cfg.ma_timeframe)
-                    if ma_value:
-                        buy_threshold = ma_value * (1 + cfg.buy_threshold_pct / 100)
-                        if price <= buy_threshold:
-                            should_buy = True
-                            reason = f"MA Buy (MA=${ma_value:.2f})"
-                else:  # hardcoded mode
-                    last_buy = get_last_buy_price(sym)
-                    if (price <= cfg.buy_target_price or
-                        (last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100))):
-                        should_buy = True
-                        reason = "Hardcoded Target"
+                # Hardcoded buy condition
+                last_buy = get_last_buy_price(sym)
+                should_buy = (
+                    price <= cfg.buy_target_price or
+                    (last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100))
+                )
 
                 if not should_buy:
                     continue
 
-                console.print(f"[bold green]BUY SIGNAL ({mode.upper()}) → {sym} @ ${price:.2f} | {reason}[/bold green]")
+                console.print(f"[bold green]BUY SIGNAL → {sym} @ ${price:.2f}[/bold green]")
 
                 if self.has_open_buy_order(sym):
                     continue
@@ -1104,11 +1058,12 @@ class TradingBot:
                         self._account_snapshot_cache_time = 0
                         self.invalidate_open_orders_cache()
 
-            # ===================== SELL LOGIC =====================
-            # (Same for both modes - uses safety net)
+            # ===================== SELL SAFETY NET =====================
             open_orders = self.get_open_orders()
-            symbols_with_sell_order = {o["symbol"] for o in open_orders 
-                                     if o.get("instruction") in ("SELL", "SELL_SHORT")}
+            symbols_with_sell_order = {
+                o["symbol"] for o in open_orders 
+                if o.get("instruction") in ("SELL", "SELL_SHORT")
+            }
 
             for sym, holding in list(holdings_copy.items()):
                 if sym not in self.symbols_config or sym in symbols_with_sell_order:
@@ -1120,25 +1075,15 @@ class TradingBot:
 
                 cfg = self.symbols_config[sym]
 
-                should_sell = False
-                if mode == "ma":
-                    ma_value = self.get_moving_average(sym, cfg.ma_period, cfg.ma_timeframe)
-                    if ma_value:
-                        sell_target = ma_value * (1 + cfg.sell_threshold_pct / 100)
-                        if price >= sell_target:
-                            should_sell = True
-                else:
-                    if price >= cfg.limit_sell_price:
-                        should_sell = True
-
-                if should_sell:
-                    console.print(f"[bold green]SELL SIGNAL ({mode.upper()}) → {sym} @ ${price:.2f}[/bold green]")
+                if price >= cfg.limit_sell_price:
+                    console.print(f"[bold green]SELL SAFETY TRIGGER → {sym} @ ${price:.2f}[/bold green]")
                     self.submit_sell_bracket_oco(
                         sym,
                         holding.get("buy_price", price),
-                        cfg.limit_sell_price if mode == "hardcoded" else round(price * 1.01, 2)
+                        cfg.limit_sell_price
                     )
-
+                    
+                    
     def cli_loop(self):
         """
         CLI command loop — runs in its own thread.
@@ -1206,6 +1151,9 @@ class TradingBot:
                             self.trading_mode = new_mode                     # ← Important
                             self.current_market_prices = {sym: None for sym in fresh_symbols}
                             self.auto_buy_allowed = {sym: True for sym in fresh_symbols}
+                            # Clear indicator caches when config changes
+                            self._ma_cache.clear()
+                            
 
                         console.print(f"[bold green]✅ Configuration reloaded successfully![/bold green]")
                         console.print(f"[bold cyan]Current Mode: {self.trading_mode.upper()}[/bold cyan]")

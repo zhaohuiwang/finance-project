@@ -19,11 +19,6 @@ class SymbolConfig(BaseModel):
     stop_loss_dollar: float = Field(default=0.0, ge=0)  # fixed $ amount below entry
     # If > 0, use this as primary stop distance; otherwise fall back to %
     
-    # Moving Average mode
-    ma_period: int = 50
-    ma_timeframe: str = "5min"          # 1min, 5min, 15min, 30min
-    buy_threshold_pct: float = -4.0     # Buy when price is X% below MA
-    sell_threshold_pct: float = 2.0     # Sell when price is X% above MA
     
     @model_validator(mode="after")
     def check_prices(self):
