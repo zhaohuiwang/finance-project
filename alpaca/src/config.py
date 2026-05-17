@@ -69,12 +69,20 @@ class StrategyConfig(BaseModel):
     rsi_max_for_buy: float
     volume_min_ratio: float = 0.0
     use_5m_confirmation: bool = False
+    min_signal_confidence: float = 0.65
 
     @field_validator("volume_min_ratio")
     @classmethod
     def volume_ratio_non_negative(cls, v: float) -> float:
         if v < 0:
             raise ValueError("volume_min_ratio must be >= 0")
+        return v
+
+    @field_validator("min_signal_confidence")
+    @classmethod
+    def confidence_in_range(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("min_signal_confidence must be between 0.0 and 1.0")
         return v
 
     @model_validator(mode="after")

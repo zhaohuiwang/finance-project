@@ -76,9 +76,11 @@ class SignalAgent:
 
         news = _fetch_news(self._news_client, symbol)
 
+        current_price = float(df["close"].iloc[-1])
+
         context = {
             "symbol": symbol,
-            "current_price": round(float(df["close"].iloc[-1]), 4),
+            "current_price": round(current_price, 4),
             "fast_ma": {
                 "window": s.fast_ma,
                 "prev_bar": round(float(fast.iloc[-2]), 4),
@@ -122,6 +124,7 @@ class SignalAgent:
 
         text = next(b.text for b in response.content if b.type == "text")
         result = json.loads(text)
+        result["current_price"] = current_price
         logger.info(
             f"[signal] {symbol}: {result['signal']} "
             f"(confidence={result['confidence']:.2f}) — {result['reasoning'][:100]}"
