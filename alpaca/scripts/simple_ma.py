@@ -6,10 +6,8 @@ Strategy: Fast MA crosses above Slow MA + RSI below threshold → BUY
 """
 import os
 import re
-import sys
 import time
 import socket
-from pathlib import Path
 
 import pytz
 from dotenv import load_dotenv
@@ -17,8 +15,6 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderType
 from alpaca.data.historical import StockHistoricalDataClient
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from config import load_config
 from utils.logger import setup_logging, get_logger
