@@ -11,8 +11,11 @@ logger = get_logger(__name__)
 _NY_TZ = pytz.timezone("America/New_York")
 
 
+
 def init_trade_log(log_file: str) -> str:
     """Create the CSV trade log file with a date suffix if it doesn't already exist."""
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
     
     # Add YYYYMMDD suffix before file extension
     date_suffix = datetime.now().strftime("%Y%m%d")

@@ -1,5 +1,5 @@
 """
-SMA Crossover Trading Bot
+MA Crossover Trading Bot
 
 Strategy: MA_fast > MA_slow or Fast MA crosses above Slow MA + RSI below threshold → BUY
           MA_fast < MA_slow or Fast MA crosses below Slow MA → SELL (exit position)
@@ -7,18 +7,19 @@ Strategy: MA_fast > MA_slow or Fast MA crosses above Slow MA + RSI below thresho
 Simple Moving Average (SMA) gives equal weight to all prices in the period.
 Exponential Moving Average (EMA) gives more weight to recent prices.
 
-Use EMA if: you want faster signals, trade short timeframes, build automated bots
-Use SMA if: you want smoother trends, fewer fake signals, longer-term investing
+MA Crossover
+    EMA crossover (fast/slow) — BUY on bullish cross, SELL on bearish cross (signals.py:45-49)
+RSI Filter
+    BUY only if RSI < rsi_max_for_buy (signals.py:46); configurable period and threshold
+Volume Filter
+    BUY suppressed if current volume < volume_min_ratio × 20-bar avg (signals.py:53-56); SELL never suppressed
+Stop Loss
+    Bracket order with stop_price = base_price × (1 - stop_loss_pct) (ma_trader.py:132)
+Trend Confirmation
+    Optional 5-minute higher-timeframe EMA confirmation before acting on 1-min BUY signals (ma_trader.py:90-94)
+Volatility Filter
+    Not implemented — there's no ATR, Bollinger Band width, or similar volatility gate
 
-MA Crossover	EMA crossover (fast/slow) — BUY on bullish cross, SELL on bearish cross (signals.py:45-49)
-RSI Filter	BUY only if RSI < rsi_max_for_buy (signals.py:46); configurable period and threshold
-Volume Filter	BUY suppressed if current volume < volume_min_ratio × 20-bar avg (signals.py:53-56); SELL never suppressed
-Stop Loss	Bracket order with stop_price = base_price × (1 - stop_loss_pct) (ma_trader.py:132)
-Trend Confirmation	Optional 5-minute higher-timeframe EMA confirmation before acting on 1-min BUY signals (ma_trader.py:90-94)
-Volatility Filter   Not implemented — there's no ATR, Bollinger Band width, or similar volatility gate
-
-
-          
 Run:  uv run scripts/ma_trader.py
 """
 import os
