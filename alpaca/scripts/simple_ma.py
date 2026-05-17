@@ -5,6 +5,7 @@ Strategy: Fast MA crosses above Slow MA + RSI below threshold → BUY
           Fast MA crosses below Slow MA → SELL (exit position)
 """
 import os
+import re
 import sys
 import time
 import socket
@@ -96,30 +97,41 @@ def main():
 
             if signal == "BUY" and not has_position:
                 entry_price = current_price
-                # Use the live ask as the reference Alpaca uses for bracket validation (base_price).
-                # Bar close can lag behind the real ask, causing tp_price < base_price + 0.01.
                 live_ask = get_latest_ask(data_client, cfg.trading.symbol)
+                print(f"  live_ask={live_ask}, bar_close={entry_price:.2f}")
                 base_price = live_ask if live_ask and live_ask > entry_price else entry_price
 
                 qty = calculate_quantity(trading_client, base_price, cfg.risk.stop_loss_pct, cfg.risk.risk_per_trade)
 
-                tp_price = round(base_price * (1 + cfg.risk.take_profit_pct), 2) if cfg.risk.take_profit_pct else None
-                if tp_price and tp_price <= base_price + 0.01:
-                    tp_price = round(base_price + 0.02, 2)
+                def build_order(ref_price: float) -> MarketOrderRequest:
+                    tp = round(ref_price * (1 + cfg.risk.take_profit_pct), 2) if cfg.risk.take_profit_pct else None
+                    if tp and tp <= ref_price + 0.01:
+                        tp = round(ref_price + 0.02, 2)
+                    return MarketOrderRequest(
+                        symbol=cfg.trading.symbol,
+                        qty=qty,
+                        side=OrderSide.BUY,
+                        type=OrderType.MARKET,
+                        time_in_force=TimeInForce.DAY,
+                        order_class="bracket",
+                        take_profit=dict(limit_price=tp) if tp else None,
+                        stop_loss=dict(stop_price=round(ref_price * (1 - cfg.risk.stop_loss_pct), 2)),
+                    ), tp
 
-                order = MarketOrderRequest(
-                    symbol=cfg.trading.symbol,
-                    qty=qty,
-                    side=OrderSide.BUY,
-                    type=OrderType.MARKET,
-                    time_in_force=TimeInForce.DAY,
-                    order_class="bracket",
-                    take_profit=dict(limit_price=tp_price) if tp_price else None,
-                    stop_loss=dict(
-                        stop_price=round(base_price * (1 - cfg.risk.stop_loss_pct), 2),
-                    ),
-                )
-                trading_client.submit_order(order)
+                order, tp_price = build_order(base_price)
+                try:
+                    trading_client.submit_order(order)
+                except Exception as order_err:
+                    # Alpaca returns code 42210000 when tp < base_price + 0.01.
+                    # Extract its actual base_price from the error and retry once.
+                    match = re.search(r'"base_price"\s*:\s*"?([\d.]+)"?', str(order_err))
+                    if not match:
+                        raise
+                    alpaca_base = float(match.group(1))
+                    print(f"  tp validation failed — Alpaca base_price={alpaca_base}, retrying")
+                    order, tp_price = build_order(alpaca_base)
+                    trading_client.submit_order(order)
+
                 log_trade(cfg.trading.log_file, cfg.trading.symbol, "BUY", qty, base_price, "SMA Crossover + RSI", f"TP={tp_price}")
                 notify(f"🟢 *BUY + Dynamic Risk*\n{cfg.trading.symbol} × {qty} @ ~${base_price:.2f}")
 
