@@ -4,6 +4,13 @@ SMA Crossover Trading Bot
 Strategy: MA_fast > MA_slow or Fast MA crosses above Slow MA + RSI below threshold → BUY
           MA_fast < MA_slow or Fast MA crosses below Slow MA → SELL (exit position)
           
+Simple Moving Average (SMA) gives equal weight to all prices in the period.
+Exponential Moving Average (EMA) gives more weight to recent prices.
+
+Use EMA if: you want faster signals, trade short timeframes, build automated bots
+Use SMA if: you want smoother trends, fewer fake signals, longer-term investing
+
+          
 Run:  uv run scripts/simple_ma.py
 """
 import os
