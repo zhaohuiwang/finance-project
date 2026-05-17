@@ -28,7 +28,7 @@ class DailyLossGuard:
             equity = float(self._client.get_account().equity)
             self._start_equity = equity
             self._tracking_date = today
-            logger.info(f"Daily loss guard reset — start equity: ${equity:,.2f} | limit: {self._max_loss_pct:.1%}")
+            logger.info(f"Daily loss guard reset — start equity: ${equity:,.2f} | Loss limit: {self._max_loss_pct:.1%}")
 
     def is_halted(self) -> bool:
         """Return True if today's drawdown has exceeded the daily max-loss limit."""
