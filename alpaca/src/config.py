@@ -22,6 +22,15 @@ class TradingConfig(BaseModel):
     timeframe: str
     check_interval: int
     log_file: str
+    sector_etfs: dict[str, str] = {}
+    earnings_blackout_days: int = 0
+
+    @field_validator("earnings_blackout_days")
+    @classmethod
+    def earnings_days_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("earnings_blackout_days must be >= 0")
+        return v
 
     @field_validator("symbols")
     @classmethod
@@ -58,6 +67,15 @@ class StrategyConfig(BaseModel):
     slow_ma: int
     rsi_period: int
     rsi_max_for_buy: float
+    volume_min_ratio: float = 0.0
+    use_5m_confirmation: bool = False
+
+    @field_validator("volume_min_ratio")
+    @classmethod
+    def volume_ratio_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("volume_min_ratio must be >= 0")
+        return v
 
     @model_validator(mode="after")
     def fast_less_than_slow(self) -> "StrategyConfig":

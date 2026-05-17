@@ -17,13 +17,14 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderType
 from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from config import load_config
 from utils.logger import setup_logging, get_logger
 from utils.market import is_market_open, get_bars, get_latest_ask
 from utils.notify import send_telegram_message
 from utils.trade_log import init_trade_log, log_trade
-from utils.signals import calculate_signals
+from utils.signals import calculate_signals, is_uptrend
 from utils.orders import calculate_quantity, cancel_open_orders, get_account_info, get_position
 from utils.risk import DailyLossGuard, StopLossCooldown
 
@@ -74,7 +75,16 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
         cfg.strategy.slow_ma,
         cfg.strategy.rsi_period,
         cfg.strategy.rsi_max_for_buy,
+        cfg.strategy.volume_min_ratio,
     )
+
+    # 5-minute uptrend confirmation: suppress 1-min BUY signals when the higher
+    # timeframe is not in an uptrend, filtering out low-quality crossovers.
+    if signal == "BUY" and cfg.strategy.use_5m_confirmation:
+        df_5m = get_bars(data_client, symbol, TimeFrame(5, TimeFrameUnit.Minute), limit=50)
+        if not is_uptrend(df_5m, cfg.strategy.fast_ma, cfg.strategy.slow_ma):
+            logger.info(f"{symbol} 5-min uptrend not confirmed — suppressing BUY")
+            signal = None
 
     position = get_position(trading_client, symbol)
     has_position = position is not None
@@ -83,7 +93,11 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
     cooldown.update(symbol, has_position)
 
     rsi_display = f"{current_rsi:.1f}" if current_rsi is not None else "N/A"
-    logger.info(f"{symbol} @ ${current_price:.2f} | RSI: {rsi_display} | Signal: {signal or 'HOLD'}")
+    vol_ratio = df["volume"].iloc[-1] / df["volume"].rolling(20).mean().iloc[-1] if "volume" in df.columns else None
+    vol_display = f"{vol_ratio:.2f}×" if vol_ratio is not None else "N/A"
+    logger.info(
+        f"{symbol} @ ${current_price:.2f} | RSI: {rsi_display} | Vol: {vol_display} | Signal: {signal or 'HOLD'}"
+    )
 
     if signal == "BUY" and not has_position and not cooldown.is_cooling_down(symbol):
         entry_price = current_price

@@ -1,7 +1,9 @@
-"""Risk Agent — asks Claude to approve or reject a trade given account and risk state."""
+"""Risk Agent — asks Claude to approve a trade given account state, sector RS, and earnings."""
 import json
+from datetime import date
 
 import anthropic
+import yfinance as yf
 
 from utils.logger import get_logger
 from utils.market import get_latest_ask
@@ -10,26 +12,76 @@ logger = get_logger(__name__)
 
 _SYSTEM = """You are a trading risk manager for an automated momentum bot.
 
-You will receive a proposed trade (BUY or SELL) and the current risk state.
-Your job is to decide whether to proceed and, for BUY orders, how many shares to buy.
+You will receive a proposed trade and the current risk state, including sector relative
+strength and proximity to earnings. Your job is to decide whether to proceed and, for
+BUY orders, how many shares to buy.
 
-Rules you must enforce:
+Hard rules you must always enforce:
 1. NEVER approve a BUY if daily_loss_halted is true.
 2. NEVER approve a BUY if stop_loss_cooldown_active is true.
 3. NEVER approve a BUY if there is already an open position.
-4. NEVER approve a BUY if calculated qty would be 0 or less.
-5. For SELL: only approve if a position actually exists.
-6. Position sizing formula (shares, then bounded):
-     risk_based    = floor((equity × risk_per_trade) / (entry_price × stop_loss_pct))
-     position_cap  = floor((equity × max_position_pct) / entry_price)
-     bp_cap        = floor(buying_power / (entry_price × 1.02))
-     qty           = max(1, min(risk_based, position_cap, bp_cap))
+4. NEVER approve a BUY within earnings_blackout_days of the next earnings date.
+5. NEVER approve a BUY if calculated qty would be 0 or less.
+6. For SELL: only approve if a position actually exists.
+
+Soft rules to weigh:
+- If sector_relative_strength_5d is strongly negative (< -0.05), treat as an
+  additional bearish signal and raise the bar for BUY approval.
+- If sector_relative_strength_5d is strongly positive (> 0.05), treat as confirmation.
+
+Position sizing formula:
+  risk_based    = floor((equity × risk_per_trade) / (entry_price × stop_loss_pct))
+  position_cap  = floor((equity × max_position_pct) / entry_price)
+  bp_cap        = floor(buying_power / (entry_price × 1.02))
+  qty           = max(1, min(risk_based, position_cap, bp_cap))
 
 Respond with your decision and clear reasoning."""
 
 
+def _get_sector_relative_strength(symbol: str, sector_etf: str | None) -> float | None:
+    """Return 5-day return of symbol minus 5-day return of sector ETF. None on failure."""
+    if not sector_etf:
+        return None
+    try:
+        sym = yf.download(symbol, period="5d", interval="1d", auto_adjust=True, progress=False)
+        etf = yf.download(sector_etf, period="5d", interval="1d", auto_adjust=True, progress=False)
+        if len(sym) < 2 or len(etf) < 2:
+            return None
+        sym_ret = float(sym["Close"].iloc[-1] / sym["Close"].iloc[0] - 1)
+        etf_ret = float(etf["Close"].iloc[-1] / etf["Close"].iloc[0] - 1)
+        return round(sym_ret - etf_ret, 4)
+    except Exception as e:
+        logger.debug(f"sector RS fetch failed for {symbol}/{sector_etf}: {e}")
+        return None
+
+
+def _get_days_to_earnings(symbol: str) -> int | None:
+    """Return calendar days until the next earnings date. None if unavailable."""
+    try:
+        cal = yf.Ticker(symbol).calendar
+        if cal is None:
+            return None
+        # calendar may be a dict with 'Earnings Date' key or a DataFrame
+        if hasattr(cal, "get"):
+            dates = cal.get("Earnings Date") or []
+        elif hasattr(cal, "loc"):
+            dates = cal.loc["Earnings Date"].tolist() if "Earnings Date" in cal.index else []
+        else:
+            return None
+        if not dates:
+            return None
+        earn_date = dates[0]
+        if hasattr(earn_date, "date"):
+            earn_date = earn_date.date()
+        days = (earn_date - date.today()).days
+        return int(days)
+    except Exception as e:
+        logger.debug(f"earnings fetch failed for {symbol}: {e}")
+        return None
+
+
 class RiskAgent:
-    """Gathers risk context and delegates the approval decision to Claude."""
+    """Gathers risk context including sector RS and earnings, delegates approval to Claude."""
 
     def __init__(self, trading_client, data_client, cfg, loss_guard, cooldown) -> None:
         self._trading = trading_client
@@ -42,6 +94,7 @@ class RiskAgent:
     def evaluate(self, symbol: str, signal: str, has_position: bool) -> dict:
         """Return {"approved": bool, "qty": int|None, "base_price": float|None, "reasoning": str}."""
         r = self._cfg.risk
+        t = self._cfg.trading
 
         try:
             account = self._trading.get_account()
@@ -52,18 +105,27 @@ class RiskAgent:
             return {"approved": False, "qty": None, "base_price": None, "reasoning": f"Account fetch failed: {e}"}
 
         live_ask = get_latest_ask(self._data, symbol)
+        sector_etf = t.sector_etfs.get(symbol)
+        sector_rs = _get_sector_relative_strength(symbol, sector_etf)
+        days_to_earnings = _get_days_to_earnings(symbol) if t.earnings_blackout_days > 0 else None
 
         context = {
             "symbol": symbol,
             "proposed_signal": signal,
-            "account": {
-                "equity": round(equity, 2),
-                "buying_power": round(buying_power, 2),
-            },
+            "account": {"equity": round(equity, 2), "buying_power": round(buying_power, 2)},
             "live_ask": live_ask,
             "position": {"open": has_position},
             "daily_loss_halted": self._loss_guard.is_halted(),
             "stop_loss_cooldown_active": self._cooldown.is_cooling_down(symbol),
+            "sector": {
+                "etf": sector_etf,
+                "relative_strength_5d": sector_rs,
+                "note": "positive = symbol outperforming sector; negative = underperforming",
+            },
+            "earnings": {
+                "days_to_next": days_to_earnings,
+                "blackout_days": t.earnings_blackout_days,
+            },
             "risk_params": {
                 "risk_per_trade": r.risk_per_trade,
                 "max_position_pct": r.max_position_pct,
@@ -74,7 +136,7 @@ class RiskAgent:
         }
 
         response = self._client.messages.create(
-            model="claude-opus-4-7",
+            model="claude-haiku-4-5",
             max_tokens=512,
             system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
             output_config={

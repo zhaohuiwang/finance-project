@@ -1,7 +1,10 @@
-"""Signal Agent — asks Claude to reason about MA crossover and RSI data."""
+"""Signal Agent — asks Claude to reason about MA crossover, RSI, and recent news."""
 import json
+from datetime import datetime, timezone
 
 import anthropic
+from alpaca.data.historical import NewsClient
+from alpaca.data.requests import NewsRequest
 
 from utils.market import get_bars
 from utils.signals import calculate_rsi
@@ -11,20 +14,47 @@ logger = get_logger(__name__)
 
 _SYSTEM = """You are a quantitative trading signal analyst for momentum strategies.
 
-You will receive current market indicators for a symbol. Determine the signal:
-- BUY  : fast MA just crossed ABOVE slow MA on the latest bar, AND RSI < rsi_max_for_buy
-- SELL : fast MA just crossed BELOW slow MA on the latest bar (RSI not required)
-- HOLD : no fresh crossover, or conditions not met
+You will receive current market indicators and recent news headlines for a symbol.
+Determine the signal:
+- BUY  : fast MA just crossed ABOVE slow MA on the latest bar, AND RSI < rsi_max_for_buy,
+         AND news does not present a strong near-term bearish risk
+- SELL : fast MA just crossed BELOW slow MA on the latest bar (RSI not required),
+         OR negative news materially changes the near-term outlook
+- HOLD : no fresh crossover, conditions not met, or news makes the signal unreliable
 
 A crossover is only valid when the relationship flipped between the previous and current bar.
-Be precise — analyze the numbers, don't generalise."""
+Weight recent news that is directly about the company more heavily than sector/macro news.
+Be precise — cite specific numbers and headlines in your reasoning."""
+
+
+def _fetch_news(news_client: NewsClient, symbol: str, max_items: int = 5) -> list[dict]:
+    """Fetch recent headlines from the Alpaca News API. Returns [] on any failure."""
+    try:
+        news_set = news_client.get_news(NewsRequest(symbols=symbol, limit=max_items))
+        items = news_set.data.get("news", [])
+        result = []
+        for item in items:
+            age_h = round(
+                (datetime.now(timezone.utc) - item.created_at).total_seconds() / 3600, 1
+            )
+            result.append({
+                "headline": item.headline,
+                "source": item.source,
+                "age_hours": age_h,
+                "summary": (item.summary or "")[:200],
+            })
+        return result
+    except Exception as e:
+        logger.debug(f"Alpaca news fetch failed for {symbol}: {e}")
+        return []
 
 
 class SignalAgent:
-    """Fetches market indicators and delegates signal reasoning to Claude."""
+    """Fetches market indicators + Alpaca news and delegates signal reasoning to Claude."""
 
-    def __init__(self, data_client, cfg) -> None:
+    def __init__(self, data_client, news_client: NewsClient, cfg) -> None:
         self._data_client = data_client
+        self._news_client = news_client
         self._cfg = cfg
         self._client = anthropic.Anthropic()
 
@@ -37,6 +67,14 @@ class SignalAgent:
         fast = df["close"].rolling(window=s.fast_ma).mean()
         slow = df["close"].rolling(window=s.slow_ma).mean()
         rsi = calculate_rsi(df, s.rsi_period)
+
+        vol_ratio = None
+        if "volume" in df.columns:
+            avg_vol = df["volume"].rolling(window=20).mean().iloc[-1]
+            if avg_vol > 0:
+                vol_ratio = round(float(df["volume"].iloc[-1] / avg_vol), 2)
+
+        news = _fetch_news(self._news_client, symbol)
 
         context = {
             "symbol": symbol,
@@ -56,10 +94,12 @@ class SignalAgent:
                 "value": round(float(rsi.iloc[-1]), 2),
                 "max_for_buy": s.rsi_max_for_buy,
             },
+            "volume_ratio_vs_20bar_avg": vol_ratio,
+            "recent_news": news,
         }
 
         response = self._client.messages.create(
-            model="claude-opus-4-7",
+            model="claude-haiku-4-5",
             max_tokens=512,
             system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
             output_config={

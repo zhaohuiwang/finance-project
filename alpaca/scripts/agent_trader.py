@@ -8,7 +8,36 @@ Three Claude agents collaborate on every trading decision:
   Execution Agent → submits Alpaca bracket/sell orders via tool use, retries intelligently
 
 Run:  uv run scripts/agent_trader.py
+
+Pricing: Claude Opus 4.7 — $5.00/1M input, $25.00/1M output
+
+Cost per loop iteration (60s interval, 1 symbol)
+Call	    When	Input tokens	Output tokens	Cost
+Signal Agent	Every iteration	~250	~100	~$0.004
+Risk Agent	Signal ≠ HOLD (~20%)	~700	~120	~$0.007
+Execution Agent (+ thinking)	Trade fires (~5%)	~3,500	~2,500	~$0.08–0.15
+Daily cost (390 iterations, 1 symbol, 6.5hr trading day)
+Component	Qty	Unit cost	Daily
+Signal checks	390	$0.004	~$1.55
+Risk checks (20 non-HOLD)	20	$0.007	~$0.14
+Executions (1–2 trades)	2	$0.10	~$0.20
+Total			~$1.90/day
+Monthly: ~$40/month per symbol. With 3 symbols: ~$120/month.
+
+Compare to simple_ma.py
+simple_ma.py costs $0 — it's purely deterministic.
+
+How to cut costs 10×
+The signal and risk agents are called on every iteration but their reasoning is straightforward. Swap them to claude-haiku-4-5 ($1.00/$5.00 per 1M — 5× cheaper on output):
+
+In src/agents/signal_agent.py and src/agents/risk_agent.py, change:
+model="claude-opus-4-7",
+to:
+model="claude-haiku-4-5",
+Keep claude-opus-4-7 only in execution_agent.py where the retry reasoning actually benefits from the best model. This drops the monthly cost to ~$10–15/month for 1 symbol.
 """
+
+
 import os
 import time
 import socket
@@ -16,7 +45,7 @@ import socket
 import pytz
 from dotenv import load_dotenv
 from alpaca.trading.client import TradingClient
-from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.historical import StockHistoricalDataClient, NewsClient
 
 from config import load_config
 from utils.logger import setup_logging, get_logger
@@ -56,6 +85,7 @@ else:
 
 trading_client = TradingClient(API_KEY, SECRET_KEY, paper=cfg.trading.paper_trading)
 data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)
+news_client = NewsClient(API_KEY, SECRET_KEY)
 NY_TZ = pytz.timezone("America/New_York")
 
 
@@ -145,7 +175,7 @@ def main() -> None:
     cooldown = StopLossCooldown(trading_client, cfg.risk.stop_loss_cooldown_minutes)
 
     # Instantiate agents (one set, shared across all symbols)
-    signal_agent = SignalAgent(data_client, cfg)
+    signal_agent = SignalAgent(data_client, news_client, cfg)
     risk_agent = RiskAgent(trading_client, data_client, cfg, loss_guard, cooldown)
     execution_agent = ExecutionAgent(trading_client, data_client, cfg)
 

@@ -5,12 +5,17 @@ trading:
   timeframe: "minute"          # Options: minute, hour, day
   check_interval: 60           # Seconds between each trading loop iteration
   log_file: "trade_log.csv"
+  sector_etfs:                 # maps each symbol to its sector ETF (used by agent_trader.py)
+    NBIS: "AIQ"                # NBIS is biotech → Global X Artificial Intelligence & Technology ETF. Broad Tech: Technology Select Sector SPDR ETF (XLK) or Vanguard Information Technology ETF (VGT).AI & Cloud Infrastructure: Global X Artificial Intelligence & Technology ETF (AIQ) or First Trust Cloud Computing ETF (SKYY).
+  earnings_blackout_days: 2    # skip BUY within this many days of earnings (0 to disable)
 
 strategy:
   fast_ma: 3                   # Fast SMA window (smaller = more responsive, more noise)
   slow_ma: 8                   # Slow SMA window (larger = smoother, more lag)
   rsi_period: 14
   rsi_max_for_buy: 75          # Only buy when RSI is below this threshold
+  volume_min_ratio: 1.0        # BUY only if current volume >= X × 20-bar avg (0 to disable)
+  use_5m_confirmation: true    # Require 5-min uptrend before taking a 1-min BUY signal
 
 risk:
   risk_per_trade: 0.01         # Fraction of equity to risk per trade (1%)
