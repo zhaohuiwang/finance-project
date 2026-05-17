@@ -139,6 +139,7 @@ def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCoold
                 raise
             alpaca_base = float(match.group(1))
             logger.warning(f"{symbol} TP validation failed — Alpaca base_price={alpaca_base}, retrying")
+            base_price = alpaca_base
             tp_price = round(alpaca_base * (1 + cfg.risk.take_profit_pct), 2) if cfg.risk.take_profit_pct else None
             order = MarketOrderRequest(
                 symbol=symbol,
