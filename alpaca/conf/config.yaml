@@ -4,7 +4,7 @@ trading:
   symbols: ["NBIS"]           # Add more tickers: ["NBIS", "AAPL", "TSLA"]
   timeframe: "minute"          # Options: minute, hour, day
   check_interval: 60           # Seconds between each trading loop iteration
-  log_file: "trade_log.csv"
+  log_file: "logs/trade_log.csv"
   sector_etfs:                 # maps each symbol to its sector ETF (used by agent_trader.py)
     NBIS: "AIQ"                # NBIS is biotech → Global X Artificial Intelligence & Technology ETF. Broad Tech: Technology Select Sector SPDR ETF (XLK) or Vanguard Information Technology ETF (VGT).AI & Cloud Infrastructure: Global X Artificial Intelligence & Technology ETF (AIQ) or First Trust Cloud Computing ETF (SKYY).
   earnings_blackout_days: 2    # skip BUY within this many days of earnings (0 to disable)

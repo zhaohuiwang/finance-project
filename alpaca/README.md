@@ -11,8 +11,8 @@ alpaca/
 ├── conf/
 │   └── config.yaml             # All tunable parameters (shared by all bots)
 ├── scripts/
-│   ├── simple_ma.py            # Deterministic bot — zero API cost
-│   ├── smart_ma.py             # Recommended — deterministic execution + Claude signal
+│   ├── ma_trader.py            # Deterministic bot — zero API cost
+│   ├── smart_ma_trader.py             # Recommended — deterministic execution + Claude signal
 │   └── agent_trader.py         # Full multi-agent bot — all three stages use Claude
 ├── src/
 │   ├── config.py               # Pydantic config models + loader
@@ -54,7 +54,7 @@ ALPACA_API_KEY=...           # only needed for live trading
 ALPACA_SECRET_KEY=...        # only needed for live trading
 TELEGRAM_TOKEN=...           # optional — for trade alerts
 TELEGRAM_CHAT_ID=...         # optional — for trade alerts
-ANTHROPIC_API_KEY=sk-ant-... # needed for smart_ma.py and agent_trader.py
+ANTHROPIC_API_KEY=sk-ant-... # needed for smart_ma_trader.py and agent_trader.py
 ```
 
 ### 3. Configure the bot
@@ -79,8 +79,8 @@ strategy:
   rsi_period: 14
   rsi_max_for_buy: 75          # skip BUY if RSI >= this
   volume_min_ratio: 1.0        # BUY only if volume >= X × 20-bar avg (0 to disable)
-  use_5m_confirmation: true    # require 5-min uptrend before 1-min BUY (simple_ma.py only)
-  min_signal_confidence: 0.65  # skip signal if Claude confidence < this (smart_ma.py only)
+  use_5m_confirmation: true    # require 5-min uptrend before 1-min BUY (ma_trader.py only)
+  min_signal_confidence: 0.65  # skip signal if Claude confidence < this (smart_ma_trader.py only)
 
 risk:
   risk_per_trade: 0.01         # 1% of equity per trade
@@ -96,10 +96,10 @@ risk:
 
 ```bash
 # Zero cost — fully deterministic
-uv run scripts/simple_ma.py
+uv run scripts/ma_trader.py
 
 # Recommended — Claude signal with deterministic execution (~$0.40/day)
-uv run scripts/smart_ma.py
+uv run scripts/smart_ma_trader.py
 
 # Full multi-agent — all three stages use Claude (~$0.65/day)
 uv run scripts/agent_trader.py
@@ -109,7 +109,7 @@ uv run scripts/agent_trader.py
 
 ## Choosing a Bot
 
-| | `simple_ma.py` | `smart_ma.py` | `agent_trader.py` |
+| | `ma_trader.py` | `smart_ma_trader.py` | `agent_trader.py` |
 |---|---|---|---|
 | **Cost** | **$0** | ~$0.40/day | ~$0.65/day |
 | **Claude calls / iter** | 0 | 1 (Haiku) | 0–3 (Haiku + Opus) |
@@ -120,18 +120,18 @@ uv run scripts/agent_trader.py
 | **Requires** | Alpaca keys | Alpaca + Anthropic keys | Alpaca + Anthropic keys |
 | **Consistency** | 100% deterministic | Deterministic execution | May vary |
 
-**`smart_ma.py` is the recommended default.** It is the practical sweet spot:
+**`smart_ma_trader.py` is the recommended default.** It is the practical sweet spot:
 - Only one Haiku call per iteration (cheap and fast)
 - Claude adds genuine value on the signal — it weighs live news alongside the MA/RSI math and skips low-confidence signals
 - All execution, position sizing, and risk logic remains deterministic and reliable
 
-**`simple_ma.py`** if you want zero API cost and fully reproducible behaviour.
+**`ma_trader.py`** if you want zero API cost and fully reproducible behaviour.
 
 **`agent_trader.py`** if you want Claude to also reason about sector strength and earnings proximity when deciding whether to act on a signal.
 
 ---
 
-## How It Works — `simple_ma.py`
+## How It Works — `ma_trader.py`
 
 ### Startup
 
@@ -239,13 +239,13 @@ timestamp, symbol, action, qty, price, reason, note
 
 ---
 
-## How It Works — `smart_ma.py`
+## How It Works — `smart_ma_trader.py`
 
-`smart_ma.py` keeps the full execution stack of `simple_ma.py` unchanged and replaces only the signal step with a Claude call.
+`smart_ma_trader.py` keeps the full execution stack of `ma_trader.py` unchanged and replaces only the signal step with a Claude call.
 
-### What changes vs `simple_ma.py`
+### What changes vs `ma_trader.py`
 
-| Step | `simple_ma.py` | `smart_ma.py` |
+| Step | `ma_trader.py` | `smart_ma_trader.py` |
 |------|---------------|---------------|
 | Signal | Deterministic MA + RSI + volume + 5-min | Claude (MA + RSI + volume + news) |
 | Confidence filter | — | Skip signal if confidence < `min_signal_confidence` (0.65) |
@@ -315,7 +315,7 @@ Position check → StopLossCooldown.update()
   Output:  order confirmation or error details
 ```
 
-### What the Risk Agent adds over `smart_ma.py`
+### What the Risk Agent adds over `smart_ma_trader.py`
 
 - **Sector relative strength**: 5-day return of the symbol minus its sector ETF (configured in `sector_etfs`). Strongly negative RS raises the bar for approval.
 - **Earnings proximity**: days until next earnings via yfinance. Claude hard-rejects BUY within `earnings_blackout_days` (default 2) of the next report.
