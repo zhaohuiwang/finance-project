@@ -19,6 +19,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "alpaca-py>=0.43.4",
+    "anthropic>=0.50.0",
     "python-dotenv>=1.0",
     "numpy>=2.4.4",
     "pandas>=3.0.2",
