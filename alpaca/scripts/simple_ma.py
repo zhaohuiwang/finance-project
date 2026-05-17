@@ -1,8 +1,8 @@
 """
 SMA Crossover Trading Bot
 
-Strategy: Fast MA crosses above Slow MA + RSI below threshold → BUY
-          Fast MA crosses below Slow MA → SELL (exit position)
+Strategy: MA_fast > MA_slow or Fast MA crosses above Slow MA + RSI below threshold → BUY
+          MA_fast < MA_slow or Fast MA crosses below Slow MA → SELL (exit position)
           
 Run:  uv run scripts/simple_ma.py
 """

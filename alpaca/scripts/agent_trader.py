@@ -26,7 +26,7 @@ Monthly: ~$40/month per symbol. With 3 symbols: ~$120/month.
 
 Compare to simple_ma.py
 simple_ma.py costs $0 — it's purely deterministic.
-
+ 77
 How to cut costs 10×
 The signal and risk agents are called on every iteration but their reasoning is straightforward. Swap them to claude-haiku-4-5 ($1.00/$5.00 per 1M — 5× cheaper on output):
 
