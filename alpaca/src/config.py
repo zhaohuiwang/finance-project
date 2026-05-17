@@ -18,17 +18,20 @@ _DEFAULT_CONFIG = Path(__file__).parent.parent / "conf" / "config.yaml"
 class TradingConfig(BaseModel):
     paper_trading: bool
     trade_only_market_hours: bool
-    symbol: str
+    symbols: list[str]
     timeframe: str
     check_interval: int
     log_file: str
 
-    @field_validator("symbol")
+    @field_validator("symbols")
     @classmethod
-    def symbol_not_empty(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("symbol must not be empty")
-        return v.upper()
+    def symbols_valid(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("symbols must contain at least one ticker")
+        cleaned = [s.strip().upper() for s in v]
+        if any(not s for s in cleaned):
+            raise ValueError("each symbol must be a non-empty string")
+        return cleaned
 
     @field_validator("timeframe")
     @classmethod
@@ -75,6 +78,7 @@ class RiskConfig(BaseModel):
     stop_loss_pct: float
     trailing_stop_pct: float
     take_profit_pct: Optional[float]
+    daily_max_loss_pct: float
 
     @field_validator("risk_per_trade", "stop_loss_pct", "trailing_stop_pct")
     @classmethod
@@ -88,6 +92,13 @@ class RiskConfig(BaseModel):
     def take_profit_positive_if_set(cls, v: Optional[float]) -> Optional[float]:
         if v is not None and v <= 0:
             raise ValueError("take_profit_pct must be positive if set")
+        return v
+
+    @field_validator("daily_max_loss_pct")
+    @classmethod
+    def daily_loss_in_range(cls, v: float) -> float:
+        if not (0 < v < 1):
+            raise ValueError("daily_max_loss_pct must be between 0 and 1 (exclusive)")
         return v
 
 

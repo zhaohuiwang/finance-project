@@ -4,6 +4,10 @@ from datetime import datetime
 
 import pytz
 
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 _NY_TZ = pytz.timezone("America/New_York")
 
 
@@ -29,4 +33,4 @@ def log_trade(
     with open(log_file, "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([timestamp, symbol, action, qty, f"{price:.2f}", reason, note])
-    print(f"📝 Logged: {action} {qty} {symbol} @ ${price:.2f}")
+    logger.info(f"Logged: {action} {qty} {symbol} @ ${price:.2f}")

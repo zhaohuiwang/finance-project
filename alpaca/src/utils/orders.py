@@ -2,6 +2,10 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import GetOrdersRequest
 from alpaca.trading.enums import QueryOrderStatus
 
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 def calculate_quantity(
     trading_client: TradingClient,
@@ -26,10 +30,10 @@ def calculate_quantity(
         max_by_bp = int(buying_power / (entry_price * 1.02))
 
         final_qty = max(1, min(shares, max_by_bp))
-        print(f"Equity: ${equity:,.2f} | Risk: ${risk_amount:.2f} | Qty: {final_qty}")
+        logger.info(f"Equity: ${equity:,.2f} | Risk: ${risk_amount:.2f} | Qty: {final_qty}")
         return final_qty
     except Exception as e:
-        print(f"⚠️ calculate_quantity failed ({e}), defaulting to 1")
+        logger.warning(f"calculate_quantity failed ({e}), defaulting to 1")
         return 1
 
 
@@ -43,7 +47,7 @@ def cancel_open_orders(trading_client: TradingClient, symbol: str) -> int:
             trading_client.cancel_order_by_id(order.id)
         return len(open_orders)
     except Exception as e:
-        print(f"⚠️ cancel_open_orders failed ({e})")
+        logger.warning(f"cancel_open_orders failed ({e})")
         return 0
 
 
