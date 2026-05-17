@@ -75,23 +75,41 @@ class StrategyConfig(BaseModel):
 
 class RiskConfig(BaseModel):
     risk_per_trade: float
+    max_position_pct: float
     stop_loss_pct: float
     trailing_stop_pct: float
     take_profit_pct: Optional[float]
     daily_max_loss_pct: float
+    stop_loss_cooldown_minutes: int
 
-    @field_validator("risk_per_trade", "stop_loss_pct", "trailing_stop_pct")
+    @field_validator("risk_per_trade", "max_position_pct", "stop_loss_pct", "trailing_stop_pct")
     @classmethod
     def must_be_positive(cls, v: float) -> float:
         if v <= 0:
             raise ValueError("value must be positive")
         return v
 
+    @model_validator(mode="after")
+    def risk_less_than_position(self) -> "RiskConfig":
+        if self.risk_per_trade >= self.max_position_pct:
+            raise ValueError(
+                f"risk_per_trade ({self.risk_per_trade:.1%}) must be less than "
+                f"max_position_pct ({self.max_position_pct:.1%})"
+            )
+        return self
+
     @field_validator("take_profit_pct")
     @classmethod
     def take_profit_positive_if_set(cls, v: Optional[float]) -> Optional[float]:
         if v is not None and v <= 0:
             raise ValueError("take_profit_pct must be positive if set")
+        return v
+
+    @field_validator("stop_loss_cooldown_minutes")
+    @classmethod
+    def cooldown_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("stop_loss_cooldown_minutes must be >= 0")
         return v
 
     @field_validator("daily_max_loss_pct")

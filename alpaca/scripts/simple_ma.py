@@ -23,7 +23,7 @@ from utils.notify import send_telegram_message
 from utils.trade_log import init_trade_log, log_trade
 from utils.signals import calculate_signals
 from utils.orders import calculate_quantity, cancel_open_orders, get_account_info, get_position
-from utils.risk import DailyLossGuard
+from utils.risk import DailyLossGuard, StopLossCooldown
 
 setup_logging()
 logger = get_logger(__name__)
@@ -63,7 +63,7 @@ def notify(message: str) -> None:
     send_telegram_message(message, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
 
 
-def trade_symbol(symbol: str) -> None:
+def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
     """Run one iteration of the SMA crossover strategy for a single symbol."""
     df = get_bars(data_client, symbol, cfg.trading.alpaca_timeframe)
     signal, current_rsi = calculate_signals(
@@ -78,16 +78,18 @@ def trade_symbol(symbol: str) -> None:
     has_position = position is not None
     current_price = float(df["close"].iloc[-1])
 
+    cooldown.update(symbol, has_position)
+
     rsi_display = f"{current_rsi:.1f}" if current_rsi is not None else "N/A"
     logger.info(f"{symbol} @ ${current_price:.2f} | RSI: {rsi_display} | Signal: {signal or 'HOLD'}")
 
-    if signal == "BUY" and not has_position:
+    if signal == "BUY" and not has_position and not cooldown.is_cooling_down(symbol):
         entry_price = current_price
         live_ask = get_latest_ask(data_client, symbol)
         logger.debug(f"{symbol} live_ask={live_ask}, bar_close={entry_price:.2f}")
         base_price = live_ask if live_ask and live_ask > entry_price else entry_price
 
-        qty = calculate_quantity(trading_client, base_price, cfg.risk.stop_loss_pct, cfg.risk.risk_per_trade)
+        qty = calculate_quantity(trading_client, base_price, cfg.risk.stop_loss_pct, cfg.risk.risk_per_trade, cfg.risk.max_position_pct)
 
         tp_price = round(base_price * (1 + cfg.risk.take_profit_pct), 2) if cfg.risk.take_profit_pct else None
         if tp_price and tp_price <= base_price + 0.01:
@@ -130,6 +132,7 @@ def trade_symbol(symbol: str) -> None:
         notify(f"🟢 *BUY*\n{symbol} x {qty} @ ~${base_price:.2f} | TP=${tp_price}")
 
     elif signal == "SELL" and has_position:
+        cooldown.record_signal_sell(symbol)
         qty = float(position.qty)
         cancelled = cancel_open_orders(trading_client, symbol)
         if cancelled:
@@ -152,6 +155,7 @@ def main():
     notify(get_account_info(trading_client, cfg.risk.risk_per_trade))
 
     loss_guard = DailyLossGuard(trading_client, cfg.risk.daily_max_loss_pct)
+    cooldown = StopLossCooldown(trading_client, cfg.risk.stop_loss_cooldown_minutes)
 
     while True:
         if not is_market_open(cfg.trading.trade_only_market_hours):
@@ -167,7 +171,7 @@ def main():
 
         for symbol in cfg.trading.symbols:
             try:
-                trade_symbol(symbol)
+                trade_symbol(symbol, cooldown)
             except Exception as e:
                 logger.error(f"{symbol} error: {e}", exc_info=True)
                 notify(f"⚠️ {symbol} error: {e}")

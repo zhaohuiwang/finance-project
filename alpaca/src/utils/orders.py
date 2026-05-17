@@ -12,25 +12,32 @@ def calculate_quantity(
     entry_price: float,
     stop_loss_pct: float,
     risk_per_trade: float,
+    max_position_pct: float,
 ) -> int:
-    """Calculate share quantity based on account equity, risk per trade, and buying power.
+    """Calculate share quantity using three independent caps, taking the smallest.
 
-    Caps result between 1 and 200 shares. Returns 1 as a safe fallback on API errors.
+    - risk_based:     risk_per_trade % of equity / stop distance  (primary sizing)
+    - position_based: max_position_pct % of equity / entry_price  (concentration limit)
+    - buying_power:   available buying power / entry_price         (liquidity constraint)
+
+    Returns 1 as a safe fallback on API errors.
     """
     try:
         account = trading_client.get_account()
         equity = float(account.equity)
         buying_power = float(account.buying_power)
 
-        risk_amount = equity * risk_per_trade
         stop_distance = entry_price * stop_loss_pct
+        risk_based = int((equity * risk_per_trade) / stop_distance) if stop_distance > 0 else 1
+        position_based = int((equity * max_position_pct) / entry_price)
+        buying_power_based = int(buying_power / (entry_price * 1.02))
 
-        shares = int(risk_amount / stop_distance) if stop_distance > 0 else 1
-        shares = max(1, min(shares, 200))
-        max_by_bp = int(buying_power / (entry_price * 1.02))
-
-        final_qty = max(1, min(shares, max_by_bp))
-        logger.info(f"Equity: ${equity:,.2f} | Risk: ${risk_amount:.2f} | Qty: {final_qty}")
+        final_qty = max(1, min(risk_based, position_based, buying_power_based))
+        logger.info(
+            f"Equity: ${equity:,.2f} | "
+            f"risk_based={risk_based} | position_based={position_based} | "
+            f"bp_based={buying_power_based} | Qty: {final_qty}"
+        )
         return final_qty
     except Exception as e:
         logger.warning(f"calculate_quantity failed ({e}), defaulting to 1")
