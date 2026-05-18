@@ -1,10 +1,9 @@
-
 import asyncio
 import os
 from collections import deque
 from datetime import datetime, timedelta
 
-from alpaca_trade_api.stream import Stream # Uses WebSockets, not REST
+from alpaca_trade_api.stream import Stream  # Uses WebSockets, not REST
 
 from alpaca.data.historical import CryptoHistoricalDataClient
 from alpaca.data.requests import CryptoBarsRequest
@@ -12,8 +11,8 @@ from alpaca.data.timeframe import TimeFrame
 from datetime import datetime
 
 from dotenv import load_dotenv
-load_dotenv()
 
+load_dotenv()
 
 
 SYMBOLS = ["AAPL", "TSLA", "NVDA"]  # expand to 500+
@@ -28,8 +27,10 @@ DROP_THRESHOLD = 2.0
 # Store rolling window per symbol
 price_data = {}
 
+
 def init_symbol(symbol):
     price_data[symbol] = deque()  # (timestamp, price)
+
 
 def update_window(symbol, price, timestamp):
     window = price_data[symbol]
@@ -40,12 +41,13 @@ def update_window(symbol, price, timestamp):
     while window and window[0][0] < cutoff:
         window.popleft()
 
+
 def check_drop(symbol):
     window = price_data[symbol]
 
     if len(window) < 2:
         return
-    
+
     # simple volatility filter
     if max(prices) - min(prices) < 0.5:
         return
@@ -63,7 +65,6 @@ def check_drop(symbol):
         # place_order(symbol)
 
 
-
 async def trade_handler(data):
     symbol = data.symbol
     price = data.price
@@ -75,14 +76,21 @@ async def trade_handler(data):
     update_window(symbol, price, timestamp)
     check_drop(symbol)
 
+
 async def main():
-    stream = Stream(os.getenv("ALPACA_API_KEY"), os.getenv("ALPACA_SECRET_KEY"), base_url=os.getenv("ALPACA_BASE_URL"), data_feed='iex')
+    stream = Stream(
+        os.getenv("ALPACA_API_KEY"),
+        os.getenv("ALPACA_SECRET_KEY"),
+        base_url=os.getenv("ALPACA_BASE_URL"),
+        data_feed="iex",
+    )
 
     for symbol in SYMBOLS:
         stream.subscribe_trades(trade_handler, symbol)
 
     print("🚀 Real-time scanner running...")
     await stream._run_forever()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

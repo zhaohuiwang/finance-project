@@ -37,7 +37,6 @@ model="claude-haiku-4-5",
 Keep claude-opus-4-7 only in execution_agent.py where the retry reasoning actually benefits from the best model. This drops the monthly cost to ~$10–15/month for 1 symbol.
 """
 
-
 import os
 import time
 import socket
@@ -61,8 +60,12 @@ from agents.execution_agent import ExecutionAgent
 # Prefer IPv4 to avoid connectivity issues on dual-stack systems
 socket.setdefaulttimeout(15)
 _orig_getaddrinfo = socket.getaddrinfo
+
+
 def _force_ipv4(*args, **kwargs):
     return [r for r in _orig_getaddrinfo(*args, **kwargs) if r[0] == socket.AF_INET]
+
+
 socket.getaddrinfo = _force_ipv4
 
 setup_logging()
@@ -138,8 +141,15 @@ def trade_symbol(
             return
         result = execution_agent.execute_buy(symbol, qty, base_price)
         if result["success"]:
-            log_trade(cfg.trading.log_file, symbol, "BUY", qty, base_price,
-                      "Agent: SMA + RSI", f"tp_pct={cfg.risk.take_profit_pct}")
+            log_trade(
+                cfg.trading.log_file,
+                symbol,
+                "BUY",
+                qty,
+                base_price,
+                "Agent: SMA + RSI",
+                f"tp_pct={cfg.risk.take_profit_pct}",
+            )
             notify(
                 f"🟢 *BUY (agent)*\n{symbol} × {qty} @ ~${base_price:.2f}\n"
                 f"_{reasoning[:120]}_"
@@ -156,11 +166,15 @@ def trade_symbol(
         result = execution_agent.execute_sell(symbol)
         if result["success"]:
             current_price = base_price or 0.0
-            log_trade(cfg.trading.log_file, symbol, "SELL", float(position.qty),
-                      current_price, "Agent: SMA crossover exit")
-            notify(
-                f"🔴 *SELL (agent)*\n{symbol}\n_{reasoning[:120]}_"
+            log_trade(
+                cfg.trading.log_file,
+                symbol,
+                "SELL",
+                float(position.qty),
+                current_price,
+                "Agent: SMA crossover exit",
             )
+            notify(f"🔴 *SELL (agent)*\n{symbol}\n_{reasoning[:120]}_")
         else:
             logger.error(f"{symbol}: SELL execution failed — {result['details']}")
             notify(f"⚠️ SELL failed for {symbol}: {result['details'][:100]}")
@@ -200,7 +214,9 @@ def main() -> None:
 
         for symbol in cfg.trading.symbols:
             try:
-                trade_symbol(symbol, signal_agent, risk_agent, execution_agent, cooldown)
+                trade_symbol(
+                    symbol, signal_agent, risk_agent, execution_agent, cooldown
+                )
             except Exception as e:
                 logger.error(f"{symbol} agent error: {e}", exc_info=True)
                 notify(f"⚠️ {symbol} agent error: {e}")

@@ -28,7 +28,9 @@ class DailyLossGuard:
             equity = float(self._client.get_account().equity)
             self._start_equity = equity
             self._tracking_date = today
-            logger.info(f"Daily loss guard reset — start equity: ${equity:,.2f} | Loss limit: {self._max_loss_pct:.1%}")
+            logger.info(
+                f"Daily loss guard reset — start equity: ${equity:,.2f} | Loss limit: {self._max_loss_pct:.1%}"
+            )
 
     def is_halted(self) -> bool:
         """Return True if today's drawdown has exceeded the daily max-loss limit."""
@@ -44,7 +46,9 @@ class DailyLossGuard:
                 return True
             return False
         except Exception as e:
-            logger.warning(f"DailyLossGuard check failed ({e}) — allowing trading to continue")
+            logger.warning(
+                f"DailyLossGuard check failed ({e}) — allowing trading to continue"
+            )
             return False
 
 
@@ -87,7 +91,9 @@ class StopLossCooldown:
         until = self._cooldown_until.get(symbol)
         if until and datetime.now() < until:
             remaining = int((until - datetime.now()).total_seconds() / 60)
-            logger.info(f"{symbol} in stop-loss cooldown — {remaining}m remaining, skipping BUY")
+            logger.info(
+                f"{symbol} in stop-loss cooldown — {remaining}m remaining, skipping BUY"
+            )
             return True
         return False
 
@@ -95,16 +101,19 @@ class StopLossCooldown:
         """Query recent closed orders to check if the last filled sell was a stop order."""
         try:
             orders = self._client.get_orders(
-                GetOrdersRequest(symbol=symbol, status=QueryOrderStatus.CLOSED, limit=10)
+                GetOrdersRequest(
+                    symbol=symbol, status=QueryOrderStatus.CLOSED, limit=10
+                )
             )
             filled_sells = [
-                o for o in orders
-                if o.side == o.side.SELL and o.filled_at is not None
+                o for o in orders if o.side == o.side.SELL and o.filled_at is not None
             ]
             if not filled_sells:
                 return False
             most_recent = max(filled_sells, key=lambda o: o.filled_at)
             return most_recent.order_type in (OrderType.STOP, OrderType.STOP_LIMIT)
         except Exception as e:
-            logger.warning(f"{symbol} could not determine exit type ({e}) — skipping cooldown")
+            logger.warning(
+                f"{symbol} could not determine exit type ({e}) — skipping cooldown"
+            )
             return False

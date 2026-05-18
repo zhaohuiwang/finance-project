@@ -1,4 +1,5 @@
 """Execution Agent — uses Claude with Alpaca tools to submit orders and handle retries."""
+
 import json
 
 import anthropic
@@ -48,7 +49,10 @@ _BUY_TOOLS = [
             "properties": {
                 "symbol": {"type": "string"},
                 "qty": {"type": "integer"},
-                "tp_price": {"type": "number", "description": "Take-profit limit price (must be > live_ask + 0.01)"},
+                "tp_price": {
+                    "type": "number",
+                    "description": "Take-profit limit price (must be > live_ask + 0.01)",
+                },
                 "stop_price": {"type": "number", "description": "Stop-loss price"},
             },
             "required": ["symbol", "qty", "tp_price", "stop_price"],
@@ -111,7 +115,9 @@ class ExecutionAgent:
                     stop_loss={"stop_price": inputs["stop_price"]},
                 )
                 result = self._trading.submit_order(order)
-                return json.dumps({"order_id": str(result.id), "status": str(result.status)})
+                return json.dumps(
+                    {"order_id": str(result.id), "status": str(result.status)}
+                )
 
             if name == "cancel_open_orders":
                 n = cancel_open_orders(self._trading, inputs["symbol"])
@@ -126,7 +132,9 @@ class ExecutionAgent:
                     time_in_force=TimeInForce.DAY,
                 )
                 result = self._trading.submit_order(order)
-                return json.dumps({"order_id": str(result.id), "status": str(result.status)})
+                return json.dumps(
+                    {"order_id": str(result.id), "status": str(result.status)}
+                )
 
             return json.dumps({"error": f"unknown tool: {name}"})
 
@@ -144,13 +152,21 @@ class ExecutionAgent:
                 model="claude-opus-4-7",
                 max_tokens=1024,
                 thinking={"type": "adaptive"},
-                system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
+                system=[
+                    {
+                        "type": "text",
+                        "text": _SYSTEM,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
                 tools=tools,
                 messages=messages,
             )
 
             if response.stop_reason == "end_turn":
-                return next((b.text for b in response.content if b.type == "text"), "done")
+                return next(
+                    (b.text for b in response.content if b.type == "text"), "done"
+                )
 
             if response.stop_reason != "tool_use":
                 return f"unexpected stop_reason: {response.stop_reason}"
@@ -161,12 +177,16 @@ class ExecutionAgent:
             for block in response.content:
                 if block.type == "tool_use":
                     result = self._run_tool(block.name, block.input)
-                    logger.info(f"[exec] tool {block.name}({block.input}) → {result[:120]}")
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
+                    logger.info(
+                        f"[exec] tool {block.name}({block.input}) → {result[:120]}"
+                    )
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result,
+                        }
+                    )
             messages.append({"role": "user", "content": tool_results})
 
         return "execution loop limit reached"

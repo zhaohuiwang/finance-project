@@ -28,7 +28,9 @@ def calculate_quantity(
         buying_power = float(account.buying_power)
 
         stop_distance = entry_price * stop_loss_pct
-        risk_based = int((equity * risk_per_trade) / stop_distance) if stop_distance > 0 else 1
+        risk_based = (
+            int((equity * risk_per_trade) / stop_distance) if stop_distance > 0 else 1
+        )
         position_based = int((equity * max_position_pct) / entry_price)
         buying_power_based = int(buying_power / (entry_price * 1.02))
 

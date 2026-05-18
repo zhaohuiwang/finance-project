@@ -69,8 +69,8 @@ def is_uptrend(df: pd.DataFrame, fast_ma: int, slow_ma: int) -> bool:
         return True  # not enough data — don't suppress the signal
     # fast = df["close"].rolling(window=fast_ma).mean().iloc[-1]
     # slow = df["close"].rolling(window=slow_ma).mean().iloc[-1]
-    
+
     fast = df["close"].ewm(span=fast_ma, adjust=False).mean().iloc[-1]
     slow = df["close"].ewm(span=slow_ma, adjust=False).mean().iloc[-1]
-    
+
     return bool(fast > slow)

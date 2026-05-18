@@ -18,6 +18,7 @@ This is the recommended default over agent_trader.py:
 
 Run:  uv run scripts/smart_ma_trader.py
 """
+
 import os
 import re
 import time
@@ -35,7 +36,12 @@ from utils.logger import setup_logging, get_logger
 from utils.market import is_market_open, get_latest_ask
 from utils.notify import send_telegram_message
 from utils.trade_log import init_trade_log, log_trade
-from utils.orders import calculate_quantity, cancel_open_orders, get_account_info, get_position
+from utils.orders import (
+    calculate_quantity,
+    cancel_open_orders,
+    get_account_info,
+    get_position,
+)
 from utils.risk import DailyLossGuard, StopLossCooldown
 from agents.signal_agent import SignalAgent
 
@@ -45,8 +51,12 @@ logger = get_logger(__name__)
 # Prefer IPv4 to avoid connectivity issues on dual-stack systems
 socket.setdefaulttimeout(15)
 _orig_getaddrinfo = socket.getaddrinfo
+
+
 def _force_ipv4(*args, **kwargs):
     return [r for r in _orig_getaddrinfo(*args, **kwargs) if r[0] == socket.AF_INET]
+
+
 socket.getaddrinfo = _force_ipv4
 
 load_dotenv()
@@ -77,7 +87,9 @@ def notify(message: str) -> None:
     send_telegram_message(message, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
 
 
-def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCooldown) -> None:
+def trade_symbol(
+    symbol: str, signal_agent: SignalAgent, cooldown: StopLossCooldown
+) -> None:
     """One iteration: Claude signal + deterministic execution."""
 
     # ── 1. Signal (Claude) ────────────────────────────────────────────────────
@@ -110,14 +122,23 @@ def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCoold
     if signal == "BUY" and not has_position and not cooldown.is_cooling_down(symbol):
         live_ask = get_latest_ask(data_client, symbol)
         logger.debug(f"{symbol} live_ask={live_ask}, bar_close={current_price:.2f}")
-        base_price = live_ask if live_ask and live_ask > current_price else current_price
-
-        qty = calculate_quantity(
-            trading_client, base_price,
-            cfg.risk.stop_loss_pct, cfg.risk.risk_per_trade, cfg.risk.max_position_pct,
+        base_price = (
+            live_ask if live_ask and live_ask > current_price else current_price
         )
 
-        tp_price = round(base_price * (1 + cfg.risk.take_profit_pct), 2) if cfg.risk.take_profit_pct else None
+        qty = calculate_quantity(
+            trading_client,
+            base_price,
+            cfg.risk.stop_loss_pct,
+            cfg.risk.risk_per_trade,
+            cfg.risk.max_position_pct,
+        )
+
+        tp_price = (
+            round(base_price * (1 + cfg.risk.take_profit_pct), 2)
+            if cfg.risk.take_profit_pct
+            else None
+        )
         if tp_price and tp_price <= base_price + 0.01:
             tp_price = round(base_price + 0.02, 2)
 
@@ -129,7 +150,9 @@ def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCoold
             time_in_force=TimeInForce.DAY,
             order_class="bracket",
             take_profit=dict(limit_price=tp_price) if tp_price else None,
-            stop_loss=dict(stop_price=round(base_price * (1 - cfg.risk.stop_loss_pct), 2)),
+            stop_loss=dict(
+                stop_price=round(base_price * (1 - cfg.risk.stop_loss_pct), 2)
+            ),
         )
         try:
             trading_client.submit_order(order)
@@ -138,9 +161,15 @@ def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCoold
             if not match:
                 raise
             alpaca_base = float(match.group(1))
-            logger.warning(f"{symbol} TP validation failed — Alpaca base_price={alpaca_base}, retrying")
+            logger.warning(
+                f"{symbol} TP validation failed — Alpaca base_price={alpaca_base}, retrying"
+            )
             base_price = alpaca_base
-            tp_price = round(alpaca_base * (1 + cfg.risk.take_profit_pct), 2) if cfg.risk.take_profit_pct else None
+            tp_price = (
+                round(alpaca_base * (1 + cfg.risk.take_profit_pct), 2)
+                if cfg.risk.take_profit_pct
+                else None
+            )
             order = MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
@@ -149,11 +178,21 @@ def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCoold
                 time_in_force=TimeInForce.DAY,
                 order_class="bracket",
                 take_profit=dict(limit_price=tp_price) if tp_price else None,
-                stop_loss=dict(stop_price=round(alpaca_base * (1 - cfg.risk.stop_loss_pct), 2)),
+                stop_loss=dict(
+                    stop_price=round(alpaca_base * (1 - cfg.risk.stop_loss_pct), 2)
+                ),
             )
             trading_client.submit_order(order)
 
-        log_trade(cfg.trading.log_file, symbol, "BUY", qty, base_price, "Smart: SMA + RSI + News", f"TP={tp_price}")
+        log_trade(
+            cfg.trading.log_file,
+            symbol,
+            "BUY",
+            qty,
+            base_price,
+            "Smart: SMA + RSI + News",
+            f"TP={tp_price}",
+        )
         notify(
             f"🟢 *BUY (smart)*\n{symbol} × {qty} @ ~${base_price:.2f} | TP=${tp_price}\n"
             f"_{reasoning[:140]}_"
@@ -165,7 +204,9 @@ def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCoold
         qty = float(position.qty)
         cancelled = cancel_open_orders(trading_client, symbol)
         if cancelled:
-            logger.info(f"{symbol} cancelled {cancelled} open bracket order(s) before selling")
+            logger.info(
+                f"{symbol} cancelled {cancelled} open bracket order(s) before selling"
+            )
         order = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
@@ -174,7 +215,14 @@ def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCoold
             time_in_force=TimeInForce.DAY,
         )
         trading_client.submit_order(order)
-        log_trade(cfg.trading.log_file, symbol, "SELL", qty, current_price, "Smart: SMA crossover exit")
+        log_trade(
+            cfg.trading.log_file,
+            symbol,
+            "SELL",
+            qty,
+            current_price,
+            "Smart: SMA crossover exit",
+        )
         notify(
             f"🔴 *SELL (smart)*\n{symbol} × {qty} @ ~${current_price:.2f}\n"
             f"_{reasoning[:140]}_"
@@ -198,7 +246,9 @@ def main() -> None:
 
         if loss_guard.is_halted():
             logger.warning("Daily loss limit reached — skipping trading until tomorrow")
-            notify(f"⚠️ Daily loss limit ({cfg.risk.daily_max_loss_pct:.1%}) reached — trading halted for today")
+            notify(
+                f"⚠️ Daily loss limit ({cfg.risk.daily_max_loss_pct:.1%}) reached — trading halted for today"
+            )
             time.sleep(60)
             continue
 

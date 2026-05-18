@@ -1,4 +1,5 @@
 """Signal Agent — asks Claude to reason about MA crossover, RSI, and recent news."""
+
 import json
 from datetime import datetime, timezone
 
@@ -37,12 +38,14 @@ def _fetch_news(news_client: NewsClient, symbol: str, max_items: int = 5) -> lis
             age_h = round(
                 (datetime.now(timezone.utc) - item.created_at).total_seconds() / 3600, 1
             )
-            result.append({
-                "headline": item.headline,
-                "source": item.source,
-                "age_hours": age_h,
-                "summary": (item.summary or "")[:200],
-            })
+            result.append(
+                {
+                    "headline": item.headline,
+                    "source": item.source,
+                    "age_hours": age_h,
+                    "summary": (item.summary or "")[:200],
+                }
+            )
         return result
     except Exception as e:
         logger.debug(f"Alpaca news fetch failed for {symbol}: {e}")
@@ -103,14 +106,23 @@ class SignalAgent:
         response = self._client.messages.create(
             model="claude-haiku-4-5",
             max_tokens=512,
-            system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            system=[
+                {
+                    "type": "text",
+                    "text": _SYSTEM,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             output_config={
                 "format": {
                     "type": "json_schema",
                     "schema": {
                         "type": "object",
                         "properties": {
-                            "signal": {"type": "string", "enum": ["BUY", "SELL", "HOLD"]},
+                            "signal": {
+                                "type": "string",
+                                "enum": ["BUY", "SELL", "HOLD"],
+                            },
                             "confidence": {"type": "number"},
                             "reasoning": {"type": "string"},
                         },
@@ -119,7 +131,12 @@ class SignalAgent:
                     },
                 }
             },
-            messages=[{"role": "user", "content": f"Analyze:\n{json.dumps(context, indent=2)}"}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Analyze:\n{json.dumps(context, indent=2)}",
+                }
+            ],
         )
 
         text = next(b.text for b in response.content if b.type == "text")

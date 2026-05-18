@@ -22,7 +22,9 @@ def is_market_open(trade_only_market_hours: bool) -> bool:
 def get_latest_ask(data_client: StockHistoricalDataClient, symbol: str) -> float | None:
     """Return the current ask price for a symbol, or None on failure."""
     try:
-        quote = data_client.get_stock_latest_quote(StockLatestQuoteRequest(symbol_or_symbols=symbol))
+        quote = data_client.get_stock_latest_quote(
+            StockLatestQuoteRequest(symbol_or_symbols=symbol)
+        )
         return float(quote[symbol].ask_price)
     except Exception:
         return None

@@ -1,4 +1,5 @@
 """Risk Agent — asks Claude to approve a trade given account state, sector RS, and earnings."""
+
 import json
 from datetime import date
 
@@ -43,8 +44,12 @@ def _get_sector_relative_strength(symbol: str, sector_etf: str | None) -> float 
     if not sector_etf:
         return None
     try:
-        sym = yf.download(symbol, period="5d", interval="1d", auto_adjust=True, progress=False)
-        etf = yf.download(sector_etf, period="5d", interval="1d", auto_adjust=True, progress=False)
+        sym = yf.download(
+            symbol, period="5d", interval="1d", auto_adjust=True, progress=False
+        )
+        etf = yf.download(
+            sector_etf, period="5d", interval="1d", auto_adjust=True, progress=False
+        )
         if len(sym) < 2 or len(etf) < 2:
             return None
         sym_ret = float(sym["Close"].iloc[-1] / sym["Close"].iloc[0] - 1)
@@ -65,7 +70,11 @@ def _get_days_to_earnings(symbol: str) -> int | None:
         if hasattr(cal, "get"):
             dates = cal.get("Earnings Date") or []
         elif hasattr(cal, "loc"):
-            dates = cal.loc["Earnings Date"].tolist() if "Earnings Date" in cal.index else []
+            dates = (
+                cal.loc["Earnings Date"].tolist()
+                if "Earnings Date" in cal.index
+                else []
+            )
         else:
             return None
         if not dates:
@@ -102,17 +111,27 @@ class RiskAgent:
             buying_power = float(account.buying_power)
         except Exception as e:
             logger.warning(f"[risk] could not fetch account: {e}")
-            return {"approved": False, "qty": None, "base_price": None, "reasoning": f"Account fetch failed: {e}"}
+            return {
+                "approved": False,
+                "qty": None,
+                "base_price": None,
+                "reasoning": f"Account fetch failed: {e}",
+            }
 
         live_ask = get_latest_ask(self._data, symbol)
         sector_etf = t.sector_etfs.get(symbol)
         sector_rs = _get_sector_relative_strength(symbol, sector_etf)
-        days_to_earnings = _get_days_to_earnings(symbol) if t.earnings_blackout_days > 0 else None
+        days_to_earnings = (
+            _get_days_to_earnings(symbol) if t.earnings_blackout_days > 0 else None
+        )
 
         context = {
             "symbol": symbol,
             "proposed_signal": signal,
-            "account": {"equity": round(equity, 2), "buying_power": round(buying_power, 2)},
+            "account": {
+                "equity": round(equity, 2),
+                "buying_power": round(buying_power, 2),
+            },
             "live_ask": live_ask,
             "position": {"open": has_position},
             "daily_loss_halted": self._loss_guard.is_halted(),
@@ -138,7 +157,13 @@ class RiskAgent:
         response = self._client.messages.create(
             model="claude-haiku-4-5",
             max_tokens=512,
-            system=[{"type": "text", "text": _SYSTEM, "cache_control": {"type": "ephemeral"}}],
+            system=[
+                {
+                    "type": "text",
+                    "text": _SYSTEM,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             output_config={
                 "format": {
                     "type": "json_schema",
@@ -155,7 +180,12 @@ class RiskAgent:
                     },
                 }
             },
-            messages=[{"role": "user", "content": f"Evaluate this trade:\n{json.dumps(context, indent=2)}"}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Evaluate this trade:\n{json.dumps(context, indent=2)}",
+                }
+            ],
         )
 
         text = next(b.text for b in response.content if b.type == "text")
