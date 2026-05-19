@@ -18,6 +18,7 @@ strategy:
   use_5m_confirmation: true    # Require 5-min uptrend before taking a 1-min BUY signal
   min_signal_confidence: 0.65  # smart_ma.py only: skip signal if Claude's confidence is below this
 
+
 risk:
   risk_per_trade: 0.01         # Fraction of equity to risk per trade (1%)
   max_position_pct: 0.10       # Max fraction of equity in any single position (10%)
