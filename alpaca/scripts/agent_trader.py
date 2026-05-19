@@ -61,9 +61,13 @@ from alpaca.data.historical import StockHistoricalDataClient, NewsClient
 
 from config import load_config
 from utils.logger import setup_logging, get_logger
-from utils.notify import send_telegram_message
+from utils.notify import notify
 from utils.trade_log import init_trade_log, log_trade
-from utils.orders import get_position, update_atr_trailing_stop
+from utils.orders import (
+    get_position,
+    manage_trailing_stops,
+    update_atr_trailing_stop
+)
 from utils.risk import DailyLossGuard, StopLossCooldown
 from utils.market import is_market_open
 from agents.signal_agent import SignalAgent
@@ -99,10 +103,6 @@ data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)
 news_client = NewsClient(API_KEY, SECRET_KEY)
 NY_TZ = pytz.timezone("America/New_York")
 
-
-def notify(message: str) -> None:
-    logger.info(message)
-    send_telegram_message(message, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
 
 
 def manage_trailing_stops() -> None:

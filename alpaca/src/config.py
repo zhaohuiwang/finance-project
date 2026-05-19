@@ -111,14 +111,16 @@ class RiskConfig(BaseModel):
     daily_max_loss_pct: float
     stop_loss_cooldown_minutes: int
 
-    # === NEW: ATR Trailing Stop ===
+    # ==================== ATR Settings ====================
     atr_period: int = 14
     atr_multiplier: float = 2.5
     trailing_stop_enabled: bool = True
     trail_update_interval_minutes: int = 5
+    use_wilder_atr: bool = True
 
     @field_validator(
-        "risk_per_trade", "max_position_pct", "stop_loss_pct", "trailing_stop_pct", "atr_multiplier"
+        "risk_per_trade", "max_position_pct", "stop_loss_pct", 
+        "trailing_stop_pct", "atr_multiplier"
     )
     @classmethod
     def must_be_positive(cls, v: float) -> float:

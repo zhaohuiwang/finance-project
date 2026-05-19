@@ -87,10 +87,7 @@ def update_atr_trailing_stop(
     symbol: str,
     cfg
 ) -> bool:
-    """
-    Update the trailing stop order using current ATR.
-    Called every loop for any open position.
-    """
+    """Update trailing stop using ATR (Wilder's or Simple)."""
     if not getattr(cfg.risk, 'trailing_stop_enabled', False):
         return False
 
@@ -99,15 +96,15 @@ def update_atr_trailing_stop(
         if not position:
             return False
 
-        # Get recent bars for ATR
-        df = get_bars(
-            data_client, 
-            symbol, 
-            cfg.trading.alpaca_timeframe, 
-            limit=150
+        df = get_bars(data_client, symbol, cfg.trading.alpaca_timeframe, limit=150)
+
+        # Use config toggle for Wilder’s method
+        atr = calculate_atr(
+            df, 
+            period=cfg.risk.atr_period,
+            wilder=cfg.risk.use_wilder_atr
         )
 
-        atr = calculate_atr(df, cfg.risk.atr_period)
         if atr is None:
             return False
 
@@ -116,10 +113,8 @@ def update_atr_trailing_stop(
             current_price, atr, cfg.risk.atr_multiplier
         )
 
-        # Cancel any existing open orders (old stops)
         cancel_open_orders(trading_client, symbol)
 
-        # Place new trailing stop order
         order = MarketOrderRequest(
             symbol=symbol,
             qty=float(position.qty),
@@ -130,9 +125,10 @@ def update_atr_trailing_stop(
         )
 
         trading_client.submit_order(order)
-        
+
+        method = "Wilder's" if cfg.risk.use_wilder_atr else "Simple"
         logger.info(
-            f"✅ ATR Trailing Stop updated → {symbol} @ ${trail_price:.2f} "
+            f"✅ {method} ATR Trailing Stop updated → {symbol} @ ${trail_price:.2f} "
             f"(ATR=${atr:.3f} × {cfg.risk.atr_multiplier})"
         )
         return True
@@ -140,3 +136,23 @@ def update_atr_trailing_stop(
     except Exception as e:
         logger.error(f"Failed to update ATR trailing stop for {symbol}: {e}")
         return False
+    
+    
+def manage_trailing_stops(trading_client, data_client, cfg) -> None:
+    """
+    Update ATR trailing stops for all open positions.
+    Shared across ma_trader.py, smart_ma_trader.py, and agent_trader.py.
+    """
+    if not getattr(cfg.risk, 'trailing_stop_enabled', False):
+        return
+
+    method = "Wilder's Smoothed" if getattr(cfg.risk, 'use_wilder_atr', True) else "Simple"
+
+    for symbol in cfg.trading.symbols:
+        try:
+            if get_position(trading_client, symbol):
+                success = update_atr_trailing_stop(trading_client, data_client, symbol, cfg)
+                if success:
+                    logger.debug(f"[{method} ATR] Trailing stop updated for {symbol}")
+        except Exception as e:
+            logger.error(f"Trailing stop update failed for {symbol}: {e}")

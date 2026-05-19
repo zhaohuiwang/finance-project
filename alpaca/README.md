@@ -21,6 +21,7 @@ alpaca/
 │   │   ├── risk_agent.py       # Claude checks risk, sector strength, earnings
 │   │   └── execution_agent.py  # Claude submits orders via tool use
 │   └── utils/
+│       ├── atr.py
 │       ├── logger.py           # Logging setup
 │       ├── market.py           # Market hours, bar data, live ask
 │       ├── notify.py           # Telegram notifications

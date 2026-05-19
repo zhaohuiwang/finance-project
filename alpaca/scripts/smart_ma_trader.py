@@ -26,13 +26,14 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from config import load_config
 from utils.logger import setup_logging, get_logger
 from utils.market import is_market_open, get_latest_ask
-from utils.notify import send_telegram_message
+from utils.notify import notify
 from utils.trade_log import init_trade_log, log_trade
 from utils.orders import (
     calculate_quantity,
     cancel_open_orders,
     get_account_info,
     get_position,
+    manage_trailing_stops,
     update_atr_trailing_stop,
 )
 from utils.risk import DailyLossGuard, StopLossCooldown
@@ -72,12 +73,6 @@ data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)
 news_client = NewsClient(API_KEY, SECRET_KEY)
 
 NY_TZ = pytz.timezone("America/New_York")
-
-
-def notify(message: str) -> None:
-    """Log and forward a message to Telegram."""
-    logger.info(message)
-    send_telegram_message(message, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
 
 
 def manage_trailing_stops() -> None:
