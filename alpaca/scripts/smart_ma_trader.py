@@ -1,22 +1,13 @@
+# ================================================================================
+# FILE: /home/zhaohuiwang/dev/finance-project/alpaca/scripts/smart_ma_trader.py
+# ================================================================================
+
 """
-Smart MA Trading Bot
+Smart MA Trading Bot with ATR Trailing Stops
 
-Hybrid: Claude signal analysis + deterministic execution.
-
-Signal  → SignalAgent (claude-haiku-4-5)
-           MA crossover, RSI, volume ratio, Alpaca News headlines
-           Returns BUY / SELL / HOLD + confidence score + reasoning
-
-Execution → identical to simple_ma.py
-             bracket orders, tp retry, position sizing, risk guards
-
-This is the recommended default over agent_trader.py:
-- Only one Claude call per iteration (signal only)
-- Execution and risk remain deterministic and fast
-- News context genuinely changes signal quality
-- ~$0.40 / day per symbol (Haiku 4.5)
-
-Run:  uv run scripts/smart_ma_trader.py
+Based on ma_trader.py with the following enhancements:
+- Claude (SignalAgent) for signal generation using MA + RSI + Volume + News
+- Everything else (risk, execution, trailing stops, logging, etc.) kept consistent
 """
 
 import os
@@ -30,6 +21,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderType
 from alpaca.data.historical import StockHistoricalDataClient, NewsClient
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from config import load_config
 from utils.logger import setup_logging, get_logger
@@ -41,6 +33,7 @@ from utils.orders import (
     cancel_open_orders,
     get_account_info,
     get_position,
+    update_atr_trailing_stop,
 )
 from utils.risk import DailyLossGuard, StopLossCooldown
 from agents.signal_agent import SignalAgent
@@ -48,7 +41,7 @@ from agents.signal_agent import SignalAgent
 setup_logging()
 logger = get_logger(__name__)
 
-# Prefer IPv4 to avoid connectivity issues on dual-stack systems
+# Prefer IPv4
 socket.setdefaulttimeout(15)
 _orig_getaddrinfo = socket.getaddrinfo
 
@@ -60,7 +53,6 @@ def _force_ipv4(*args, **kwargs):
 socket.getaddrinfo = _force_ipv4
 
 load_dotenv()
-
 cfg = load_config()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -69,7 +61,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 if cfg.trading.paper_trading:
     API_KEY = os.getenv("ALPACA_PAPER_API_KEY")
     SECRET_KEY = os.getenv("ALPACA_PAPER_SECRET_KEY")
-    logger.info("Running in PAPER TRADING mode (smart)")
+    logger.info("Running in PAPER TRADING mode (smart + ATR)")
 else:
     API_KEY = os.getenv("ALPACA_API_KEY")
     SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
@@ -83,16 +75,28 @@ NY_TZ = pytz.timezone("America/New_York")
 
 
 def notify(message: str) -> None:
+    """Log and forward a message to Telegram."""
     logger.info(message)
     send_telegram_message(message, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
 
 
-def trade_symbol(
-    symbol: str, signal_agent: SignalAgent, cooldown: StopLossCooldown
-) -> None:
-    """One iteration: Claude signal + deterministic execution."""
+def manage_trailing_stops() -> None:
+    """Update ATR-based trailing stops for all open positions (same as ma_trader)."""
+    if not cfg.risk.trailing_stop_enabled:
+        return
 
-    # ── 1. Signal (Claude) ────────────────────────────────────────────────────
+    for symbol in cfg.trading.symbols:
+        try:
+            if get_position(trading_client, symbol):
+                update_atr_trailing_stop(trading_client, data_client, symbol, cfg)
+        except Exception as e:
+            logger.error(f"Trailing stop update failed for {symbol}: {e}")
+
+
+def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCooldown) -> None:
+    """Signal from Claude + deterministic execution (aligned with ma_trader.py)."""
+
+    # === Claude Signal (the only major difference) ===
     result = signal_agent.analyze(symbol)
     signal = result["signal"]
     confidence = result["confidence"]
@@ -107,24 +111,18 @@ def trade_symbol(
         f"{symbol} @ ${current_price:.2f} | Signal: {signal} ({confidence:.0%}) | {reasoning[:80]}"
     )
 
-    # Skip low-confidence signals — treat them as HOLD
+    # Skip low-confidence signals
     if signal != "HOLD" and confidence < cfg.strategy.min_signal_confidence:
-        logger.info(
-            f"{symbol} signal {signal} confidence {confidence:.0%} below threshold "
-            f"{cfg.strategy.min_signal_confidence:.0%} — treating as HOLD"
-        )
+        logger.info(f"{symbol} low confidence ({confidence:.0%}) — treated as HOLD")
         return
 
     if signal == "HOLD":
         return
 
-    # ── 2. BUY execution (deterministic) ─────────────────────────────────────
+    # ==================== BUY (identical logic to ma_trader) ====================
     if signal == "BUY" and not has_position and not cooldown.is_cooling_down(symbol):
         live_ask = get_latest_ask(data_client, symbol)
-        logger.debug(f"{symbol} live_ask={live_ask}, bar_close={current_price:.2f}")
-        base_price = (
-            live_ask if live_ask and live_ask > current_price else current_price
-        )
+        base_price = live_ask if live_ask and live_ask > current_price else current_price
 
         qty = calculate_quantity(
             trading_client,
@@ -134,13 +132,12 @@ def trade_symbol(
             cfg.risk.max_position_pct,
         )
 
+        initial_stop = round(base_price * (1 - cfg.risk.stop_loss_pct), 2)
         tp_price = (
             round(base_price * (1 + cfg.risk.take_profit_pct), 2)
             if cfg.risk.take_profit_pct
             else None
         )
-        if tp_price and tp_price <= base_price + 0.01:
-            tp_price = round(base_price + 0.02, 2)
 
         order = MarketOrderRequest(
             symbol=symbol,
@@ -150,63 +147,37 @@ def trade_symbol(
             time_in_force=TimeInForce.DAY,
             order_class="bracket",
             take_profit=dict(limit_price=tp_price) if tp_price else None,
-            stop_loss=dict(
-                stop_price=round(base_price * (1 - cfg.risk.stop_loss_pct), 2)
-            ),
+            stop_loss=dict(stop_price=initial_stop),
         )
+
         try:
             trading_client.submit_order(order)
-        except Exception as order_err:
-            match = re.search(r'"base_price"\s*:\s*"?([\d.]+)"?', str(order_err))
-            if not match:
-                raise
-            alpaca_base = float(match.group(1))
-            logger.warning(
-                f"{symbol} TP validation failed — Alpaca base_price={alpaca_base}, retrying"
+            log_trade(
+                cfg.trading.log_file,
+                symbol,
+                "BUY",
+                qty,
+                base_price,
+                "Smart: Claude + News + ATR Trail",
+                f"TP={tp_price} | InitStop={initial_stop}",
             )
-            base_price = alpaca_base
-            tp_price = (
-                round(alpaca_base * (1 + cfg.risk.take_profit_pct), 2)
-                if cfg.risk.take_profit_pct
-                else None
+            notify(
+                f"🟢 *BUY (smart)*\n{symbol} × {qty} @ ~${base_price:.2f} | "
+                f"TP=${tp_price}\n_{reasoning[:140]}_"
             )
-            order = MarketOrderRequest(
-                symbol=symbol,
-                qty=qty,
-                side=OrderSide.BUY,
-                type=OrderType.MARKET,
-                time_in_force=TimeInForce.DAY,
-                order_class="bracket",
-                take_profit=dict(limit_price=tp_price) if tp_price else None,
-                stop_loss=dict(
-                    stop_price=round(alpaca_base * (1 - cfg.risk.stop_loss_pct), 2)
-                ),
-            )
-            trading_client.submit_order(order)
+        except Exception as e:
+            logger.error(f"BUY order failed for {symbol}: {e}", exc_info=True)
+            notify(f"❌ BUY failed for {symbol}: {str(e)[:120]}")
 
-        log_trade(
-            cfg.trading.log_file,
-            symbol,
-            "BUY",
-            qty,
-            base_price,
-            "Smart: SMA + RSI + News",
-            f"TP={tp_price}",
-        )
-        notify(
-            f"🟢 *BUY (smart)*\n{symbol} × {qty} @ ~${base_price:.2f} | TP=${tp_price}\n"
-            f"_{reasoning[:140]}_"
-        )
-
-    # ── 3. SELL execution (deterministic) ────────────────────────────────────
+    # ==================== SELL (identical logic to ma_trader) ====================
     elif signal == "SELL" and has_position:
         cooldown.record_signal_sell(symbol)
         qty = float(position.qty)
         cancelled = cancel_open_orders(trading_client, symbol)
+
         if cancelled:
-            logger.info(
-                f"{symbol} cancelled {cancelled} open bracket order(s) before selling"
-            )
+            logger.info(f"{symbol} cancelled {cancelled} open order(s) before selling")
+
         order = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
@@ -214,24 +185,26 @@ def trade_symbol(
             type=OrderType.MARKET,
             time_in_force=TimeInForce.DAY,
         )
-        trading_client.submit_order(order)
-        log_trade(
-            cfg.trading.log_file,
-            symbol,
-            "SELL",
-            qty,
-            current_price,
-            "Smart: SMA crossover exit",
-        )
-        notify(
-            f"🔴 *SELL (smart)*\n{symbol} × {qty} @ ~${current_price:.2f}\n"
-            f"_{reasoning[:140]}_"
-        )
+
+        try:
+            trading_client.submit_order(order)
+            log_trade(
+                cfg.trading.log_file,
+                symbol,
+                "SELL",
+                qty,
+                current_price,
+                "Smart: Claude Exit",
+            )
+            notify(f"🔴 *SELL (smart)*\n{symbol} × {qty} @ ~${current_price:.2f}")
+        except Exception as e:
+            logger.error(f"SELL order failed for {symbol}: {e}", exc_info=True)
+            notify(f"❌ SELL failed for {symbol}: {str(e)[:100]}")
 
 
 def main() -> None:
-    init_trade_log(cfg.trading.log_file)
-    logger.info(f"Starting smart bot — symbols: {cfg.trading.symbols}")
+    init_trade_log(cfg.trading.log_file)   # dated file handled inside
+    logger.info(f"Starting Smart MA Bot with ATR Trailing Stops — symbols: {cfg.trading.symbols}")
     notify(get_account_info(trading_client, cfg.risk.risk_per_trade))
 
     loss_guard = DailyLossGuard(trading_client, cfg.risk.daily_max_loss_pct)
@@ -245,10 +218,8 @@ def main() -> None:
             continue
 
         if loss_guard.is_halted():
-            logger.warning("Daily loss limit reached — skipping trading until tomorrow")
-            notify(
-                f"⚠️ Daily loss limit ({cfg.risk.daily_max_loss_pct:.1%}) reached — trading halted for today"
-            )
+            logger.warning("Daily loss limit reached — trading halted for today")
+            notify(f"⚠️ Daily loss limit ({cfg.risk.daily_max_loss_pct:.1%}) reached")
             time.sleep(60)
             continue
 
@@ -258,6 +229,9 @@ def main() -> None:
             except Exception as e:
                 logger.error(f"{symbol} error: {e}", exc_info=True)
                 notify(f"⚠️ {symbol} error: {e}")
+
+        # === ATR Trailing Stop Management (same as ma_trader) ===
+        manage_trailing_stops()
 
         time.sleep(cfg.trading.check_interval)
 

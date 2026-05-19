@@ -1,3 +1,7 @@
+# ================================================================================
+# FILE: /home/zhaohuiwang/dev/finance-project/alpaca/src/config.py
+# ================================================================================
+
 from pathlib import Path
 from typing import Optional
 
@@ -46,9 +50,7 @@ class TradingConfig(BaseModel):
     def timeframe_valid(cls, v: str) -> str:
         key = v.lower()
         if key not in _TIMEFRAME_MAP:
-            raise ValueError(
-                f"timeframe must be one of {list(_TIMEFRAME_MAP)}, got '{v}'"
-            )
+            raise ValueError(f"timeframe must be one of {list(_TIMEFRAME_MAP)}, got '{v}'")
         return key
 
     @field_validator("check_interval")
@@ -89,9 +91,7 @@ class StrategyConfig(BaseModel):
     @model_validator(mode="after")
     def fast_less_than_slow(self) -> "StrategyConfig":
         if self.fast_ma >= self.slow_ma:
-            raise ValueError(
-                f"fast_ma ({self.fast_ma}) must be less than slow_ma ({self.slow_ma})"
-            )
+            raise ValueError(f"fast_ma ({self.fast_ma}) must be less than slow_ma ({self.slow_ma})")
         return self
 
     @field_validator("rsi_max_for_buy")
@@ -111,8 +111,14 @@ class RiskConfig(BaseModel):
     daily_max_loss_pct: float
     stop_loss_cooldown_minutes: int
 
+    # === NEW: ATR Trailing Stop ===
+    atr_period: int = 14
+    atr_multiplier: float = 2.5
+    trailing_stop_enabled: bool = True
+    trail_update_interval_minutes: int = 5
+
     @field_validator(
-        "risk_per_trade", "max_position_pct", "stop_loss_pct", "trailing_stop_pct"
+        "risk_per_trade", "max_position_pct", "stop_loss_pct", "trailing_stop_pct", "atr_multiplier"
     )
     @classmethod
     def must_be_positive(cls, v: float) -> float:
@@ -136,11 +142,11 @@ class RiskConfig(BaseModel):
             raise ValueError("take_profit_pct must be positive if set")
         return v
 
-    @field_validator("stop_loss_cooldown_minutes")
+    @field_validator("stop_loss_cooldown_minutes", "atr_period")
     @classmethod
-    def cooldown_non_negative(cls, v: int) -> int:
+    def non_negative(cls, v: int) -> int:
         if v < 0:
-            raise ValueError("stop_loss_cooldown_minutes must be >= 0")
+            raise ValueError("value must be >= 0")
         return v
 
     @field_validator("daily_max_loss_pct")

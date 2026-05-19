@@ -27,3 +27,8 @@ risk:
   take_profit_pct: 0.06        # Take profit target; set to null to rely solely on trailing stop
   daily_max_loss_pct: 0.03     # Halt trading for the day if equity drops more than 3%
   stop_loss_cooldown_minutes: 30  # Block re-entry for this many minutes after a stop loss fires
+  
+  atr_period: 14                 # Standard ATR period
+  atr_multiplier: 2.5            # Stop distance = ATR × 2.5 [2.0, 2.5, 3.0, 3.5] the higher the multiplier, the wider the stop loss, which can reduce false stop-outs in volatile markets but also increases risk.
+  trailing_stop_enabled: true    # Set to false to disable dynamic trailing
+  trail_update_interval_minutes: 5   # How often to adjust the trailing stop

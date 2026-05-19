@@ -1,26 +1,12 @@
+# ================================================================================
+# FILE: /home/zhaohuiwang/dev/finance-project/alpaca/scripts/ma_trader.py
+# ================================================================================
+
 """
-MA Crossover Trading Bot
+MA Crossover Trading Bot with ATR Trailing Stops
 
-Strategy: MA_fast > MA_slow or Fast MA crosses above Slow MA + RSI below threshold → BUY
-          MA_fast < MA_slow or Fast MA crosses below Slow MA → SELL (exit position)
-
-Simple Moving Average (SMA) gives equal weight to all prices in the period.
-Exponential Moving Average (EMA) gives more weight to recent prices.
-
-MA Crossover
-    EMA crossover (fast/slow) — BUY on bullish cross, SELL on bearish cross (signals.py:45-49)
-RSI Filter
-    BUY only if RSI < rsi_max_for_buy (signals.py:46); configurable period and threshold
-Volume Filter
-    BUY suppressed if current volume < volume_min_ratio × 20-bar avg (signals.py:53-56); SELL never suppressed
-Stop Loss
-    Bracket order with stop_price = base_price × (1 - stop_loss_pct) (ma_trader.py:132)
-Trend Confirmation
-    Optional 5-minute higher-timeframe EMA confirmation before acting on 1-min BUY signals (ma_trader.py:90-94)
-Volatility Filter
-    Not implemented — there's no ATR, Bollinger Band width, or similar volatility gate
-
-Run:  uv run scripts/ma_trader.py
+Strategy: EMA(3/8) crossover + RSI filter + Volume filter
+Risk Management: Fixed initial stop + Dynamic ATR Trailing Stop
 """
 
 import os
@@ -30,11 +16,13 @@ import socket
 
 import pytz
 from dotenv import load_dotenv
+
+# ==================== ALPACA IMPORTS ====================
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderType
 from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit   # Added for 5m confirmation
 
 from config import load_config
 from utils.logger import setup_logging, get_logger
@@ -47,20 +35,19 @@ from utils.orders import (
     cancel_open_orders,
     get_account_info,
     get_position,
+    update_atr_trailing_stop,
 )
 from utils.risk import DailyLossGuard, StopLossCooldown
 
 setup_logging()
 logger = get_logger(__name__)
 
-# Prefer IPv4 to avoid connectivity issues on dual-stack systems
+# Prefer IPv4 to avoid connectivity issues
 socket.setdefaulttimeout(15)
 _orig_getaddrinfo = socket.getaddrinfo
 
-
 def _force_ipv4(*args, **kwargs):
     return [r for r in _orig_getaddrinfo(*args, **kwargs) if r[0] == socket.AF_INET]
-
 
 socket.getaddrinfo = _force_ipv4
 
@@ -81,7 +68,7 @@ else:
     logger.warning("RUNNING IN LIVE REAL MONEY MODE - BE CAREFUL!")
 
 trading_client = TradingClient(API_KEY, SECRET_KEY, paper=cfg.trading.paper_trading)
-data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)
+data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)   # ← Fixed
 
 NY_TZ = pytz.timezone("America/New_York")
 
@@ -92,8 +79,21 @@ def notify(message: str) -> None:
     send_telegram_message(message, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
 
 
+def manage_trailing_stops() -> None:
+    """Update ATR-based trailing stops for all open positions."""
+    if not cfg.risk.trailing_stop_enabled:
+        return
+
+    for symbol in cfg.trading.symbols:
+        try:
+            if get_position(trading_client, symbol):
+                update_atr_trailing_stop(trading_client, data_client, symbol, cfg)
+        except Exception as e:
+            logger.error(f"Trailing stop update failed for {symbol}: {e}")
+
+
 def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
-    """Run one iteration of the SMA crossover strategy for a single symbol."""
+    """Run one iteration of the EMA crossover strategy."""
     df = get_bars(data_client, symbol, cfg.trading.alpaca_timeframe)
     signal, current_rsi = calculate_signals(
         df,
@@ -104,8 +104,7 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
         cfg.strategy.volume_min_ratio,
     )
 
-    # 5-minute uptrend confirmation: suppress 1-min BUY signals when the higher
-    # timeframe is not in an uptrend, filtering out low-quality crossovers.
+    # 5-minute uptrend confirmation
     if signal == "BUY" and cfg.strategy.use_5m_confirmation:
         df_5m = get_bars(
             data_client, symbol, TimeFrame(5, TimeFrameUnit.Minute), limit=50
@@ -121,19 +120,13 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
     cooldown.update(symbol, has_position)
 
     rsi_display = f"{current_rsi:.1f}" if current_rsi is not None else "N/A"
-    vol_ratio = (
-        df["volume"].iloc[-1] / df["volume"].rolling(20).mean().iloc[-1]
-        if "volume" in df.columns
-        else None
-    )
-    vol_display = f"{vol_ratio:.2f}×" if vol_ratio is not None else "N/A"
     logger.info(
-        f"{symbol} @ ${current_price:.2f} | RSI: {rsi_display} | Vol: {vol_display} | Signal: {signal or 'HOLD'}"
+        f"{symbol} @ ${current_price:.2f} | RSI: {rsi_display} | Signal: {signal or 'HOLD'}"
     )
 
+    # ==================== BUY ====================
     if signal == "BUY" and not has_position and not cooldown.is_cooling_down(symbol):
         live_ask = get_latest_ask(data_client, symbol)
-        logger.debug(f"{symbol} live_ask={live_ask}, bar_close={current_price:.2f}")
         base_price = live_ask if live_ask and live_ask > current_price else current_price
 
         qty = calculate_quantity(
@@ -144,6 +137,7 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
             cfg.risk.max_position_pct,
         )
 
+        initial_stop = round(base_price * (1 - cfg.risk.stop_loss_pct), 2)
         tp_price = (
             round(base_price * (1 + cfg.risk.take_profit_pct), 2)
             if cfg.risk.take_profit_pct
@@ -158,65 +152,37 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
             time_in_force=TimeInForce.DAY,
             order_class="bracket",
             take_profit=dict(limit_price=tp_price) if tp_price else None,
-            stop_loss=dict(
-                stop_price=round(base_price * (1 - cfg.risk.stop_loss_pct), 2)
-            ),
+            stop_loss=dict(stop_price=initial_stop),
         )
+
         try:
             trading_client.submit_order(order)
-        except Exception as order_err:
-            # # Alpaca returns code 42210000 when tp < base_price + 0.01.
-            # # Extract its actual base_price from the error and retry once.
-            # match = re.search(r'"base_price"\s*:\s*"?([\d.]+)"?', str(order_err))
+            log_trade(
+                cfg.trading.log_file,
+                symbol,
+                "BUY",
+                qty,
+                base_price,
+                "EMA Crossover + RSI + ATR Trail",
+                f"TP={tp_price} | Initial Stop={initial_stop}",
+            )
+            notify(
+                f"🟢 *BUY*\n{symbol} × {qty} @ ~${base_price:.2f} | "
+                f"TP=${tp_price} | Stop=${initial_stop}"
+            )
+        except Exception as e:
+            logger.error(f"BUY order failed for {symbol}: {e}", exc_info=True)
+            notify(f"❌ BUY failed for {symbol}: {str(e)[:120]}")
 
-            # logger.warning(order_err)
-
-            # if not match:
-            #     raise
-            # alpaca_base = float(match.group(1))
-            # logger.warning(
-            #     f"{symbol} TP validation failed — Alpaca base_price={alpaca_base}, retrying"
-            # )
-            # base_price = alpaca_base
-            # tp_price = (
-            #     round(alpaca_base * (1 + cfg.risk.take_profit_pct), 2)
-            #     if cfg.risk.take_profit_pct
-            #     else None
-            # )
-            # order = MarketOrderRequest(
-            #     symbol=symbol,
-            #     qty=qty,
-            #     side=OrderSide.BUY,
-            #     type=OrderType.MARKET,
-            #     time_in_force=TimeInForce.DAY,
-            #     order_class="bracket",
-            #     take_profit=dict(limit_price=tp_price) if tp_price else None,
-            #     stop_loss=dict(
-            #         stop_price=round(alpaca_base * (1 - cfg.risk.stop_loss_pct), 2)
-            #     ),
-            # )
-            # trading_client.submit_order(order)
-            pass
-
-        log_trade(
-            cfg.trading.log_file,
-            symbol,
-            "BUY",
-            qty,
-            base_price,
-            "SMA Crossover + RSI",
-            f"TP={tp_price}",
-        )
-        notify(f"🟢 *BUY*\n{symbol} x {qty} @ ~${base_price:.2f} | TP=${tp_price}")
-
+    # ==================== SELL ====================
     elif signal == "SELL" and has_position:
         cooldown.record_signal_sell(symbol)
         qty = float(position.qty)
         cancelled = cancel_open_orders(trading_client, symbol)
+
         if cancelled:
-            logger.info(
-                f"{symbol} cancelled {cancelled} open bracket order(s) before selling"
-            )
+            logger.info(f"{symbol} cancelled {cancelled} open order(s) before selling")
+
         order = MarketOrderRequest(
             symbol=symbol,
             qty=qty,
@@ -224,21 +190,26 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
             type=OrderType.MARKET,
             time_in_force=TimeInForce.DAY,
         )
-        trading_client.submit_order(order)
-        log_trade(
-            cfg.trading.log_file,
-            symbol,
-            "SELL",
-            qty,
-            current_price,
-            "SMA Crossover Exit",
-        )
-        notify(f"🔴 *SELL*\n{symbol} x {qty} @ ~${current_price:.2f}")
+
+        try:
+            trading_client.submit_order(order)
+            log_trade(
+                cfg.trading.log_file,
+                symbol,
+                "SELL",
+                qty,
+                current_price,
+                "EMA Crossover Exit",
+            )
+            notify(f"🔴 *SELL*\n{symbol} × {qty} @ ~${current_price:.2f}")
+        except Exception as e:
+            logger.error(f"SELL order failed for {symbol}: {e}", exc_info=True)
+            notify(f"❌ SELL failed for {symbol}: {str(e)[:100]}")
 
 
 def main():
-    init_trade_log(cfg.trading.log_file)
-    logger.info(f"Starting bot — symbols: {cfg.trading.symbols}")
+    dated_log_file = init_trade_log(cfg.trading.log_file)
+    logger.info(f"Starting MA Trader with ATR Trailing Stops — symbols: {cfg.trading.symbols}")
     notify(get_account_info(trading_client, cfg.risk.risk_per_trade))
 
     loss_guard = DailyLossGuard(trading_client, cfg.risk.daily_max_loss_pct)
@@ -251,10 +222,8 @@ def main():
             continue
 
         if loss_guard.is_halted():
-            logger.warning("Daily loss limit reached — skipping trading until tomorrow")
-            notify(
-                f"⚠️ Daily loss limit ({cfg.risk.daily_max_loss_pct:.1%}) reached — trading halted for today"
-            )
+            logger.warning("Daily loss limit reached — trading halted for today")
+            notify(f"⚠️ Daily loss limit ({cfg.risk.daily_max_loss_pct:.1%}) reached")
             time.sleep(60)
             continue
 
@@ -264,6 +233,9 @@ def main():
             except Exception as e:
                 logger.error(f"{symbol} error: {e}", exc_info=True)
                 notify(f"⚠️ {symbol} error: {e}")
+
+        # Update ATR trailing stops
+        manage_trailing_stops()
 
         time.sleep(cfg.trading.check_interval)
 
