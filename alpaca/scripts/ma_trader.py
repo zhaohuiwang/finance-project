@@ -132,10 +132,9 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
     )
 
     if signal == "BUY" and not has_position and not cooldown.is_cooling_down(symbol):
-        entry_price = current_price
         live_ask = get_latest_ask(data_client, symbol)
-        logger.debug(f"{symbol} live_ask={live_ask}, bar_close={entry_price:.2f}")
-        base_price = live_ask if live_ask and live_ask > entry_price else entry_price
+        logger.debug(f"{symbol} live_ask={live_ask}, bar_close={current_price:.2f}")
+        base_price = live_ask if live_ask and live_ask > current_price else current_price
 
         qty = calculate_quantity(
             trading_client,
@@ -150,11 +149,6 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
             if cfg.risk.take_profit_pct
             else None
         )
-        if tp_price and tp_price <= base_price + 0.01:
-            tp_price = round(base_price + 0.02, 2)
-
-        print(f"Base price: {base_price}")
-        print(f"TP price: {tp_price}")
 
         order = MarketOrderRequest(
             symbol=symbol,
@@ -171,37 +165,38 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
         try:
             trading_client.submit_order(order)
         except Exception as order_err:
-            # Alpaca returns code 42210000 when tp < base_price + 0.01.
-            # Extract its actual base_price from the error and retry once.
-            match = re.search(r'"base_price"\s*:\s*"?([\d.]+)"?', str(order_err))
+            # # Alpaca returns code 42210000 when tp < base_price + 0.01.
+            # # Extract its actual base_price from the error and retry once.
+            # match = re.search(r'"base_price"\s*:\s*"?([\d.]+)"?', str(order_err))
 
-            logger.warning(order_err)
+            # logger.warning(order_err)
 
-            if not match:
-                raise
-            alpaca_base = float(match.group(1))
-            logger.warning(
-                f"{symbol} TP validation failed — Alpaca base_price={alpaca_base}, retrying"
-            )
-            base_price = alpaca_base
-            tp_price = (
-                round(alpaca_base * (1 + cfg.risk.take_profit_pct), 2)
-                if cfg.risk.take_profit_pct
-                else None
-            )
-            order = MarketOrderRequest(
-                symbol=symbol,
-                qty=qty,
-                side=OrderSide.BUY,
-                type=OrderType.MARKET,
-                time_in_force=TimeInForce.DAY,
-                order_class="bracket",
-                take_profit=dict(limit_price=tp_price) if tp_price else None,
-                stop_loss=dict(
-                    stop_price=round(alpaca_base * (1 - cfg.risk.stop_loss_pct), 2)
-                ),
-            )
-            trading_client.submit_order(order)
+            # if not match:
+            #     raise
+            # alpaca_base = float(match.group(1))
+            # logger.warning(
+            #     f"{symbol} TP validation failed — Alpaca base_price={alpaca_base}, retrying"
+            # )
+            # base_price = alpaca_base
+            # tp_price = (
+            #     round(alpaca_base * (1 + cfg.risk.take_profit_pct), 2)
+            #     if cfg.risk.take_profit_pct
+            #     else None
+            # )
+            # order = MarketOrderRequest(
+            #     symbol=symbol,
+            #     qty=qty,
+            #     side=OrderSide.BUY,
+            #     type=OrderType.MARKET,
+            #     time_in_force=TimeInForce.DAY,
+            #     order_class="bracket",
+            #     take_profit=dict(limit_price=tp_price) if tp_price else None,
+            #     stop_loss=dict(
+            #         stop_price=round(alpaca_base * (1 - cfg.risk.stop_loss_pct), 2)
+            #     ),
+            # )
+            # trading_client.submit_order(order)
+            pass
 
         log_trade(
             cfg.trading.log_file,
