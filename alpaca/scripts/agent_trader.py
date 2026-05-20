@@ -1,6 +1,3 @@
-
-
-
 # ================================================================================
 # FILE: /home/zhaohuiwang/dev/finance-project/alpaca/scripts/agent_trader.py
 # ================================================================================
@@ -49,7 +46,6 @@ Keep claude-opus-4-7 only in execution_agent.py where the retry reasoning actual
 """
 
 
-
 import os
 import time
 import socket
@@ -63,11 +59,7 @@ from config import load_config
 from utils.logger import setup_logging, get_logger
 from utils.notify import notify
 from utils.trade_log import init_trade_log, log_trade
-from utils.orders import (
-    get_position,
-    manage_trailing_stops,
-    update_atr_trailing_stop
-)
+from utils.orders import get_position, manage_trailing_stops, update_atr_trailing_stop
 from utils.risk import DailyLossGuard, StopLossCooldown
 from utils.market import is_market_open
 from agents.signal_agent import SignalAgent
@@ -76,8 +68,12 @@ from agents.execution_agent import ExecutionAgent
 
 socket.setdefaulttimeout(15)
 _orig_getaddrinfo = socket.getaddrinfo
+
+
 def _force_ipv4(*args, **kwargs):
     return [r for r in _orig_getaddrinfo(*args, **kwargs) if r[0] == socket.AF_INET]
+
+
 socket.getaddrinfo = _force_ipv4
 
 setup_logging()
@@ -102,19 +98,6 @@ trading_client = TradingClient(API_KEY, SECRET_KEY, paper=cfg.trading.paper_trad
 data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)
 news_client = NewsClient(API_KEY, SECRET_KEY)
 NY_TZ = pytz.timezone("America/New_York")
-
-
-
-def manage_trailing_stops() -> None:
-    """Update ATR trailing stops."""
-    if not cfg.risk.trailing_stop_enabled:
-        return
-    for symbol in cfg.trading.symbols:
-        try:
-            if get_position(trading_client, symbol):
-                update_atr_trailing_stop(trading_client, data_client, symbol, cfg)
-        except Exception as e:
-            logger.error(f"Trailing stop failed for {symbol}: {e}")
 
 
 def trade_symbol(symbol: str, signal_agent, risk_agent, execution_agent, cooldown):
@@ -145,7 +128,14 @@ def trade_symbol(symbol: str, signal_agent, risk_agent, execution_agent, cooldow
             return
         result = execution_agent.execute_buy(symbol, qty, base_price)
         if result["success"]:
-            log_trade(cfg.trading.log_file, symbol, "BUY", qty, base_price, "Agent + ATR Trail")
+            log_trade(
+                cfg.trading.log_file,
+                symbol,
+                "BUY",
+                qty,
+                base_price,
+                "Agent + ATR Trail",
+            )
             notify(f"🟢 *BUY (agent)*\n{symbol} × {qty} @ ~${base_price:.2f}")
     elif signal == "SELL":
         if not has_position:
@@ -153,12 +143,21 @@ def trade_symbol(symbol: str, signal_agent, risk_agent, execution_agent, cooldow
         cooldown.record_signal_sell(symbol)
         result = execution_agent.execute_sell(symbol)
         if result["success"]:
-            log_trade(cfg.trading.log_file, symbol, "SELL", float(position.qty), base_price or 0, "Agent Exit")
+            log_trade(
+                cfg.trading.log_file,
+                symbol,
+                "SELL",
+                float(position.qty),
+                base_price or 0,
+                "Agent Exit",
+            )
 
 
 def main() -> None:
     init_trade_log(cfg.trading.log_file)
-    logger.info(f"Starting Multi-Agent Bot with ATR Trailing Stops — symbols: {cfg.trading.symbols}")
+    logger.info(
+        f"Starting Multi-Agent Bot with ATR Trailing Stops — symbols: {cfg.trading.symbols}"
+    )
 
     loss_guard = DailyLossGuard(trading_client, cfg.risk.daily_max_loss_pct)
     cooldown = StopLossCooldown(trading_client, cfg.risk.stop_loss_cooldown_minutes)
@@ -167,7 +166,9 @@ def main() -> None:
     risk_agent = RiskAgent(trading_client, data_client, cfg, loss_guard, cooldown)
     execution_agent = ExecutionAgent(trading_client, data_client, cfg)
 
-    notify(f"🤖 *Multi-Agent Bot + ATR Started*\nEquity: `${float(trading_client.get_account().equity):,.2f}`")
+    notify(
+        f"🤖 *Multi-Agent Bot + ATR Started*\nEquity: `${float(trading_client.get_account().equity):,.2f}`"
+    )
 
     while True:
         if not is_market_open(cfg.trading.trade_only_market_hours):
@@ -180,11 +181,13 @@ def main() -> None:
 
         for symbol in cfg.trading.symbols:
             try:
-                trade_symbol(symbol, signal_agent, risk_agent, execution_agent, cooldown)
+                trade_symbol(
+                    symbol, signal_agent, risk_agent, execution_agent, cooldown
+                )
             except Exception as e:
                 logger.error(f"{symbol} agent error: {e}", exc_info=True)
 
-        manage_trailing_stops()          # ← ATR Trailing Stop Management
+        manage_trailing_stops(trading_client, data_client, cfg)  # ← ATR Trailing Stop Management
         time.sleep(cfg.trading.check_interval)
 
 

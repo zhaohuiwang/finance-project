@@ -22,7 +22,7 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderType
 from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.timeframe import TimeFrame, TimeFrameUnit   # Added for 5m confirmation
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit  # Added for 5m confirmation
 
 from config import load_config
 from utils.logger import setup_logging, get_logger
@@ -47,8 +47,10 @@ logger = get_logger(__name__)
 socket.setdefaulttimeout(15)
 _orig_getaddrinfo = socket.getaddrinfo
 
+
 def _force_ipv4(*args, **kwargs):
     return [r for r in _orig_getaddrinfo(*args, **kwargs) if r[0] == socket.AF_INET]
+
 
 socket.getaddrinfo = _force_ipv4
 
@@ -69,22 +71,9 @@ else:
     logger.warning("RUNNING IN LIVE REAL MONEY MODE - BE CAREFUL!")
 
 trading_client = TradingClient(API_KEY, SECRET_KEY, paper=cfg.trading.paper_trading)
-data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)   # ← Fixed
+data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)  # ← Fixed
 
 NY_TZ = pytz.timezone("America/New_York")
-
-
-def manage_trailing_stops() -> None:
-    """Update ATR-based trailing stops for all open positions."""
-    if not cfg.risk.trailing_stop_enabled:
-        return
-
-    for symbol in cfg.trading.symbols:
-        try:
-            if get_position(trading_client, symbol):
-                update_atr_trailing_stop(trading_client, data_client, symbol, cfg)
-        except Exception as e:
-            logger.error(f"Trailing stop update failed for {symbol}: {e}")
 
 
 def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
@@ -122,7 +111,9 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
     # ==================== BUY ====================
     if signal == "BUY" and not has_position and not cooldown.is_cooling_down(symbol):
         live_ask = get_latest_ask(data_client, symbol)
-        base_price = live_ask if live_ask and live_ask > current_price else current_price
+        base_price = (
+            live_ask if live_ask and live_ask > current_price else current_price
+        )
 
         qty = calculate_quantity(
             trading_client,
@@ -204,7 +195,9 @@ def trade_symbol(symbol: str, cooldown: StopLossCooldown) -> None:
 
 def main():
     dated_log_file = init_trade_log(cfg.trading.log_file)
-    logger.info(f"Starting MA Trader with ATR Trailing Stops — symbols: {cfg.trading.symbols}")
+    logger.info(
+        f"Starting MA Trader with ATR Trailing Stops — symbols: {cfg.trading.symbols}"
+    )
     notify(get_account_info(trading_client, cfg.risk.risk_per_trade))
 
     loss_guard = DailyLossGuard(trading_client, cfg.risk.daily_max_loss_pct)
@@ -230,7 +223,7 @@ def main():
                 notify(f"⚠️ {symbol} error: {e}")
 
         # Update ATR trailing stops
-        manage_trailing_stops()
+        manage_trailing_stops(trading_client, data_client, cfg)
 
         time.sleep(cfg.trading.check_interval)
 

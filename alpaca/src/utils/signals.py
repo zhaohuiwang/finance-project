@@ -33,7 +33,7 @@ def calculate_signals(
     # Simple Moving Average (SMA) gives equal weight to all prices in the period.
     # df["fast_ma"] = df["close"].rolling(window=fast_ma).mean()
     # df["slow_ma"] = df["close"].rolling(window=slow_ma).mean()
-    
+
     # Exponential Moving Average (EMA) gives more weight to recent prices.
     df["fast_ma"] = df["close"].ewm(span=fast_ma, adjust=False).mean()
     df["slow_ma"] = df["close"].ewm(span=slow_ma, adjust=False).mean()
@@ -43,10 +43,16 @@ def calculate_signals(
     prev = df.iloc[-2]
 
     signal = None
-    if prev["fast_ma"] <= prev["slow_ma"] and latest["fast_ma"] > latest["slow_ma"] + 0.01: # add a small price buffer to reduce false signals in choppy markets
+    if (
+        prev["fast_ma"] <= prev["slow_ma"]
+        and latest["fast_ma"] > latest["slow_ma"] + 0.01
+    ):  # add a small price buffer to reduce false signals in choppy markets
         if latest["rsi"] < rsi_max_for_buy:
             signal = "BUY"
-    elif prev["fast_ma"] >= prev["slow_ma"] and latest["fast_ma"] < latest["slow_ma"] - 0.01: # add a small price buffer to reduce false signals in choppy markets
+    elif (
+        prev["fast_ma"] >= prev["slow_ma"]
+        and latest["fast_ma"] < latest["slow_ma"] - 0.01
+    ):  # add a small price buffer to reduce false signals in choppy markets
         signal = "SELL"
 
     # Volume confirmation: suppress BUY if volume is below the rolling average threshold.

@@ -75,20 +75,9 @@ news_client = NewsClient(API_KEY, SECRET_KEY)
 NY_TZ = pytz.timezone("America/New_York")
 
 
-def manage_trailing_stops() -> None:
-    """Update ATR-based trailing stops for all open positions (same as ma_trader)."""
-    if not cfg.risk.trailing_stop_enabled:
-        return
-
-    for symbol in cfg.trading.symbols:
-        try:
-            if get_position(trading_client, symbol):
-                update_atr_trailing_stop(trading_client, data_client, symbol, cfg)
-        except Exception as e:
-            logger.error(f"Trailing stop update failed for {symbol}: {e}")
-
-
-def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCooldown) -> None:
+def trade_symbol(
+    symbol: str, signal_agent: SignalAgent, cooldown: StopLossCooldown
+) -> None:
     """Signal from Claude + deterministic execution (aligned with ma_trader.py)."""
 
     # === Claude Signal (the only major difference) ===
@@ -117,7 +106,9 @@ def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCoold
     # ==================== BUY (identical logic to ma_trader) ====================
     if signal == "BUY" and not has_position and not cooldown.is_cooling_down(symbol):
         live_ask = get_latest_ask(data_client, symbol)
-        base_price = live_ask if live_ask and live_ask > current_price else current_price
+        base_price = (
+            live_ask if live_ask and live_ask > current_price else current_price
+        )
 
         qty = calculate_quantity(
             trading_client,
@@ -198,8 +189,10 @@ def trade_symbol(symbol: str, signal_agent: SignalAgent, cooldown: StopLossCoold
 
 
 def main() -> None:
-    init_trade_log(cfg.trading.log_file)   # dated file handled inside
-    logger.info(f"Starting Smart MA Bot with ATR Trailing Stops — symbols: {cfg.trading.symbols}")
+    init_trade_log(cfg.trading.log_file)  # dated file handled inside
+    logger.info(
+        f"Starting Smart MA Bot with ATR Trailing Stops — symbols: {cfg.trading.symbols}"
+    )
     notify(get_account_info(trading_client, cfg.risk.risk_per_trade))
 
     loss_guard = DailyLossGuard(trading_client, cfg.risk.daily_max_loss_pct)
@@ -226,7 +219,7 @@ def main() -> None:
                 notify(f"⚠️ {symbol} error: {e}")
 
         # === ATR Trailing Stop Management (same as ma_trader) ===
-        manage_trailing_stops()
+        manage_trailing_stops(trading_client, data_client, cfg)
 
         time.sleep(cfg.trading.check_interval)
 

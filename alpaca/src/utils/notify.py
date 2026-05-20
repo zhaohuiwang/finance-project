@@ -23,11 +23,7 @@ def notify(message: str, token: str | None = None, chat_id: str | None = None) -
     if token and chat_id:
         try:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
-            payload = {
-                "chat_id": chat_id,
-                "text": message,
-                "parse_mode": "Markdown"
-            }
+            payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
             requests.post(url, json=payload, timeout=10)
         except Exception as e:
             logger.warning(f"Failed to send Telegram notification: {e}")
