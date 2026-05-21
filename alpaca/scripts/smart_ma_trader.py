@@ -25,7 +25,7 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from config import load_config
 from utils.logger import setup_logging, get_logger
-from utils.market import is_market_open, get_latest_ask
+from utils.market import is_market_hours, get_latest_ask
 from utils.notify import notify
 from utils.trade_log import init_trade_log, log_trade
 from utils.orders import (
@@ -200,7 +200,7 @@ def main() -> None:
     signal_agent = SignalAgent(data_client, news_client, cfg)
 
     while True:
-        if not is_market_open(cfg.trading.trade_only_market_hours):
+        if not is_market_hours(regular_only=cfg.trading.trade_only_market_hours):
             logger.info("Outside market hours — waiting")
             time.sleep(60)
             continue

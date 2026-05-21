@@ -18,15 +18,14 @@ class SymbolConfig(BaseModel):
     fixed_shares: int = Field(default=0, ge=0)
     stop_loss_dollar: float = Field(default=0.0, ge=0)  # fixed $ amount below entry
     # If > 0, use this as primary stop distance; otherwise fall back to %
-    
-    
+
     @model_validator(mode="after")
     def check_prices(self):
         if self.limit_sell_price <= self.buy_target_price:
             raise ValueError("limit_sell_price must be greater than buy_target_price")
         return self
 
-    
+
 # ----------------------------
 # 2. Overall risk config
 # ----------------------------
@@ -42,8 +41,8 @@ class RiskConfig(BaseModel):
 # 3. Full configuration
 # ----------------------------
 class TradingConfig(BaseModel):
-    trading_mode: str = "hardcoded"     # "hardcoded" or "ma"
-    
+    trading_mode: str = "hardcoded"  # "hardcoded" or "ma"
+
     symbols: Dict[str, SymbolConfig]
     risk: RiskConfig
     auto_shutdown_after_close: bool = Field(

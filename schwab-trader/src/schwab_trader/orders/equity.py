@@ -1,5 +1,10 @@
 from enum import Enum
-from schwab_trader.accounts.type_literal import OrderType, StopPriceLinkType, Session, Duration
+from schwab_trader.accounts.type_literal import (
+    OrderType,
+    StopPriceLinkType,
+    Session,
+    Duration,
+)
 
 # Dictionary specification for equity orders.
 # Note: Prices must be string in the JSON for precision
@@ -286,7 +291,7 @@ def sell_trailing_stop_dict(
     symbol: str,
     quantity: int,
     stop_price_link_type: StopPriceLinkType = "PERCENTAGE",
-    stop_price_offset: float=5,
+    stop_price_offset: float = 5,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
@@ -375,3 +380,5 @@ def sell_trailing_stop_dict(
             }
         ],
     }
+
+

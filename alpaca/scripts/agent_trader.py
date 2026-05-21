@@ -61,7 +61,7 @@ from utils.notify import notify
 from utils.trade_log import init_trade_log, log_trade
 from utils.orders import get_position, manage_trailing_stops, update_atr_trailing_stop
 from utils.risk import DailyLossGuard, StopLossCooldown
-from utils.market import is_market_open
+from utils.market import is_market_hours
 from agents.signal_agent import SignalAgent
 from agents.risk_agent import RiskAgent
 from agents.execution_agent import ExecutionAgent
@@ -171,11 +171,14 @@ def main() -> None:
     )
 
     while True:
-        if not is_market_open(cfg.trading.trade_only_market_hours):
+        if not is_market_hours(regular_only=cfg.trading.trade_only_market_hours):
+            logger.info("Outside market hours — waiting")
             time.sleep(60)
             continue
 
         if loss_guard.is_halted():
+            logger.warning("Daily loss limit reached — trading halted for today")
+            notify(f"⚠️ Daily loss limit ({cfg.risk.daily_max_loss_pct:.1%}) reached")
             time.sleep(60)
             continue
 

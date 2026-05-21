@@ -12,12 +12,18 @@ trading:
 strategy:
   fast_ma: 3                   # Fast SMA window (smaller = more responsive, more noise)
   slow_ma: 8                   # Slow SMA window (larger = smoother, more lag)
+  
+  use_regular_hours_only: true # Set false to include pre/after-hours in ma calculations and signals
+  market_open_time: "09:30"    # 
+  market_close_time: "16:00"   #
+
   rsi_period: 14
   rsi_max_for_buy: 75          # Only buy when RSI is below this threshold
   volume_min_ratio: 1.0        # BUY only if current volume >= X × 20-bar avg (0 to disable)
   use_5m_confirmation: true    # Require 5-min uptrend before taking a 1-min BUY signal
   min_signal_confidence: 0.65  # smart_ma.py only: skip signal if Claude's confidence is below this
 
+# the fast_ma and slow_ma calculations include after-hours data. Alpaca’s StockBarsRequest by default returns all bars, including pre-market and after-hours sessions when using minute/hour timeframes.
 
 risk:
   risk_per_trade: 0.01         # Fraction of equity to risk per trade (1%)
@@ -37,4 +43,4 @@ risk:
 
 
 
-# ATR (Average True Range). Simple ATR (Rolling Mean) and Wilder's Smoothed ATR (Gives more weight to recent data) 
+# ATR (Average True Range). Simple ATR (Rolling Mean) and Wilder's Smoothed ATR (Gives more weight to recent data)

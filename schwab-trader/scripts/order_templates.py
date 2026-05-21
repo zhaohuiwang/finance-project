@@ -34,7 +34,7 @@ stopPriceLinkType string Enum:
     [ VALUE, PERCENT, TICK ]
 stopPriceLinkBasis string Enum:
     [ MANUAL, BASE, TRIGGER, LAST, BID, ASK, ASK_BID, MARK, AVERAGE ]
-stopPriceOffset number($double) 
+stopPriceOffset number($double)
 
 
 If an order format is not shown here, place an order from a different platform (e.g. TOS) and use client.order_details(...) to infer the format.
@@ -379,7 +379,7 @@ order = {
 
 
 # Trailing orders
-# sell 10 XYZ trailing stop order, by 5 percent 
+# sell 10 XYZ trailing stop order, by 5 percent
 order = {
     "session": "NORMAL",
     "duration": "GOOD_TILL_CANCEL",
@@ -392,13 +392,10 @@ order = {
         {
             "instruction": "SELL",
             "quantity": 10,
-            "instrument": {
-                "symbol": "XYZ",
-                "assetType": "EQUITY"
-            }
+            "instrument": {"symbol": "XYZ", "assetType": "EQUITY"},
         }
-    ]
+    ],
 }
 
 # trailing stop limit order
-# sell 10 XYZ   
+# sell 10 XYZ

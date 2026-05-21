@@ -1,7 +1,7 @@
 # ================================================================================
 # FILE: /home/zhaohuiwang/dev/finance-project/alpaca/src/config.py
 # ================================================================================
-
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -76,6 +76,26 @@ class StrategyConfig(BaseModel):
     use_5m_confirmation: bool = False
     min_signal_confidence: float = 0.65
 
+    # === NEW MARKET HOURS CONFIG ===
+    use_regular_hours_only: bool = True
+    market_open_time: str = "09:30"
+    market_close_time: str = "16:00"
+
+    @field_validator("market_open_time", "market_close_time")
+    @classmethod
+    def validate_time_format(cls, v: str) -> str:
+        try:
+            datetime.strptime(v, "%H:%M")
+            return v
+        except ValueError:
+            raise ValueError(f"Invalid time format '{v}'. Use HH:MM (e.g. 09:30)")
+
+    @model_validator(mode="after")
+    def validate_market_times(self) -> "StrategyConfig":
+        if self.market_open_time >= self.market_close_time:
+            raise ValueError("market_open_time must be before market_close_time")
+        return self
+    
     @field_validator("volume_min_ratio")
     @classmethod
     def volume_ratio_non_negative(cls, v: float) -> float:
