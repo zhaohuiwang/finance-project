@@ -1,0 +1,28 @@
+
+
+symbol: "NBIS"
+account_number: "29308909"
+
+# Strategy
+up_pct: 3.0
+up_window_min: 15
+down_pct: 2.5
+down_window_min: 20
+buy_quantity: 50
+trailing_stop_pct: 2.0
+
+# Risk Management
+daily_max_loss_pct: 3.0          # Stop trading if daily loss exceeds this
+max_position_shares: 200         # Hard max shares to hold
+
+# Operation
+check_interval_sec: 5
+
+# Logging
+log_file: "logs/nbis_trades.csv"
+
+# Telegram
+telegram:
+  enabled: true
+  token: "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+  chat_id: "YOUR_CHAT_ID_HERE"
