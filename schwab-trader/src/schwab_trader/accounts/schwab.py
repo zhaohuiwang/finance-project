@@ -6,10 +6,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# client = schwabdev.Client(
+#     os.getenv("app_key"), os.getenv("app_secret"), os.getenv("callback_url")
+# )
 client = schwabdev.Client(
-    os.getenv("app_key"), os.getenv("app_secret"), os.getenv("callback_url")
+    os.getenv("app_key"),
+    os.getenv("app_secret"),
+    callback_url=os.getenv("callback_url"),
+    tokens_db="~/.schwabdev/tokens.db",
+    encryption=None,
+    timeout=10,
+    call_on_auth=None,
+    open_browser_for_auth=True
 )
-
 
 class Position:
     """Represents a single account position"""

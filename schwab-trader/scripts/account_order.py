@@ -20,7 +20,8 @@ from schwab_trader.orders.equity import (
     sell_limit_sell_stoplimit_oco_dict,
     buy_limit_trigger_sell_limit_sell_stop_oco_dict,
     sell_trailing_stop_dict,
-
+    buy_trailingstop_trigger_sell_trailingstop_dict,
+    sell_trailingstop_trigger_buy_trailingstop_dict
 )
 from schwab_trader.orders.option import (
     buy_limit_single_option_dict,
@@ -84,8 +85,8 @@ order_b1 = buy_market_dict(
 
 order_b3 = buy_limit_dict(
     symbol="ACHR",
-    quantity=2900,
-    limit_price=6.6,
+    quantity=3000,
+    limit_price=6.2,
     session="NORMAL",
     duration="DAY",
 )
@@ -103,12 +104,12 @@ order_b5 = buy_limit_trigger_sell_limit_dict(
 )
 
 order_b7 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
-    symbol="NBIS",
-    quantity=250,
-    buy_limit_price=135,  # 14.97
-    sell_limit_price=145,  # 15.27
-    sell_stop_price=134,  # 11.27
-    session_buy_limit="SEAMLESS", # SEAMLESS - Day + ext
+    symbol="IREN",
+    quantity=400,
+    buy_limit_price=4.3,  # 14.97
+    sell_limit_price=47.88,  # 15.27
+    sell_stop_price=40.0,  # 11.27
+    session_buy_limit="NORMAL",
     session_sell_limit="NORMAL",
     session_sell_stop="NORMAL",
     buy_duration="DAY",
@@ -124,9 +125,9 @@ order_s2 = sell_market_dict(
 )
 
 order_s4 = sell_limit_dict(
-    symbol="ACHR",
-    quantity=2900,
-    limit_price=6.68,
+    symbol="JOBY",
+    quantity=1800,
+    limit_price=9.4,
     session="NORMAL",
     duration="DAY",
 )
@@ -153,21 +154,74 @@ order_s8 = sell_limit_sell_stoplimit_oco_dict(
 
 order_s8 = sell_limit_sell_stoplimit_oco_dict(
     symbol="JOBY",
-    quantity=3500,
+    quantity=1700,
     sell_limit_price=16,
-    sell_stop_price=8.4,
-    sell_stoplimit_price=8.3,
+    sell_stop_price=8.5,
+    sell_stoplimit_price=8.4,
+    session_sell_limit="NORMAL",
+    session_sell_stoplimit="NORMAL",
+    duration="GOOD_TILL_CANCEL",
+)
+order_s8 = sell_limit_sell_stoplimit_oco_dict(
+    symbol="ACHR",
+    quantity=2500,
+    sell_limit_price=11,
+    sell_stop_price=5.5,
+    sell_stoplimit_price=5.4,
+    session_sell_limit="NORMAL",
+    session_sell_stoplimit="NORMAL",
+    duration="GOOD_TILL_CANCEL",
+)
+order_s8 = sell_limit_sell_stoplimit_oco_dict(
+    symbol="IREN",
+    quantity=800,
+    sell_limit_price=56,
+    sell_stop_price=44.8,
+    sell_stoplimit_price=44.7,
     session_sell_limit="NORMAL",
     session_sell_stoplimit="NORMAL",
     duration="GOOD_TILL_CANCEL",
 )
 
 
+order_ts_bs = buy_trailingstop_trigger_sell_trailingstop_dict(
+    symbol="JOBY",
+    quantity_buy=1,
+    quantity_sell=1,
+    stop_price_link_basis_buy="MARK",
+    stop_price_link_type_buy="PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_offset_buy=2.0,
+    session_buy="NORMAL",
+    buy_duration="GOOD_TILL_CANCEL", # "DAY", "END_OF_WEEK", "END_OF_MONTH", ...
+    
+    stop_price_link_basis_sell="MARK",
+    stop_price_link_type_sell="PERCENT",
+    stop_price_offset_sell=2.0,
+    session_sell="NORMAL",
+    sell_duration="GOOD_TILL_CANCEL",
+)
+
+order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
+    symbol="USAR",
+    quantity_buy=1,
+    quantity_sell=1,
+    stop_price_link_basis_sell="MARK",
+    stop_price_link_type_sell="PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_offset_sell=2.0,
+    session_sell="NORMAL",
+    sell_duration="GOOD_TILL_CANCEL", # "DAY", "END_OF_WEEK", "END_OF_MONTH", ...
+    
+    stop_price_link_basis_buy="MARK",
+    stop_price_link_type_buy="PERCENT",
+    stop_price_offset_buy=2.0,
+    session_buy="NORMAL",
+    buy_duration="GOOD_TILL_CANCEL",
+)
+
 # submit an order
 order = order_s8
-
-order = order_b7
-
+order = order_ts_bs
+order = order_ts_sb
 
 status_code, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
@@ -219,7 +273,7 @@ status_code, date, order_id = place_order(
 
 from_time, to_time = get_utc_time_range(
     # to_time= dt.datetime(2026, 3, 6, 10, 0)
-    offset=dt.timedelta(days=0, hours=2, minutes=5)
+    offset=dt.timedelta(days=4, hours=1, minutes=5)
 )
 # or simply
 from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=0, hours=8, minutes=5)
@@ -231,7 +285,6 @@ orders = client.account_orders(
     toEnteredTime=to_time,
     # status='WORKING',
     # status="FILLED",
-    # status="PENDING_ACTIVATION"
 ).json()
 
 print(json.dumps(orders, indent=4))
@@ -247,8 +300,6 @@ all_orders = get_orders(
     # status="PENDING_ACTIVATION"
 )
 # Return a list of dictionary
-
-
 
 df = pd.DataFrame(all_orders)
 
@@ -483,85 +534,3 @@ account.refresh()
 
 # if account.buying_power > 20000:
 #     place_trade()
-
-
-
-def buy_trailing_stop_trigger_sell_trailing_stop_dict(
-    symbol: str,
-    quantity: float,
-
-    buy_stop_price_link_type: str = "PERCENT",   # "PERCENT" or "VALUE"
-    buy_stop_price_offset: float = 5.0,
-
-    sell_stop_price_link_type: str = "PERCENT",  # "PERCENT" or "VALUE"
-    sell_stop_price_offset: float = 5.0,
-
-    session_buy: str = "NORMAL",
-    session_sell: str = "NORMAL",
-
-    buy_duration: str = "DAY",
-    sell_duration: str = "DAY",
-) -> dict:
-    """
-    Schwab:
-        BUY trailing stop
-            triggers
-        SELL trailing stop
-
-    Proven-compatible structure based on live accepted orders.
-    """
-
-
-order = {
-        "orderType": "TRAILING_STOP",
-        "session": session_buy,
-        "duration": buy_duration,
-        "stopPriceLinkBasis": "MARK",
-        "stopPriceLinkType": buy_stop_price_link_type,
-        "stopPriceOffset": buy_stop_price_offset,
-        "stopType": "MARK",
-        "orderStrategyType": "TRIGGER",
-        "orderLegCollection": [
-            {
-                "instruction": "BUY",
-                "quantity": quantity,
-                "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-            }
-        ],
-        "childOrderStrategies": [
-            {
-                "orderType": "TRAILING_STOP",
-                "session": session_sell,
-                "duration": sell_duration,
-                "stopPriceLinkBasis": "MARK",
-                "stopPriceLinkType": sell_stop_price_link_type,
-                "stopPriceOffset": sell_stop_price_offset,
-                "stopType": "MARK",
-                "orderStrategyType": "SINGLE",
-                "orderLegCollection": [
-                    {
-                        "instruction": "SELL",
-                        "quantity": quantity ,
-                        "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-                    }
-                ],
-            }
-        ],
-    }
-
-payload = buy_trailing_stop_trigger_sell_trailing_stop_dict(
-    symbol="AAPL",
-    quantity=1,
-
-    buy_stop_price_link_type="PERCENTAGE",
-    buy_stop_price_offset=5.0,
-
-    sell_stop_price_link_type="PERCENTAGE",
-    sell_stop_price_offset=3.0,
-)
-
-
-status_code, date, order_id = place_order(
-    client=client, accountHash=hashValue, order=payload
-)
-

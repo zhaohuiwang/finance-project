@@ -1,3 +1,4 @@
+
 """
 https://www.cnn.com/markets/fear-and-greed
 This script fetches the current Fear & Greed Index and its components from CNN,and also retrieves historical data to plot the index over time.
@@ -38,7 +39,7 @@ class FearGreedClient:
     # -----------------------------
     def get_indicator_data(self):
         data = self.fetch_all_data()
-
+        
         keys = [
             "fear_and_greed",
             "market_momentum_sp500",
@@ -49,8 +50,9 @@ class FearGreedClient:
             "safe_haven_demand",
             "junk_bond_demand",
         ]
-
-        return {k: (data[k]["score"], data[k]["rating"]) for k in keys}
+        
+        return {k: (data[k]['score'], data[k]['rating']) for k in keys}
+    
 
     def get_fg_historical_data(self):
         data = self.fetch_all_data()
@@ -93,7 +95,7 @@ def plot_historical_data(df, output_dir="output/cnn_market_info"):
 
 
 # -----------------------------
-#
+# 
 # -----------------------------
 if __name__ == "__main__":
     client = FearGreedClient()
@@ -108,9 +110,9 @@ if __name__ == "__main__":
         )
 
         print(message)
-
+        
         for k, v in current.items():
-            print(f"  - {k.replace('_', ' ').title()}: {v[0]:.0f}, {v[1].upper()}")
+                print(f"  - {k.replace('_', ' ').title()}: {v[0]:.0f}, {v[1].upper()}")
 
         df = client.get_fg_historical_data()
         plot_historical_data(df)

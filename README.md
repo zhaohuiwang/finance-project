@@ -1,4 +1,4 @@
-## Steps to setup project Direcotry including monrepo and hierarchy of projects
+## Steps to setup project Direcotry including monorepo and hierarchy of projects
 ###  A: The standard uv workspace setup
 * There is only one shared virtual environment. It lives at the workspace root level → my-monorepo/.venv/
 * All workspace members (your my-dev-project, the github-lib, and any future ones) install their dependencies into this single .venv.
@@ -11,19 +11,23 @@
 Final directory structure
 ```Bash
 my-monorepo/     # ← git init here — single repo for the whole org/team
-├── .git/                      # one shared git history
-├── .gitignore                 # ignore all .venv/ folders
+├── .git/                   # one shared git history
+├── .gitignore              # ignore all .venv/ folders
 ├── uv.lock
-├── .gitmodules
+├── .gitmodules             # configuration file
 ├── README.md
-├── pyproject.toml            # Workspace root (virtual)
-├── my-dev-project/           # Your development code
+├── github-lib
+│   ├── lumibot             # ← pure GitHub source (submodule)
+│   └── schwabdev
+├── documents
+├── personal_project_1      # e.g. alpaca
 │   ├── pyproject.toml
+    ├── scripts
 │   └── ...
-├── github-lib/               # ← pure GitHub source (submodule)
-│   ├── pyproject.toml
-│   └── ...
-└── ...  
+└── personal_project_2      # e.g. schwab-trader 
+    ├── pyproject.toml
+    ├── scripts
+    └── ... 
 ```
 
 Create the monorepo root

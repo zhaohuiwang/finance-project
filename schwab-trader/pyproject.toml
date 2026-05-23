@@ -21,7 +21,6 @@ dependencies = [
     "pytz>=2026.1.post1",
     "requests>=2.32.5",
     "rich>=14.3.3",
-    "schedule>=1.2.2",
     "schwabdev",
     "seaborn>=0.13.2",
 ]

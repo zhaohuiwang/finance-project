@@ -1,9 +1,9 @@
 [submodule "Schwabdev"]
 	path = Schwabdev
-	url = git@github.com:tylerebowers/Schwabdev.git
+	url = git@github-personal:tylerebowers/Schwabdev.git
 [submodule "github-lib/schwabdev"]
 	path = github-lib/schwabdev
-	url = git@github.com:tylerebowers/Schwabdev.git
+	url = git@github-personal:tylerebowers/Schwabdev.git
 [submodule "github-lib/lumibot"]
 	path = github-lib/lumibot
-	url = git@github.com:Lumiwealth/lumibot.git
+	url = git@github-personal:Lumiwealth/lumibot.git

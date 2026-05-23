@@ -41,8 +41,6 @@ class RiskConfig(BaseModel):
 # 3. Full configuration
 # ----------------------------
 class TradingConfig(BaseModel):
-    trading_mode: str = "hardcoded"  # "hardcoded" or "ma"
-
     symbols: Dict[str, SymbolConfig]
     risk: RiskConfig
     auto_shutdown_after_close: bool = Field(
