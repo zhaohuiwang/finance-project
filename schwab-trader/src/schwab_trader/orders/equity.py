@@ -282,24 +282,183 @@ def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
     }
 
 
-def sell_trailing_stop_dict(
+def buy_trailing_stop_dict(
     symbol: str,
     quantity: int,
-    stop_price_offset: float,
+    
+    stop_price_link_basis: stopPriceLinkBasis = "BID",
+    stop_price_link_type: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_offset: float = 2.0,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
     """
-    Sell Trailing Stop: Stock
-    Sell 10 shares of XYZ with a Trailing Stop where the trail is a -$10 offset from the time the order is submitted. As the stock price goes up, the -$10 trailing offset will follow. If stock XYZ goes from $110 to $130, your trail will automatically be adjusted to $120. If XYZ falls to $120 or below, a Market order is submitted. This order is good for the Day.
+    Create a BUY trailing stop order for an equity position.
 
+    A trailing stop buy order is typically used to enter a long position only
+    after price begins moving upward from a lower level. The stop trigger price
+    automatically trails the market by a fixed offset.
+
+    Trailing behavior:
+    - The stop price follows the market downward by the specified offset.
+    - If the market reverses upward by the offset amount, the trailing stop
+      triggers and submits a market buy order.
+    - The stop price never moves higher while the market is falling.
+
+    Example:
+        Current price: $110
+        Trailing offset: 10 points (VALUE)
+
+        If the stock drops from $110 to $100:
+            trailing stop adjusts down to $110
+
+        If the stock later rises back to $110:
+            the order triggers and submits a market BUY order.
+
+    Percent example:
+        With stop_price_link_type="PERCENT" and stop_price_offset=2.0,
+        the stop price trails the market by 2%.
+
+    Args:
+        symbol:
+            Stock ticker symbol.
+
+        quantity:
+            Number of shares to purchase.
+
+        stop_price_link_basis:
+            Reference price used for trailing calculations.
+            Common values include:
+            - "BID"
+            - "ASK"
+            - "LAST"
+            - "MARK"
+
+        stop_price_link_type:
+            Type of trailing offset:
+            - "VALUE"   -> dollar amount
+            - "PERCENT" -> percentage
+            - "TICK"    -> tick increment
+
+        stop_price_offset:
+            Trailing offset amount based on stop_price_link_type.
+
+        session:
+            Trading session for the order.
+            Typically "NORMAL".
+
+        duration:
+            Order duration.
+            Common values:
+            - "DAY"
+            - "GOOD_TILL_CANCEL"
+
+    Returns:
+        dict:
+            Schwab API trailing stop BUY order payload.
     """
+    
     return {
         "complexOrderStrategyType": "NONE",
         "orderType": "TRAILING_STOP",
         "session": session,
-        "stopPriceLinkBasis": "BID",
-        "stopPriceLinkType": "VALUE",
+        "stopPriceLinkBasis": stop_price_link_basis,
+        "stopPriceLinkType": stop_price_link_type,
+        "stopPriceOffset": stop_price_offset,  # 10
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [
+            {
+                "instruction": "BUY",
+                "quantity": quantity,  # 10
+                "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
+            }
+        ],
+    }
+    
+
+def sell_trailing_stop_dict(
+    symbol: str,
+    quantity: int,
+    
+    stop_price_link_basis: stopPriceLinkBasis = "BID",
+    stop_price_link_type: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_offset: float = 2.0,
+    session: Session = "NORMAL",
+    duration: Duration = "DAY",
+) -> dict:
+    """
+    Create a SELL trailing stop order for an equity position.
+
+    A trailing stop sell order is commonly used to protect profits or limit
+    downside risk on an existing long position. The stop trigger price
+    automatically trails the market as price increases.
+
+    Trailing behavior:
+    - The stop price follows the market upward by the specified offset.
+    - If the market reverses downward by the offset amount, the trailing stop
+      triggers and submits a market sell order.
+    - The stop price never moves lower while the market is rising.
+
+    Example:
+        Current price: $110
+        Trailing offset: 10 points (VALUE)
+
+        If the stock rises from $110 to $130:
+            trailing stop adjusts up to $120
+
+        If the stock later falls to $120:
+            the order triggers and submits a market SELL order.
+
+    Percent example:
+        With stop_price_link_type="PERCENT" and stop_price_offset=2.0,
+        the stop price trails the market by 2%.
+
+    Args:
+        symbol:
+            Stock ticker symbol.
+
+        quantity:
+            Number of shares to sell.
+
+        stop_price_link_basis:
+            Reference price used for trailing calculations.
+            Common values include:
+            - "BID"
+            - "ASK"
+            - "LAST"
+            - "MARK"
+
+        stop_price_link_type:
+            Type of trailing offset:
+            - "VALUE"   -> dollar amount
+            - "PERCENT" -> percentage
+            - "TICK"    -> tick increment
+
+        stop_price_offset:
+            Trailing offset amount based on stop_price_link_type.
+
+        session:
+            Trading session for the order.
+            Typically "NORMAL".
+
+        duration:
+            Order duration.
+            Common values:
+            - "DAY"
+            - "GOOD_TILL_CANCEL"
+
+    Returns:
+        dict:
+            Schwab API trailing stop SELL order payload.
+    """
+    
+    return {
+        "complexOrderStrategyType": "NONE",
+        "orderType": "TRAILING_STOP",
+        "session": session,
+        "stopPriceLinkBasis": stop_price_link_basis,
+        "stopPriceLinkType": stop_price_link_type,
         "stopPriceOffset": stop_price_offset,  # 10
         "duration": duration,
         "orderStrategyType": "SINGLE",
@@ -317,7 +476,8 @@ def buy_trailingstop_trigger_sell_trailingstop_dict(
     symbol: str,
     quantity_buy: int,
     quantity_sell: int,
-    stop_price_link_basis_buy: stopPriceLinkBasis = "MARK",stop_price_link_type_buy: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_basis_buy: stopPriceLinkBasis = "MARK",
+    stop_price_link_type_buy: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
     stop_price_offset_buy: float = 2.0,
     session_buy: Session = "NORMAL",
     buy_duration: Duration = "DAY", # "GOOD_TILL_CANCEL", "END_OF_WEEK", "END_OF_MONTH", ...
@@ -377,7 +537,8 @@ def sell_trailingstop_trigger_buy_trailingstop_dict(
     symbol: str,
     quantity_sell: int,
     quantity_buy: int,
-    stop_price_link_basis_sell: stopPriceLinkBasis = "MARK",stop_price_link_type_sell: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_basis_sell: stopPriceLinkBasis = "MARK",
+    stop_price_link_type_sell: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
     stop_price_offset_sell: float = 2.0,
     session_sell: Session = "NORMAL",
     sell_duration: Duration = "DAY", # "GOOD_TILL_CANCEL", "END_OF_WEEK", "END_OF_MONTH", ...

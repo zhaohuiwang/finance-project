@@ -1,5 +1,7 @@
 
 
+
+
 symbol: "NBIS"
 account_number: "29308909"
 
@@ -12,8 +14,16 @@ buy_quantity: 50
 trailing_stop_pct: 2.0
 
 # Risk Management
-daily_max_loss_pct: 3.0          # Stop trading if daily loss exceeds this
-max_position_shares: 200         # Hard max shares to hold
+daily_max_loss_pct: 3.0
+max_position_shares: 200
+
+# Trading Hours Configuration
+trade_only_regular_hours: true
+trade_pre_market: false      # 04:00 - 09:30 ET
+trade_after_hours: false     # 16:00 - 20:00 ET
+
+market_open_time: "09:30"    # Regular hours
+market_close_time: "16:00"
 
 # Operation
 check_interval_sec: 5
