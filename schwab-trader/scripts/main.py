@@ -7,16 +7,16 @@
 #     bot = SchwabBot(config_path="conf/config.yaml")
 #     asyncio.run(bot.run())
 
+print("Bot initialized.")
 
-from ast import Add
-import os
-import json
 import asyncio
+import json
+import os
 import signal
-from datetime import datetime, time as dt_time, timezone
-from tracemalloc import stop
+import logging
+from datetime import datetime, time as dt_time, timezone, timedelta
 from dotenv import load_dotenv
-from matplotlib.pylab import long, subtract
+
 import schwabdev
 
 # ==========================================================
@@ -33,19 +33,28 @@ ATR_PERIOD = 14
 ATR_MULTIPLIER = 1.5
 REWARD_MULTIPLIER = 2.5
 
-RISK_PER_TRADE = 0.02  # 2% of equity
+RISK_PER_TRADE = 0.002  # 2% of equity
 STARTING_EQUITY = 25000
-MAX_DAILY_LOSS = 1000
+MAX_DAILY_LOSS = 10
 
 MAX_ORDERS_PER_SECOND = 1
 RECONCILE_INTERVAL = 30  # seconds for position polling
+
+
+# ====================== LOGGING ======================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 # ==========================================================
 # CLIENT
 # ==========================================================
 
 client = schwabdev.Client(
-    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+    os.getenv("app_key"), os.getenv("app_secret"), os.getenv("callback_url")
 )
 
 # =====================================================
@@ -59,6 +68,7 @@ stream = schwabdev.StreamAsync(client)
 # GLOBAL STATE
 # ==========================================================
 
+account_hash = None
 event_queue = asyncio.Queue()
 shutdown_event = asyncio.Event()
 
@@ -67,18 +77,12 @@ start_equity = STARTING_EQUITY
 daily_pnl = 0
 kill_switch = False
 
-# unrealized_pnl: unrealized profit and loss
-positions = {
-    s: {"shares": 0, "entry_price": None, "unrealized_pnl": 0} for s in SYMBOLS
-}
-
-# ohlc: Open, High, Low, Close
-ohlc = {
-    s: [] for s in SYMBOLS
-}  # List of {'time': epoch, 'open': p, 'high': p, 'low': p, 'close': p, 'volume': 0}
+positions = {s: {"shares": 0, "entry_price": None, "unrealized_pnl": 0} for s in SYMBOLS}
+ohlc = {s: [] for s in SYMBOLS}
 current_bars = {s: None for s in SYMBOLS}
 
 order_semaphore = asyncio.Semaphore(MAX_ORDERS_PER_SECOND)
+last_volumes = {s: 0 for s in SYMBOLS}
 
 
 # ==========================================================
@@ -196,12 +200,17 @@ def calculate_atr(symbol):
 # ==========================================================
 
 
-def calculate_position_size(entry_price, stop_price):
+def calculate_position_size(entry_price: float, stop_price: float) -> int:
     global equity
+    if equity <= 0:
+        return 0
+
     risk_dollars = equity * RISK_PER_TRADE
     per_share_risk = abs(entry_price - stop_price)
-    if per_share_risk == 0:
+
+    if per_share_risk < 0.01:   # Avoid division by zero / tiny risk
         return 0
+
     shares = int(risk_dollars / per_share_risk)
     return max(shares, 0)
 
@@ -223,63 +232,73 @@ def calculate_position_size(entry_price, stop_price):
 # ==========================================================
 
 
-def build_bracket(symbol, entry_price):
+def build_bracket(symbol: str, entry_price: float):
     atr = calculate_atr(symbol)
     if not atr:
+        logger.warning(f"No ATR available for {symbol}")
         return None
+
     stop_price = round(entry_price - (atr * ATR_MULTIPLIER), 2)
     take_profit = round(entry_price + (atr * REWARD_MULTIPLIER), 2)
     shares = calculate_position_size(entry_price, stop_price)
+
     if shares <= 0:
+        logger.info(f"Position size too small for {symbol}")
         return None
-    entry_price = round(entry_price, 2)
-    return {
-        "orderStrategyType": "TRIGGER",
+
+    # Cleaner bracket structure (Schwab is picky)
+    bracket_order = {
+        "orderStrategyType": "SINGLE",
+        "orderType": "LIMIT",
         "session": "NORMAL",
         "duration": "DAY",
-        "orderType": "LIMIT",
-        "price": entry_price,
+        "price": round(entry_price, 2),
         "orderLegCollection": [
             {
                 "instruction": "BUY",
                 "quantity": shares,
-                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                "instrument": {"symbol": symbol, "assetType": "EQUITY"}
             }
         ],
         "childOrderStrategies": [
             {
                 "orderStrategyType": "OCO",
                 "childOrderStrategies": [
+                    # Take Profit
                     {
                         "orderType": "LIMIT",
-                        "price": take_profit,
                         "session": "NORMAL",
                         "duration": "DAY",
+                        "price": take_profit,
                         "orderLegCollection": [
                             {
                                 "instruction": "SELL",
                                 "quantity": shares,
-                                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                                "instrument": {"symbol": symbol, "assetType": "EQUITY"}
                             }
-                        ],
+                        ]
                     },
+                    # Stop Loss
                     {
                         "orderType": "STOP",
-                        "stopPrice": stop_price,
                         "session": "NORMAL",
                         "duration": "DAY",
+                        "stopPrice": stop_price,
                         "orderLegCollection": [
                             {
                                 "instruction": "SELL",
                                 "quantity": shares,
-                                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                                "instrument": {"symbol": symbol, "assetType": "EQUITY"}
                             }
-                        ],
-                    },
-                ],
+                        ]
+                    }
+                ]
             }
-        ],
+        ]
     }
+
+    logger.info(f"Built bracket for {symbol}: {shares} shares @ {entry_price} | SL {stop_price} | TP {take_profit}")
+    return bracket_order
 
 
 # ==========================================================
@@ -310,14 +329,23 @@ def entry_condition(symbol):
 # ==========================================================
 
 
-def risk_check():
+def risk_check() -> bool:
     global kill_switch, daily_pnl
     if kill_switch:
         return False
+
     if daily_pnl <= -MAX_DAILY_LOSS:
-        print("MAX DAILY LOSS HIT — KILL SWITCH")
+        logger.critical("🚨 MAX DAILY LOSS HIT — ACTIVATING KILL SWITCH")
         kill_switch = True
         return False
+
+    # Optional: Add max position exposure check
+    total_exposure = sum(p["shares"] * (ohlc[s][-1]["close"] if ohlc[s] else 100) 
+                        for s, p in positions.items())
+    if total_exposure > equity * 0.5:   # e.g. max 50% exposure
+        logger.warning("High exposure - skipping new trades")
+        return False
+
     return True
 
 
@@ -340,26 +368,33 @@ async def place_bracket(symbol, price):
 # ==========================================================
 
 
-def handle_fill(symbol, shares, price, side):
+def handle_fill(symbol: str, shares: float, price: float, side: str):
     global equity, daily_pnl
     pos = positions[symbol]
-    if side == "B":  # Buy fill
+
+    if side == "B":  # Buy
         if pos["shares"] == 0:
             pos["entry_price"] = price
         pos["shares"] += shares
-        equity -= shares * price  # Approximate, ignore commissions
-    elif side == "S":  # Sell fill
+        equity -= shares * price
+        logger.info(f"🟢 BOUGHT {shares} {symbol} @ {price}")
+
+    elif side == "S":  # Sell
         pos["shares"] -= shares
-        realized_pnl = (price - pos["entry_price"]) * shares
-        daily_pnl += realized_pnl
-        equity += shares * price + realized_pnl
-    if pos["shares"] == 0:
+        if pos["entry_price"]:
+            realized_pnl = (price - pos["entry_price"]) * shares
+            daily_pnl += realized_pnl
+            equity += shares * price
+            logger.info(f"🔴 SOLD {shares} {symbol} @ {price} | PnL: ${realized_pnl:,.2f}")
+
+    # Cleanup
+    if pos["shares"] <= 0:
+        pos["shares"] = 0
         pos["entry_price"] = None
-    pos["unrealized_pnl"] = (
-        (ohlc[symbol][-1]["close"] - pos["entry_price"]) * pos["shares"]
-        if pos["shares"] > 0
-        else 0
-    )
+
+    # Update unrealized
+    if pos["shares"] > 0 and ohlc[symbol]:
+        pos["unrealized_pnl"] = (ohlc[symbol][-1]["close"] - pos["entry_price"]) * pos["shares"]
 
 
 # ==========================================================
