@@ -1,3 +1,18 @@
+
+""""
+The bot trades one stock (default: NBIS) using:
+Short Moving Average - SHORT_MA (e.g. 9 periods)
+Long Moving Average - LONG_MA (e.g. 21 periods)
+Candle interval - INTERVAL_MIN (e.g. 5 minutes)
+It checks the stock every Candle interval and:
+When the SHORT_MA crosses above the LONG_MA, the bot buy QUANTITY shares.
+When the SHORT_MA crosses below the LONG_MA, the bot sells all shares.
+The bot only trades during market hours (8:30 AM - 3:00 PM CT) and logs all actions and signals for transparency.
+
+
+"""
+
+
 import os
 import time
 import datetime
@@ -10,11 +25,15 @@ import schedule
 # ========================= CONFIG =========================
 load_dotenv()
 
-SYMBOL = os.getenv("SYMBOL", "NBIS")
+SYMBOL = "NBIS"
+MAX_POSITION = 100  # max shares to hold for risk management
+
 SHORT_MA = 9
 LONG_MA = 21
 QUANTITY = 10  # shares per trade
 INTERVAL_MIN = 5  # 5 or 15 recommended
+
+STOP_LOSS_PCT = 0.05  # 5%
 
 # Logging
 logging.basicConfig(
@@ -24,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 # ========================= CLIENT =========================
 client = schwabdev.Client(
-    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+    os.getenv("app_key"), os.getenv("app_secret"), os.getenv("callback_url")
 )
 
 # Get account hash
@@ -193,14 +212,14 @@ def trading_logic():
     )
 
     # === EXECUTION ===
-    if signal == "BUY" and position < 500:  # safety cap
+    if signal == "BUY" and position < MAX_POSITION:  # safety cap
         logger.info("🚀 BUY SIGNAL - Placing order")
         place_order("BUY", QUANTITY)
 
     elif signal == "SELL" and position > 0:
-        sell_qty = min(QUANTITY, int(position))
-        logger.info(f"🔻 SELL SIGNAL - Selling {sell_qty} shares")
-        place_order("SELL", sell_qty)
+        # sell_qty = min(QUANTITY, int(position))
+        logger.info(f"🔻 SELL SIGNAL - Selling {position} shares")
+        place_order("SELL", position)
 
 
 # ========================= RUN BOT =========================

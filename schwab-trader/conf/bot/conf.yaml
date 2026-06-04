@@ -11,13 +11,13 @@ symbols:
   #   stop_loss_pct: 15.5
   #   fixed_shares: 2900
   # NBIS:
-  #   buy_target_price: 145.0
-  #   limit_sell_price: 155.0
+  #   buy_target_price: 225.1
+  #   limit_sell_price: 255.1
   #   buy_drop_pct: 20.0
   #   limit_sell_pct: 15.0
   #   stop_loss_dollar: 20
   #   stop_loss_pct: 15.5
-  #   fixed_shares: 1
+  #   fixed_shares: 300
   # JOBY:
   #   buy_target_price: 8.95
   #   limit_sell_price: 9.02
@@ -26,14 +26,14 @@ symbols:
   #   limit_sell_pct: 15.0
   #   stop_loss_pct: 15.5
   #   fixed_shares: 3500
-  # IREN:
-  #   buy_target_price: 47.2
-  #   limit_sell_price: 47.99
-  #   stop_loss_dollar: 0.5
-  #   buy_drop_pct: 20.0
-  #   limit_sell_pct: 10.0
-  #   stop_loss_pct: 10.0
-  #   fixed_shares: 800
+  APLD:
+    buy_target_price: 48.1
+    limit_sell_price: 48.8
+    buy_drop_pct: 20.0
+    limit_sell_pct: 15.0
+    stop_loss_dollar: 20
+    stop_loss_pct: 15.5
+    fixed_shares: 1500
 
   #  CRWV:
   #   buy_target_price: 75.1
@@ -43,14 +43,14 @@ symbols:
   #   limit_sell_pct: 10.0
   #   stop_loss_pct: 10.0
   #   fixed_shares: 400
-  USAR:    
-    buy_target_price: 20
-    limit_sell_price: 20.5
-    buy_drop_pct: 20.0
-    limit_sell_pct: 15.0
-    stop_loss_dollar: 3.0
-    stop_loss_pct: 15.5
-    fixed_shares: 38
+  # USAR:    
+  #   buy_target_price: 25
+  #   limit_sell_price: 30.5
+  #   buy_drop_pct: 20.0
+  #   limit_sell_pct: 15.0
+  #   stop_loss_dollar: 3.0
+  #   stop_loss_pct: 15.5
+  #   fixed_shares: 38
 
 risk:
   risk_per_trade_pct: 1.0

@@ -5,6 +5,12 @@ import pandas as pd
 from utils.logger import get_logger
 from config import load_config
 
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.requests import StockLatestQuoteRequest
+
+from datetime import timedelta, timezone
+    
+    
 logger = get_logger(__name__)
 
 _NY_TZ = pytz.timezone("America/New_York")
@@ -60,7 +66,7 @@ def filter_regular_hours(df: pd.DataFrame, cfg=None) -> pd.DataFrame:
 def get_latest_ask(data_client, symbol: str) -> float | None:
     """Return the current ask price for a symbol."""
     try:
-        from alpaca.data.requests import StockLatestQuoteRequest
+        # from alpaca.data.requests import StockLatestQuoteRequest
         quote = data_client.get_stock_latest_quote(
             StockLatestQuoteRequest(symbol_or_symbols=symbol)
         )
@@ -74,13 +80,13 @@ def get_bars(
     data_client,
     symbol: str,
     timeframe,
-    limit: int = 400,
+    limit: int | None = None,
     regular_hours_only: bool | None = None,
     cfg = None
 ) -> pd.DataFrame:
     """Fetch bars and optionally filter to regular market hours."""
-    from alpaca.data.requests import StockBarsRequest
-    from datetime import timedelta, timezone
+    # from alpaca.data.requests import StockBarsRequest
+    # from datetime import timedelta, timezone
 
     if cfg is None:
         cfg = load_config()

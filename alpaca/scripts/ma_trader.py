@@ -199,7 +199,6 @@ def main():
         f"Starting MA Trader with ATR Trailing Stops — symbols: {cfg.trading.symbols}"
     )
     notify(get_account_info(trading_client, cfg.risk.risk_per_trade))
-
     loss_guard = DailyLossGuard(trading_client, cfg.risk.daily_max_loss_pct)
     cooldown = StopLossCooldown(trading_client, cfg.risk.stop_loss_cooldown_minutes)
 

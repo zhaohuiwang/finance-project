@@ -10,6 +10,8 @@ from pprint import pprint
 import pandas as pd
 
 from schwab_trader.accounts.schwab import client, SchwabAccount
+
+
 from schwab_trader.accounts.type_literal import Duration
 from schwab_trader.orders.equity import (
     buy_market_dict,
@@ -294,7 +296,7 @@ all_orders = get_orders(
     hashValue,
     fromTime=from_time,
     toTime=to_time,
-    # status='WORKING',
+    status='WORKING',
     # status="FILLED",
     # status="AWAITING_PARENT_ORDER",
     # status="PENDING_ACTIVATION"

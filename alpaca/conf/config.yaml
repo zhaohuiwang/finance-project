@@ -1,5 +1,5 @@
 trading:
-  paper_trading: true          # Set to false for live real-money trading
+  paper_trading: false          # Set to false for live real-money trading
   trade_only_market_hours: false  # Set to true to restrict to 9:30–16:00 ET
   symbols: ["NBIS"]           # Add more tickers: ["NBIS", "AAPL", "TSLA"]
   timeframe: "minute"          # Options: minute, hour, day
