@@ -19,7 +19,7 @@ strategy:
 
   rsi_period: 14
   rsi_max_for_buy: 75          # Only buy when RSI is below this threshold
-  volume_min_ratio: 1.0        # BUY only if current volume >= X × 20-bar avg (0 to disable)
+  volume_min_ratio: 10.0        # BUY only if current volume >= X × 20-bar avg (0 to disable)
   use_5m_confirmation: true    # Require 5-min uptrend before taking a 1-min BUY signal
   min_signal_confidence: 0.65  # smart_ma.py only: skip signal if Claude's confidence is below this
 

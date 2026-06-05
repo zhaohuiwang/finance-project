@@ -1,6 +1,6 @@
 # ================================================================================
 # FILE: /home/zhaohuiwang/dev/finance-project/alpaca/scripts/ma_trader.py
-# ================================================================================
+# There is ~ 10 min latency  for the price quote using free account. ================================================================================
 
 """
 MA Crossover Trading Bot with ATR Trailing Stops
@@ -71,7 +71,7 @@ else:
     logger.warning("RUNNING IN LIVE REAL MONEY MODE - BE CAREFUL!")
 
 trading_client = TradingClient(API_KEY, SECRET_KEY, paper=cfg.trading.paper_trading)
-data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)  # ← Fixed
+data_client = StockHistoricalDataClient(API_KEY, SECRET_KEY)
 
 NY_TZ = pytz.timezone("America/New_York")
 
@@ -228,4 +228,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()

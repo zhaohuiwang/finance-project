@@ -5,8 +5,7 @@ import pandas as pd
 from utils.logger import get_logger
 from config import load_config
 
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.requests import StockLatestQuoteRequest
+from alpaca.data.requests import DataFeed, StockBarsRequest, StockLatestQuoteRequest
 
 from datetime import timedelta, timezone
     
@@ -90,12 +89,16 @@ def get_bars(
 
     if cfg is None:
         cfg = load_config()
+        
+    now = datetime.now(timezone.utc)
 
     request_params = StockBarsRequest(
         symbol_or_symbols=symbol,
         timeframe=timeframe,
-        start=datetime.now(timezone.utc) - timedelta(days=10),
+        start=now - timedelta(days=10),
+        # end=now,    # only for paid plans, free plan lags by ~15 mins 
         limit=limit,
+        feed=DataFeed.SIP
     )
 
     try:
@@ -117,3 +120,4 @@ def get_bars(
     except Exception as e:
         logger.error(f"Failed to fetch bars for {symbol}: {e}")
         return pd.DataFrame()
+    
