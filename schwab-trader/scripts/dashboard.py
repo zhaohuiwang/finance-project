@@ -66,7 +66,7 @@ MAX_POINTS = 500  # at most 500 recent points to hold.
 dotenv.load_dotenv()
 
 client = schwabdev.Client(
-    os.getenv("app_key"), os.getenv("app_secret"), os.getenv("callback_url")
+    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
 )
 
 streamer = schwabdev.Stream(client)

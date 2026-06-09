@@ -19,16 +19,23 @@ Two CSV files saved automatically
 """
 
 import os
-from alpaca.data import StockHistoricalDataClient, ScreenerClient
-from alpaca.data.requests import StockBarsRequest, MarketMoversRequest, MostActivesRequest
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from dotenv import load_dotenv
+
+from alpaca.data import ScreenerClient, StockHistoricalDataClient
+from alpaca.data.requests import (
+    MarketMoversRequest,
+    MostActivesRequest,
+    StockBarsRequest,
+)
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.trading.client import TradingClient
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-import time
 
-from dotenv import load_dotenv
 
 # ====================== CONFIG ======================
 load_dotenv()
@@ -221,9 +228,12 @@ if __name__ == "__main__":
     print(f"\nTop Momentum + Reasonable Volatility:")
     print(momentum_low_vol.head(15)[['symbol', 'price', 'pct_5d', 'vol_30d', 'atr_pct', 'avg_volume']])
     
+    output_dir = Path.cwd() / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
     # Save to CSV
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    momentum_low_vol.to_csv(f"output/momentum_low_vol_{timestamp}.csv", index=False)
-    filtered.to_csv(f"output/full_screen_{timestamp}.csv", index=False)
+    momentum_low_vol.to_csv(f"{output_dir}/momentum_low_vol_{timestamp}.csv", index=False)
+    filtered.to_csv(f"{output_dir}/full_screen_{timestamp}.csv", index=False)
     
     print(f"\nFiles saved: momentum_low_vol_{timestamp}.csv")

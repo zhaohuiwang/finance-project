@@ -2,37 +2,49 @@
 
 
 
+
+# ====================== Trading Bot Configuration ======================
+
 symbol: "NBIS"
-account_number: "29308909"
+account_number: "29308909"   # ← Change this!
 
-# Strategy
-up_pct: 3.0
+# ====================== STRATEGY PARAMETERS ======================
+stop_price_link_type_sell: "PERCENT" # or "VALUE"
+
+# Trigger trailing sell if price rises up_value (percentage or dollar value) in up_window_min minutes
+up_value: 3.0
 up_window_min: 15
-down_pct: 2.5
+
+stop_price_offset_sell: 2.0
+
+
+# Trigger trailing buy if price drops down_pct (percentage) in down_window_min minutes and you have zero shares.
+down_value: 2.5
 down_window_min: 20
+
+stop_price_offset_buy: 2.0
 buy_quantity: 50
-trailing_stop_pct: 2.0
 
-# Risk Management
-daily_max_loss_pct: 3.0
-max_position_shares: 200
+#====================== RISK MANAGEMENT ======================
+daily_max_loss_pct: 3.0   # Max daily loss before bot halts (recommended ≤5)
+max_position_shares: 200  # Maximum shares the bot can hold
 
-# Trading Hours Configuration
+# ====================== TRADING HOURS ======================
 trade_only_regular_hours: true
-trade_pre_market: false      # 04:00 - 09:30 ET
-trade_after_hours: false     # 16:00 - 20:00 ET
+trade_pre_market: false    # 04:00 - 09:30 ET
+trade_after_hours: false   # 16:00 - 20:00 ET
 
-market_open_time: "09:30"    # Regular hours
+market_open_time: "09:30"
 market_close_time: "16:00"
 
-# Operation
+# ====================== OPERATION ======================
 check_interval_sec: 5
 
-# Logging
+# ====================== LOGGING ======================
 log_file: "logs/nbis_trades.csv"
 
-# Telegram
+# ====================== TELEGRAM ALERTS ======================
 telegram:
-  enabled: true
-  token: "YOUR_TELEGRAM_BOT_TOKEN_HERE"
-  chat_id: "YOUR_CHAT_ID_HERE"
+  enabled: false
+  token: ""           # Telegram Bot Token
+  chat_id: ""         # Your chat ID

@@ -51,12 +51,14 @@ class TradingConfig(BaseModel):
     account_number: str
 
     # Strategy
-    up_pct: float = Field(3.0, gt=0)
+    stop_price_link_type_sell: str = "PERCENT"
+    up_value: float = Field(3.0, gt=0)
     up_window_min: int = Field(15, gt=0)
-    down_pct: float = Field(2.5, gt=0)
+    down_value: float = Field(2.5, gt=0)
     down_window_min: int = Field(20, gt=0)
     buy_quantity: int = Field(50, gt=0)
-    trailing_stop_pct: float = Field(2.0, gt=0)
+    stop_price_offset_sell: float = Field(2.0, gt=0)
+    stop_price_offset_buy: float = Field(2.0, gt=0)
 
     # Risk Management
     daily_max_loss_pct: float = Field(3.0, gt=0, le=20)
@@ -97,13 +99,15 @@ class TradingConfig(BaseModel):
     def validate_config(self):
         if self.daily_max_loss_pct > 10:
             raise ValueError("daily_max_loss_pct should be reasonable (≤10%)")
-        if self.market_open_time >= self.market_close_time:
+        
+        to_time = lambda t: dt.datetime.strptime(t, "%H:%M").time()
+        if to_time(self.market_open_time) >= to_time(self.market_close_time):
             raise ValueError("market_open_time must be before market_close_time")
         return self
 
 
-def load_config() -> TradingConfig:
-    config_path = Path("config.yaml")
+def load_config(path) -> TradingConfig:
+    config_path = Path(path)
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
@@ -113,7 +117,7 @@ def load_config() -> TradingConfig:
     return TradingConfig(**data)
 
 
-cfg = load_config()
+cfg = load_config("conf/momentum_config.yaml") or {}
 
 # ========================= LOGGING =========================
 os.makedirs("logs", exist_ok=True)

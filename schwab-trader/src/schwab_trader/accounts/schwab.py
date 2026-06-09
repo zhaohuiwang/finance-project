@@ -7,12 +7,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # client = schwabdev.Client(
-#     os.getenv("app_key"), os.getenv("app_secret"), os.getenv("callback_url")
+#     os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
 # )
 client = schwabdev.Client(
-    os.getenv("app_key"),
-    os.getenv("app_secret"),
-    callback_url=os.getenv("callback_url"),
+    os.getenv("APP_KEY"),
+    os.getenv("APP_SECRET"),
+    callback_url=os.getenv("CALLBACK_URL"),
     tokens_db="~/.schwabdev/tokens.db",
     encryption=None,
     timeout=10,

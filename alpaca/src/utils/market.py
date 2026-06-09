@@ -98,7 +98,7 @@ def get_bars(
         start=now - timedelta(days=10),
         # end=now,    # only for paid plans, free plan lags by ~15 mins 
         limit=limit,
-        feed=DataFeed.SIP
+        feed=DataFeed.SIP   # Securities Information Processor - consolidated real-time data feed for US equities (from all exchanges)
     )
 
     try:
