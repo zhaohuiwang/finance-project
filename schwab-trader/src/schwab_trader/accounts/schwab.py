@@ -1,25 +1,54 @@
+
+import logging
 import os
-import json
+from dotenv import load_dotenv
+from pathlib import Path
+import sys
 
 import schwabdev
-from dotenv import load_dotenv
 
 load_dotenv()
 
-# client = schwabdev.Client(
-#     os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
-# )
-client = schwabdev.Client(
-    os.getenv("APP_KEY"),
-    os.getenv("APP_SECRET"),
-    callback_url=os.getenv("CALLBACK_URL"),
-    tokens_db="~/.schwabdev/tokens.db",
-    encryption=None,
-    timeout=10,
-    call_on_auth=None,
-    open_browser_for_auth=True
+# ========================= LOGGING SETUP =========================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
 )
+logger = logging.getLogger(__name__)
 
+
+# ========================= SCHWAB AUTH SETUP =========================
+def initialize_client(
+    tokens_path="~/.schwabdev/tokens.db"
+    ):
+    """Normal initialization using existing tokens.db"""
+    try:        
+        tokens_path = str(Path(tokens_path).expanduser())
+        APP_KEY = os.getenv("APP_KEY")
+        APP_SECRET = os.getenv("APP_SECRET")
+        CALLBACK_URL = os.getenv("CALLBACK_URL")
+        logger.info(f"Initializing Schwab Client with tokens at: {tokens_path}")
+    except Exception as e:
+        logger.error(f"Error occurred while initializing tokens path: {e}")
+        raise
+
+    return schwabdev.Client(
+        APP_KEY,
+        APP_SECRET,
+        callback_url=CALLBACK_URL,
+        tokens_db=tokens_path,
+        encryption=None, # the following are defaults.
+        timeout=10,
+        call_on_auth=None,
+        open_browser_for_auth=True
+    )
+
+
+
+# ========================= SCHWAB ACCOUNT =========================
+client = initialize_client()
+
+  
 class Position:
     """Represents a single account position"""
 
