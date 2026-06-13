@@ -1,50 +1,51 @@
 
 
-
-
-
 # ====================== Trading Bot Configuration ======================
+# schwab-trader/conf/momentum_config.yaml
 
-symbol: "NBIS"
-account_number: "29308909"   # ← Change this!
 
-# ====================== STRATEGY PARAMETERS ======================
-stop_price_link_type_sell: "PERCENT" # or "VALUE"
+symbol: "APLD"
+account_number: "29308909"
 
-# Trigger trailing sell if price rises up_value (percentage or dollar value) in up_window_min minutes
-up_value: 3.0
+# Strategy Parameters
+stop_price_link_type: "PERCENT"
+
 up_window_min: 15
-
-stop_price_offset_sell: 2.0
-
-
-# Trigger trailing buy if price drops down_pct (percentage) in down_window_min minutes and you have zero shares.
-down_value: 2.5
 down_window_min: 20
 
-stop_price_offset_buy: 2.0
 buy_quantity: 50
 
-#====================== RISK MANAGEMENT ======================
-daily_max_loss_pct: 3.0   # Max daily loss before bot halts (recommended ≤5)
-max_position_shares: 200  # Maximum shares the bot can hold
+# ATR-based Strategy
+atr_period: 14
+up_atr_multiplier: 1.8
+down_atr_multiplier: 2.0
+trailing_atr_multiplier_sell: 2.5
+trailing_atr_multiplier_buy: 2.0
+buy_fallback_offset_pct: 0.8   # below current price for fallback limit buy
 
-# ====================== TRADING HOURS ======================
+
+# Risk Management
+daily_max_loss_pct: 3.0
+max_position_shares: 200
+
+# Trading Hours
 trade_only_regular_hours: true
-trade_pre_market: false    # 04:00 - 09:30 ET
-trade_after_hours: false   # 16:00 - 20:00 ET
+trade_pre_market: false
+trade_after_hours: false
 
 market_open_time: "09:30"
 market_close_time: "16:00"
 
-# ====================== OPERATION ======================
+# Operation
 check_interval_sec: 5
 
-# ====================== LOGGING ======================
+# Logging
 log_file: "logs/nbis_trades.csv"
 
-# ====================== TELEGRAM ALERTS ======================
+# Telegram
 telegram:
   enabled: false
-  token: ""           # Telegram Bot Token
-  chat_id: ""         # Your chat ID
+  token: ""
+  chat_id: ""
+
+
