@@ -237,6 +237,18 @@ bars = deque(maxlen=500)
 
 active_orders: dict[str, dict] = {}
 
+# To reduce API calls we cache position and specify a refresh interval.
+cached_position_qty = 0
+last_position_refresh = 0.0
+
+POSITION_REFRESH_SEC = 30
+
+cached_daily_loss_pct = 0.0
+last_daily_loss_refresh = 0.0
+
+DAILY_LOSS_REFRESH_SEC = 300
+ORDER_STALE_SEC = 1800  # 30 minutes
+
 quote_cache = {
     cfg.symbol: {
         "bid": None,
@@ -253,17 +265,45 @@ last_signal_bar = {
 
 
 def get_daily_loss_pct() -> float:
-    global daily_start_equity, daily_start_date
+
+    global daily_start_equity
+    global daily_start_date
+
+    global cached_daily_loss_pct
+    global last_daily_loss_refresh
+
+    now = time.time()
+
+    if now - last_daily_loss_refresh < DAILY_LOSS_REFRESH_SEC:
+        return cached_daily_loss_pct
+
     try:
+
         today = dt.date.today()
+
         if daily_start_date != today or daily_start_equity is None:
+
             account.refresh()
+
             daily_start_equity = float(account.equity)
+
             daily_start_date = today
-        account.refresh()
-        return (daily_start_equity - float(account.equity)) / daily_start_equity * 100
-    except:
-        return 0.0
+
+        else:
+
+            account.refresh()
+
+        cached_daily_loss_pct = (
+            (daily_start_equity - float(account.equity)) / daily_start_equity * 100
+        )
+
+        last_daily_loss_refresh = now
+
+        return cached_daily_loss_pct
+
+    except Exception:
+
+        return cached_daily_loss_pct
 
 
 def is_trading_halted() -> bool:
@@ -274,13 +314,31 @@ def is_trading_halted() -> bool:
     return False
 
 
-def get_position_qty() -> int:
+def get_position_qty(force_refresh: bool = False) -> int:
+
+    global cached_position_qty
+    global last_position_refresh
+
+    now = time.time()
+
+    if not force_refresh and (now - last_position_refresh) < POSITION_REFRESH_SEC:
+        return cached_position_qty
+
     try:
+
         account.refresh()
+
         pos = account.get_position(cfg.symbol)
-        return int(pos.quantity) if pos else 0
-    except:
-        return 0
+
+        cached_position_qty = int(pos.quantity) if pos else 0
+
+        last_position_refresh = now
+
+        return cached_position_qty
+
+    except Exception:
+
+        return cached_position_qty
 
 
 # ========================= ATR =========================
@@ -312,7 +370,7 @@ def calculate_atr(bars, period=14):
 # ========================= ORDER FUNCTIONS =========================
 def place_trailing_sell(qty: int, current_price: float) -> bool:
     try:
-        atr = calculate_atr(bars, cfg.atr_period) or 0.5
+        atr = calculate_atr(list(bars)[:-1], cfg.atr_period) or 0.5
         offset = round(cfg.trailing_atr_multiplier_sell * atr, 2)
 
         order_dict = sell_trailing_stop_dict(
@@ -353,7 +411,7 @@ def place_trailing_sell(qty: int, current_price: float) -> bool:
 def place_trailing_buy(qty: int, current_price: float) -> bool:
     """Place trailing stop buy + configurable fallback limit buy."""
     try:
-        atr = calculate_atr(bars, cfg.atr_period) or 0.5
+        atr = calculate_atr(list(bars)[:-1], cfg.atr_period) or 0.5
         offset = round(cfg.trailing_atr_multiplier_buy * atr, 2)
 
         order_dict = buy_trailing_stop_dict(
@@ -432,7 +490,6 @@ def place_trailing_buy(qty: int, current_price: float) -> bool:
 
 
 # ========================= STREAM HANDLER =========================
-
 # https://tylerebowers.github.io/Schwabdev/?source=pages%2Fstream.html # Level one equities > Data Example
 # streamer.level_one_equities(
 #     cfg.symbol,
@@ -445,12 +502,11 @@ def place_trailing_buy(qty: int, current_price: float) -> bool:
 # ) # Purpose: ATR, momentum, volatility
 
 
-
 def on_quote(message: Any):
     global last_log_time
 
     try:
-        #### schwabdev often delivers JSON strings ####
+        # schwabdev often delivers JSON strings
         if isinstance(message, str):
             try:
                 message = json.loads(message)
@@ -465,7 +521,7 @@ def on_quote(message: Any):
 
         for packet in message["data"]:
 
-            #### CHART_EQUITY only ####
+            # CHART_EQUITY only
             service = packet.get("service")
 
             if service == "LEVELONE_EQUITIES":
@@ -498,12 +554,10 @@ def on_quote(message: Any):
                 except (KeyError, TypeError, ValueError):
                     continue
 
-                #### candle timestamp from Schwab ####
-                candle_time = dt.datetime.fromtimestamp(
-                    ts_ms / 1000.0, tz=ZoneInfo("America/New_York")
-                )
+                # candle timestamp from Schwab
+                candle_time = dt.datetime.fromtimestamp(ts_ms / 1000.0, tz=_NY_TZ)
 
-                #### avoid duplicate candles ####
+                # avoid duplicate candles
                 if len(bars) > 0 and bars[-1][0] == candle_time:
                     bars[-1] = (
                         candle_time,
@@ -523,26 +577,26 @@ def on_quote(message: Any):
                         )
                     )
 
-                #### current market price ####
+                # current market price
                 last_price = close_price
 
-                #### market checks ####
+                # market checks
                 if not is_market_open():
                     continue
 
                 if is_trading_halted():
                     continue
 
-                #### need enough candles ####
-                atr = calculate_atr(bars, cfg.atr_period)
+                # need enough candles
+                atr = calculate_atr(list(bars)[:-1], cfg.atr_period)
 
                 if atr is None or atr <= 0:
                     continue
 
-                #### position ####
+                # position
                 position_qty = get_position_qty()
 
-                #### thresholds ###
+                # thresholds
                 up_threshold = cfg.up_atr_multiplier * atr
 
                 down_threshold = cfg.down_atr_multiplier * atr
@@ -555,7 +609,7 @@ def on_quote(message: Any):
                     info["type"] == "SELL" for info in active_orders.values()
                 )
 
-                #### SELL SIGNAL ####
+                # SELL SIGNAL
                 if position_qty > 0 and not has_pending_sell:
                     if last_signal_bar["SELL"] == candle_time:
                         continue
@@ -582,7 +636,7 @@ def on_quote(message: Any):
                             )
                             last_signal_bar["SELL"] = candle_time
 
-                #### BUY SIGNAL ####
+                # BUY SIGNAL
                 if position_qty == 0 and not has_pending_buy:
                     projected_position = position_qty + cfg.buy_quantity
 
@@ -626,19 +680,19 @@ def handle_level1(content):
 
     cache = quote_cache[cfg.symbol]
 
-    #### Bid Price ####
+    # Bid Price
     if "1" in content:
         cache["bid"] = float(content["1"])
 
-    #### Ask Price ####
+    # Ask Price
     if "2" in content:
         cache["ask"] = float(content["2"])
 
-    #### Last Price ####
+    # Last Price
     if "3" in content:
         cache["last"] = float(content["3"])
 
-    #### Mark Price ####
+    # Mark Price
     if "33" in content:
         cache["mark"] = float(content["33"])
 
@@ -656,14 +710,41 @@ def handle_level1(content):
 
 
 # ========================= ORDER MONITOR =========================
+
+
 async def monitor_orders():
     while True:
         try:
             await asyncio.sleep(15)
+
+            #
+            # Remove stale local orders
+            #
+            if active_orders:
+
+                now = dt.datetime.now()
+
+                stale_order_ids = []
+
+                for order_id, info in active_orders.items():
+
+                    age_sec = (now - info["timestamp"]).total_seconds()
+
+                    if age_sec > ORDER_STALE_SEC:
+
+                        stale_order_ids.append(order_id)
+
+                for order_id in stale_order_ids:
+
+                    logger.warning(f"Removing stale order {order_id}")
+
+                    active_orders.pop(order_id, None)
+
             if not active_orders:
                 continue
 
             orders_response = client.get_orders_for_account(hashValue, max_results=100)
+
             orders = (
                 orders_response
                 if isinstance(orders_response, list)
@@ -671,22 +752,45 @@ async def monitor_orders():
             )
 
             for order in orders:
+
                 order_id = str(order.get("orderId") or order.get("id"))
+
                 if order_id not in active_orders:
                     continue
 
                 status = str(order.get("status", "")).upper()
-                if status in ["FILLED", "EXECUTED", "PARTIALLY_FILLED"]:
+
+                # Fully filled
+                if status in ["FILLED", "EXECUTED"]:
+
                     info = active_orders.pop(order_id, None)
+
                     if info:
+
+                        get_position_qty(force_refresh=True)
+
                         log_trade(
                             "FILL", info["qty"], None, f"Order {status}", order_id
                         )
+
                         logger.info(f"✅ Order FILLED: {order_id}")
+
+                # Partial fill
+                elif status == "PARTIALLY_FILLED":
+
+                    get_position_qty(force_refresh=True)
+
+                    logger.info(f"⏳ Order PARTIALLY_FILLED: " f"{order_id}")
+
+                # Dead orders
                 elif status in ["CANCELLED", "REJECTED", "EXPIRED", "DEAD"]:
+
                     active_orders.pop(order_id, None)
+
                     logger.warning(f"❌ Order {status}: {order_id}")
+
         except Exception as e:
+
             logger.debug(f"Order monitor error: {e}")
 
 
@@ -698,13 +802,12 @@ async def run_bot():
             streamer = schwabdev.Stream(client)
 
             # streamer.start(on_quote)
-
             streamer.start_auto(
                 receiver=on_quote,  # print,
                 start_time=dt.time(9, 29, 0),
                 stop_time=dt.time(16, 0, 0),
                 on_days=(0, 1, 2, 3, 4),
-                now_timezone=ZoneInfo("America/New_York"),
+                now_timezone=_NY_TZ,
                 daemon=True,
             )
 
