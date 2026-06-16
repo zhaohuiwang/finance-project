@@ -27,8 +27,8 @@ symbols:
   #   stop_loss_pct: 15.5
   #   fixed_shares: 3500
   APLD:
-    buy_target_price: 48.1
-    limit_sell_price: 48.8
+    buy_target_price: 47.1
+    limit_sell_price: 48.4
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0
     stop_loss_dollar: 20

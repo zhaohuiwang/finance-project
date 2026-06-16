@@ -18,7 +18,7 @@ from schwab_trader.pipelines.bot import TradingBot
 load_dotenv()
 console = Console()
 
-cfg = TradingConfig.load_from_file(Path(__file__).parent / "../conf/bot/conf.yaml")
+cfg = TradingConfig.load_from_file(Path(__file__).parent / "../conf/simple_bot_config.yaml")
 
 
 bot = TradingBot(cfg, mode="cli")
