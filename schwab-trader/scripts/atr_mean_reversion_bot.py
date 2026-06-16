@@ -1,24 +1,43 @@
 """
 schwab-trader/scripts/momentum_bot.py
 
-How the Main Loop Works
-The bot continuously receives real-time quotes for APLD from Schwab.
+This bot is an ATR-based mean-reversion (Average True Range) system that buys after unusually large declines and sells after unusually large advances, using trailing stop orders to confirm reversals before entering or exiting.
 
-For every quote:
-    Store price in a rolling history window.
-    Calculate ATR (volatility).
-    Measure recent price movement.
-    If price has risen a lot:
-    place a trailing sell.
-    If price has fallen a lot:
-    place a trailing buy.
-    Monitor orders until filled.
+OHLC (Open, High, Low, and Close) candle
 
-Flow Example
-Price drops 3.2% in last 20 minutes → Bot places Trailing Buy order
-Price later rebounds → Buy order fills
-Price then rises 4.1% in 15 minutes → Bot places Trailing Sell order
-Price continues rising → Trailing stop eventually sells at a profit
+Large drop - Wait for rebound - Buy
+Large rise - Wait for pullback - Sell
+
+
+Buy logic:
+position_qty == 0
+not has_pending_buy
+position_qty + buy_quantity <= max_position_shares
+
+atr = calculate_atr(bars, cfg.atr_period)
+down_threshold = (cfg.down_atr_multiplier * atr)
+
+# look back over last N minutes and find the highest price, where N is
+cfg.down_window_min = 20
+move_down = (max(recent_highs) - last_price)
+if move_down >= down_threshold:
+    place_trailing_buy(cfg.buy_quantity, ask or last_price)
+# where ask = quote_cache[cfg.symbol]["ask"] and default buy_quantity = 50
+# Trailing Sell Offset
+offset = round(cfg.trailing_atr_multiplier_sell * atr, 2)
+
+Sell logic:
+position_qty > 0
+not has_pending_sell
+
+atr = calculate_atr(bars, cfg.atr_period)
+up_threshold = (cfg.up_atr_multiplier * atr)
+# look back over last N minutes and find the highest price, where N is
+cfg.up_window_min = 15
+move_up = (last_price - min(recent_lows))
+if move_up >= up_threshold:
+    place_trailing_sell(position_qty, bid or last_price)
+# where bid = quote_cache[cfg.symbol]["bid"]
 
 
 # Check and kill runing process:
@@ -265,44 +284,27 @@ last_signal_bar = {
 
 
 def get_daily_loss_pct() -> float:
-
     global daily_start_equity
     global daily_start_date
-
     global cached_daily_loss_pct
     global last_daily_loss_refresh
-
     now = time.time()
-
     if now - last_daily_loss_refresh < DAILY_LOSS_REFRESH_SEC:
         return cached_daily_loss_pct
-
     try:
-
         today = dt.date.today()
-
         if daily_start_date != today or daily_start_equity is None:
-
             account.refresh()
-
             daily_start_equity = float(account.equity)
-
             daily_start_date = today
-
         else:
-
             account.refresh()
-
         cached_daily_loss_pct = (
             (daily_start_equity - float(account.equity)) / daily_start_equity * 100
         )
-
         last_daily_loss_refresh = now
-
         return cached_daily_loss_pct
-
     except Exception:
-
         return cached_daily_loss_pct
 
 
@@ -318,52 +320,34 @@ def get_position_qty(force_refresh: bool = False) -> int:
 
     global cached_position_qty
     global last_position_refresh
-
     now = time.time()
-
     if not force_refresh and (now - last_position_refresh) < POSITION_REFRESH_SEC:
         return cached_position_qty
-
     try:
-
         account.refresh()
-
         pos = account.get_position(cfg.symbol)
-
         cached_position_qty = int(pos.quantity) if pos else 0
-
         last_position_refresh = now
-
         return cached_position_qty
-
     except Exception:
-
         return cached_position_qty
-
 
 # ========================= ATR =========================
 def calculate_atr(bars, period=14):
 
     if len(bars) < period + 1:
         return None
-
     trs = []
-
     for i in range(1, len(bars)):
-
         prev_close = bars[i - 1][4]
-
         high_ = bars[i][2]
         low_ = bars[i][3]
-
         tr = max(
             high_ - low_,
             abs(high_ - prev_close),
             abs(low_ - prev_close),
         )
-
         trs.append(tr)
-
     return sum(trs[-period:]) / period
 
 
@@ -413,7 +397,6 @@ def place_trailing_buy(qty: int, current_price: float) -> bool:
     try:
         atr = calculate_atr(list(bars)[:-1], cfg.atr_period) or 0.5
         offset = round(cfg.trailing_atr_multiplier_buy * atr, 2)
-
         order_dict = buy_trailing_stop_dict(
             symbol=cfg.symbol,
             quantity=qty,
@@ -512,27 +495,19 @@ def on_quote(message: Any):
                 message = json.loads(message)
             except Exception:
                 return
-
         if not isinstance(message, dict):
             return
-
         if "data" not in message:
             return
 
         for packet in message["data"]:
-
             # CHART_EQUITY only
             service = packet.get("service")
-
             if service == "LEVELONE_EQUITIES":
-
                 for content in packet.get("content", []):
-
                     if content.get("key") != cfg.symbol:
                         continue
-
                     handle_level1(content)
-
                 continue
 
             if service != "CHART_EQUITY":
@@ -579,123 +554,96 @@ def on_quote(message: Any):
 
                 # current market price
                 last_price = close_price
-
                 # market checks
                 if not is_market_open():
                     continue
-
                 if is_trading_halted():
                     continue
-
                 # need enough candles
                 atr = calculate_atr(list(bars)[:-1], cfg.atr_period)
-
                 if atr is None or atr <= 0:
                     continue
-
                 # position
                 position_qty = get_position_qty()
-
                 # thresholds
                 up_threshold = cfg.up_atr_multiplier * atr
-
                 down_threshold = cfg.down_atr_multiplier * atr
 
                 has_pending_buy = any(
                     info["type"] == "BUY" for info in active_orders.values()
                 )
-
                 has_pending_sell = any(
                     info["type"] == "SELL" for info in active_orders.values()
                 )
-
                 # SELL SIGNAL
                 if position_qty > 0 and not has_pending_sell:
                     if last_signal_bar["SELL"] == candle_time:
                         continue
 
                     window_start = candle_time - dt.timedelta(minutes=cfg.up_window_min)
-
                     recent_lows = [
                         low_ for ts, _, _, low_, _ in bars if ts >= window_start
                     ]
-
                     if recent_lows:
-
                         move_up = last_price - min(recent_lows)
-
                         if move_up >= up_threshold:
-
                             logger.warning(
                                 f"🔥 SURGE " f"{move_up:.2f} " f"(ATR={atr:.2f})"
                             )
-
                             place_trailing_sell(
                                 position_qty,
                                 quote_cache[cfg.symbol]["bid"] or last_price,
                             )
                             last_signal_bar["SELL"] = candle_time
-
                 # BUY SIGNAL
                 if position_qty == 0 and not has_pending_buy:
-                    projected_position = position_qty + cfg.buy_quantity
-
-                    # Enforce max position
-                    if projected_position > cfg.max_position_shares:
-                        logger.warning("Position limit reached")
-                        continue
-
                     if last_signal_bar["BUY"] == candle_time:
                         continue
-
                     window_start = candle_time - dt.timedelta(
                         minutes=cfg.down_window_min
                     )
-
                     recent_highs = [
                         high_ for ts, _, high_, _, _ in bars if ts >= window_start
                     ]
-
                     if recent_highs:
-
                         move_down = max(recent_highs) - last_price
-
                         if move_down >= down_threshold:
+                            projected_position = position_qty + cfg.buy_quantity
+                            if projected_position > cfg.max_position_shares:
 
+                                logger.warning(
+                                    f"📉 BUY signal ignored: "
+                                    f"position limit reached "
+                                    f"({position_qty}/"
+                                    f"{cfg.max_position_shares})"
+                                )
+                                continue
                             logger.warning(
                                 f"📉 DIP " f"{move_down:.2f} " f"(ATR={atr:.2f})"
                             )
-
                             place_trailing_buy(
                                 cfg.buy_quantity,
                                 quote_cache[cfg.symbol]["ask"] or last_price,
                             )
                             last_signal_bar["BUY"] = candle_time
-
     except Exception as e:
         logger.exception(f"on_quote failed: {e}")
 
 
 def handle_level1(content):
-
     cache = quote_cache[cfg.symbol]
-
     # Bid Price
     if "1" in content:
         cache["bid"] = float(content["1"])
-
     # Ask Price
     if "2" in content:
         cache["ask"] = float(content["2"])
-
     # Last Price
     if "3" in content:
         cache["last"] = float(content["3"])
-
     # Mark Price
     if "33" in content:
         cache["mark"] = float(content["33"])
-
     if should_log(cfg.symbol, cache["last"] or 0):
         logger.info(
             f"{cfg.symbol} "
@@ -704,7 +652,6 @@ def handle_level1(content):
             f"LAST={cache['last']} "
             f"MARK={cache['mark']}"
         )
-
         last_log_time[cfg.symbol] = time.time()
         last_log_price[cfg.symbol] = cache["last"]
 
@@ -716,81 +663,53 @@ async def monitor_orders():
     while True:
         try:
             await asyncio.sleep(15)
-
-            #
             # Remove stale local orders
-            #
             if active_orders:
-
                 now = dt.datetime.now()
-
                 stale_order_ids = []
 
                 for order_id, info in active_orders.items():
-
                     age_sec = (now - info["timestamp"]).total_seconds()
-
                     if age_sec > ORDER_STALE_SEC:
-
                         stale_order_ids.append(order_id)
 
                 for order_id in stale_order_ids:
-
                     logger.warning(f"Removing stale order {order_id}")
-
                     active_orders.pop(order_id, None)
 
             if not active_orders:
                 continue
 
             orders_response = client.get_orders_for_account(hashValue, max_results=100)
-
             orders = (
                 orders_response
                 if isinstance(orders_response, list)
                 else orders_response.get("orders", [])
             )
-
             for order in orders:
-
                 order_id = str(order.get("orderId") or order.get("id"))
-
                 if order_id not in active_orders:
                     continue
-
                 status = str(order.get("status", "")).upper()
-
                 # Fully filled
                 if status in ["FILLED", "EXECUTED"]:
-
                     info = active_orders.pop(order_id, None)
 
                     if info:
-
                         get_position_qty(force_refresh=True)
-
                         log_trade(
                             "FILL", info["qty"], None, f"Order {status}", order_id
                         )
-
                         logger.info(f"✅ Order FILLED: {order_id}")
-
                 # Partial fill
                 elif status == "PARTIALLY_FILLED":
-
                     get_position_qty(force_refresh=True)
-
                     logger.info(f"⏳ Order PARTIALLY_FILLED: " f"{order_id}")
-
                 # Dead orders
                 elif status in ["CANCELLED", "REJECTED", "EXPIRED", "DEAD"]:
-
                     active_orders.pop(order_id, None)
-
                     logger.warning(f"❌ Order {status}: {order_id}")
-
         except Exception as e:
-
             logger.debug(f"Order monitor error: {e}")
 
 
@@ -799,9 +718,10 @@ async def run_bot():
     while True:
         try:
             logger.info("Starting streamer with auto-reconnect...")
+
+            # One Schwab streaming connection can subscribe to multiple services, so we use a single streamer for both level one and chart data.
             streamer = schwabdev.Stream(client)
 
-            # streamer.start(on_quote)
             streamer.start_auto(
                 receiver=on_quote,  # print,
                 start_time=dt.time(9, 29, 0),
@@ -809,18 +729,16 @@ async def run_bot():
                 on_days=(0, 1, 2, 3, 4),
                 now_timezone=_NY_TZ,
                 daemon=True,
-            )
+            )  # or streamer.start(on_quote)
 
             logger.info("Streamer started")
 
             time.sleep(1.5)
 
+            # Subscribe that single connection to two services for the same symbol. This way we get both real-time quotes and chart data (for ATR/momentum) without needing multiple connections.
             streamer.send(streamer.level_one_equities(cfg.symbol, "0,1,2,3,10,11,33"))
-
             streamer.send(streamer.chart_equity(cfg.symbol, "0,1,2,3,4,5,6,7,8"))
-
             logger.info(f"Subscribed to {cfg.symbol}")
-
             while True:
                 await asyncio.sleep(30)
         except KeyboardInterrupt:

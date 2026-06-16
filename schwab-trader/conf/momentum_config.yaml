@@ -10,17 +10,19 @@ account_number: "29308909"
 # Strategy Parameters
 stop_price_link_type: "PERCENT"
 
-up_window_min: 15
-down_window_min: 20
 
-buy_quantity: 50
+down_window_min: 20
+buy_quantity: 1500
+
+up_window_min: 15
 
 # ATR-based Strategy
 atr_period: 14
-up_atr_multiplier: 1.8
-down_atr_multiplier: 2.0
-trailing_atr_multiplier_sell: 2.5
-trailing_atr_multiplier_buy: 2.0
+up_atr_multiplier: 3.0
+trailing_atr_multiplier_sell: 4
+
+down_atr_multiplier: 3.0
+trailing_atr_multiplier_buy: 4
 buy_fallback_offset_pct: 0.8   # below current price for fallback limit buy
 
 
@@ -49,3 +51,8 @@ telegram:
   chat_id: ""
 
 
+# 2026-06-15 11:52:02,606 | WARNING | 🔥 SURGE 0.16 (ATR=0.07)
+# 2026-06-15 11:52:03,262 | INFO | TRADE LOGGED | TRAILING_SELL 1500 APLD | ATR trailing sell (offset 0.18)
+# 2026-06-15 11:52:30,781 | INFO | APLD BID=46.07 ASK=46.1 LAST=46.08 MARK=46.08
+# 2026-06-15 11:54:03,243 | WARNING | 📉 DIP 0.16 (ATR=0.07)
+# 2026-06-15 11:54:03,642 | INFO | TRADE LOGGED | TRAILING_BUY 1500 APLD | ATR trailing buy (offset 0.14)
