@@ -133,7 +133,7 @@ class TradingConfig(BaseModel):
             raise ValueError(f"Invalid time format '{v}'. Use HH:MM")
 
 
-def load_config(path="conf/momentum_config.yaml") -> TradingConfig:
+def load_config(path="conf/config.yaml") -> TradingConfig:
     config_path = Path(path)
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -142,7 +142,7 @@ def load_config(path="conf/momentum_config.yaml") -> TradingConfig:
     return TradingConfig(**data)
 
 
-cfg = load_config()
+cfg = load_config(path="conf/atr_mean_reversion_config.yaml")
 
 
 # ========================= SETUP =========================
