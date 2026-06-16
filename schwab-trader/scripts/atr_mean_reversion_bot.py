@@ -332,6 +332,7 @@ def get_position_qty(force_refresh: bool = False) -> int:
     except Exception:
         return cached_position_qty
 
+
 # ========================= ATR =========================
 def calculate_atr(bars, period=14):
 
