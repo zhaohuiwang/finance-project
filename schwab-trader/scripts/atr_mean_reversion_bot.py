@@ -1,5 +1,5 @@
 """
-schwab-trader/scripts/momentum_bot.py
+schwab-trader/scripts/atr_mean_reversion_bot.py
 
 This bot is an ATR-based mean-reversion (Average True Range) system that buys after unusually large declines and sells after unusually large advances, using trailing stop orders to confirm reversals before entering or exiting.
 
@@ -41,7 +41,7 @@ if move_up >= up_threshold:
 
 
 # Check and kill runing process:
-$ pgrep -af momentum_bot
+$ pgrep -af atr_mean_reversion_bot
 $ kill -9 261743
 
 """
@@ -587,9 +587,12 @@ def on_quote(message: Any):
                     ]
                     if recent_lows:
                         move_up = last_price - min(recent_lows)
+
                         if move_up >= up_threshold:
                             logger.warning(
-                                f"🔥 SURGE " f"{move_up:.2f} " f"(ATR={atr:.2f})"
+                                f"🔥 SURGE {move_up:.2f} "
+                                f"{up_threshold:.2f} "
+                                f"(ATR={atr:.2f})"
                             )
                             place_trailing_sell(
                                 position_qty,
@@ -620,8 +623,11 @@ def on_quote(message: Any):
                                 )
                                 continue
                             logger.warning(
-                                f"📉 DIP " f"{move_down:.2f} " f"(ATR={atr:.2f})"
-                            )
+                                f"📉 DIP {move_down:.2f} "
+                                f"move_down={move_down:.2f} "
+                                f"threshold={down_threshold:.2f} "
+                                f"(ATR={atr:.2f})"
+                                )
                             place_trailing_buy(
                                 cfg.buy_quantity,
                                 quote_cache[cfg.symbol]["ask"] or last_price,

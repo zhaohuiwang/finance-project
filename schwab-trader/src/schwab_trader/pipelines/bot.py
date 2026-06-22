@@ -1015,7 +1015,7 @@ class TradingBot:
     def monitor_logic(self):
         """Pure background logic thread — handles BOTH buy triggers AND sell safety net."""
         while self.running:
-            time.sleep(6)
+            time.sleep(12)
 
             if date.today() != self.today:
                 self.daily_start_equity = self.get_account_snapshot()["equity"]
@@ -1107,11 +1107,7 @@ class TradingBot:
                     console.print(
                         f"[bold green]🚀 LIMIT SELL TRIGGER HIT: {sym} @ ${current_price:.2f} ≥ ${cfg.limit_sell_price:.2f}[/bold green]"
                     )
-                    self.place_immediate_sell(sym, qty, current_price)
-                    continue
-
-                # 3. Fallback: Place full OCO bracket if missing
-                self.submit_sell_bracket_oco(sym, buy_price, cfg.limit_sell_price)
+                    self.submit_sell_bracket_oco(sym, buy_price, cfg.limit_sell_price)
 
     def cli_loop(self):
         """
@@ -1160,7 +1156,7 @@ class TradingBot:
 
                 elif command in ("reload-config", "reload"):
                     try:
-                        config_path = Path(__file__).parents[3] / "conf/bot/conf.yaml"
+                        config_path = Path(__file__).parents[3] / "conf/simple_bot_config.yaml"
                         console.print(f"[yellow]Reloading configuration from: {config_path.resolve()}[/yellow]")
 
                         # Load exactly like at startup
