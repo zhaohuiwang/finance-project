@@ -137,7 +137,7 @@ def update_dashboard(n_interval, n_clicks):
                 "fixed_shares": cfg.fixed_shares,
             })
 
-        # 2. Open Orders - Better OCO handling
+        # 2. Open Orders
         raw_orders = bot.get_open_orders()
         orders_data = []
         seen = set()
