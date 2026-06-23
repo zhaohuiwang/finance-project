@@ -27,7 +27,7 @@ symbols:
   #   stop_loss_pct: 15.5
   #   fixed_shares: 3500
   APLD:
-    buy_target_price: 40.5
+    buy_target_price: 30.5
     limit_sell_price: 46.8
     buy_drop_pct: 20.0
     limit_sell_pct: 15.0
@@ -36,12 +36,12 @@ symbols:
     fixed_shares: 1600
 
   CRWV:
-    buy_target_price: 102.0
-    limit_sell_price: 116
+    buy_target_price: 82.0
+    limit_sell_price: 120
     stop_loss_dollar: 0.5
-    buy_drop_pct: 20.0
-    limit_sell_pct: 10.0
-    stop_loss_pct: 10.0
+    buy_drop_pct: 10.0
+    limit_sell_pct: 8.0
+    stop_loss_pct: 8.0
     fixed_shares: 670
   # USAR:    
   #   buy_target_price: 25

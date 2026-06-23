@@ -714,7 +714,7 @@ class TradingBot:
                     continue
 
                 # Immediate sell if already above limit
-                if price >= cfg.limit_sell_price:
+                if price >= cfg.limit_sell_price * 1.01:
                     console.print(f"[bold green]Immediate sell on restart for {symbol}[/bold green]")
                     self.place_immediate_sell(symbol, qty, price)
                 else:
@@ -1103,11 +1103,11 @@ class TradingBot:
                     continue
 
                 # 2. STRONG LIMIT SELL TRIGGER
-                if current_price >= cfg.limit_sell_price:
-                    console.print(
-                        f"[bold green]🚀 LIMIT SELL TRIGGER HIT: {sym} @ ${current_price:.2f} ≥ ${cfg.limit_sell_price:.2f}[/bold green]"
-                    )
-                    self.submit_sell_bracket_oco(sym, buy_price, cfg.limit_sell_price)
+                if current_price >= cfg.limit_sell_price * 1.01:
+                    console.print(f"[bold green]Immediate sell on restart for {sym}[/bold green]")
+                    self.place_immediate_sell(sym, qty, current_price)
+                else:
+                    self.submit_sell_bracket_oco(sym, holding.get("buy_price", current_price), cfg.limit_sell_price)
 
     def cli_loop(self):
         """
