@@ -13,7 +13,7 @@ from schwab_trader.config.bot.config import TradingConfig
 from dash import Dash, dcc, html, dash_table, Input, Output, State
 from dash.exceptions import PreventUpdate
 
-from schwab_trader.pipelines.bot import TradingBot
+from schwab_trader.pipelines.bot1_pipeline import TradingBot
 
 load_dotenv()
 console = Console()

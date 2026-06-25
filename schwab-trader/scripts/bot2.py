@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from schwab_trader.config.bot.config import TradingConfig
-from schwab_trader.pipelines.bot2 import TradingBot
+from schwab_trader.pipelines.bot2_pipeline import TradingBot
 
 load_dotenv()
 console = Console()
@@ -24,96 +24,174 @@ cfg = TradingConfig.load_from_file(config_path)
 bot = TradingBot(cfg, mode="cli")
 
 # ====================== DASH APP ======================
+# Dash app
 app = Dash(
     __name__,
-    external_stylesheets=[dbc.themes.DARKLY],
+    external_stylesheets=[dbc.themes.DARKLY],  # SLATE, CYBORG or FLATLY, etc
     assets_folder="assets",
-    title="Schwab Trading Bot",
-    suppress_callback_exceptions=True,
 )
 
 app.layout = dbc.Container(
     [
-        dbc.Row(dbc.Col(html.H2("Schwab Trading Bot Dashboard"), width=12), className="mb-4"),
-        
-        dbc.Row(dbc.Col(
-            dbc.Button("Refresh Now", id="refresh-button", color="primary", className="mb-3"),
-            width=3
-        )),
-
-        # All Holdings
+        dbc.Row(
+            [dbc.Col(html.H2("Schwab Trading Bot Dashboard"), width=12)],
+            className="mb-4",
+        ),
+        dbc.Row(
+            dbc.Col(
+                dbc.Button(
+                    "Refresh Now",
+                    id="refresh-button",
+                    color="primary",
+                    className="mb-3",
+                ),
+                width={"size": 3, "offset": 0},
+            ),
+            className="mb-3",
+        ),
+        # All Account Holdings - full width (new)
         html.H4("All Account Holdings", className="mt-4 mb-2"),
         dash_table.DataTable(
             id="all-holdings-table",
             columns=[
                 {"name": "Symbol", "id": "Symbol"},
-                {"name": "Shares", "id": "Shares"},
                 {"name": "Price", "id": "Price"},
+                {"name": "Today's % Chg", "id": "Today's % Chg"},
+                {"name": "Shares", "id": "Shares"},
                 {"name": "Avg Buy", "id": "Avg Buy"},
                 {"name": "P/L %", "id": "P/L %"},
                 {"name": "Market Value", "id": "Market Value"},
             ],
-            style_table={"overflowX": "auto", "width": "100%"},
-            style_cell={"textAlign": "left", "minWidth": "90px"},
-            style_header={"backgroundColor": "#2c3e50", "color": "white", "fontWeight": "bold"},
-            style_data={"backgroundColor": "#212529", "color": "white"},
+            style_table={
+                "overflowX": "auto",
+                "maxWidth": "100%",
+                "width": "100%",
+            },
+            style_cell={
+                "textAlign": "left",
+                "minWidth": "80px",
+                "overflow": "hidden",
+                "textOverflow": "ellipsis",
+            },
+            style_data={"color": "white", "backgroundColor": "#212529"},
+            style_header={"backgroundColor": "#2c3e50", "color": "white"},
+            style_data_conditional=[  # ← now valid
+                {
+                    "if": {"filter_query": '{Today\'s % Chg} contains "+"'},
+                    "color": "lime",
+                },
+                {
+                    "if": {"filter_query": '{Today\'s % Chg} contains "-"'},
+                    "color": "tomato",
+                },
+            ],
         ),
-
-        # Managed Symbols - FIXED
-        html.H4("Managed Symbols (Config)", className="mt-4 mb-2"),
+        # Positions - full width (unchanged)
+        html.H4("Managed Positions (config only)", className="mt-4 mb-2"),
         dash_table.DataTable(
             id="managed-positions-table",
             columns=[
                 {"name": "Symbol", "id": "Symbol"},
-                {"name": "Buy Target", "id": "buy_target_price"},
-                {"name": "Limit Sell", "id": "limit_sell_price"},
+                {"name": "Buy Target Price", "id": "buy_target_price"},
+                {"name": "Limit Sell Price", "id": "limit_sell_price"},
+                {"name": "Buy Drop %", "id": "buy_drop_pct"},
+                {"name": "Limit Sell %", "id": "limit_sell_pct"},
                 {"name": "Stop Loss %", "id": "stop_loss_pct"},
                 {"name": "Fixed Shares", "id": "fixed_shares"},
             ],
-            style_table={"overflowX": "auto", "width": "100%"},
-            style_cell={"textAlign": "right"},
-            style_header={"backgroundColor": "#2c3e50", "color": "white", "fontWeight": "bold"},
+            style_table={
+                "overflowX": "auto",
+                "maxWidth": "100%",
+                "width": "100%",
+            },
+            style_cell={
+                "textAlign": "right",
+                "minWidth": "100px",
+                "overflow": "hidden",
+                "textOverflow": "ellipsis",
+            },
+            style_header={
+                "backgroundColor": "#2c3e50",
+                "color": "white",
+                "fontWeight": "bold",
+            },
+            style_data={
+                "color": "white",
+                "backgroundColor": "#212529",
+            },
         ),
-
-        # Open Orders - IMPROVED FOR OCO
-        html.H4("Open Orders (Including OCO Brackets)", className="mt-4 mb-2"),
+        # Open Orders - full width (unchanged)
+        html.H4("Open Orders", className="mt-5 mb-2"),
         dash_table.DataTable(
             id="orders-table",
             columns=[
+                {"name": "ID", "id": "ID"},
                 {"name": "Symbol", "id": "Symbol"},
-                {"name": "Order Type", "id": "Type"},
-                {"name": "Side", "id": "Side"},
                 {"name": "Qty", "id": "Qty"},
-                {"name": "Price / Stop", "id": "Price"},
-                {"name": "Status", "id": "Status"},
+                {"name": "Price", "id": "Price"},
+                {"name": "Side", "id": "Side"},
+                {"name": "Type", "id": "Type"},
+                {"name": "Duration", "id": "Duration"},
             ],
-            style_table={"overflowX": "auto", "width": "100%"},
-            style_cell={"textAlign": "left"},
-            style_header={"backgroundColor": "#2c3e50", "color": "white", "fontWeight": "bold"},
-            style_data_conditional=[
-                {"if": {"filter_query": '{Side} = "BUY"'}, "color": "lime"},
-                {"if": {"filter_query": '{Side} contains "SELL"'}, "color": "tomato"},
-            ],
+            style_table={
+                "overflowX": "auto",
+                "maxWidth": "100%",
+                "width": "100%",
+            },
+            style_cell={
+                "textAlign": "left",
+                "minWidth": "80px",
+                "overflow": "hidden",
+                "textOverflow": "ellipsis",
+            },
+            style_data={"color": "white", "backgroundColor": "#212529"},
+            style_header={"backgroundColor": "#2c3e50", "color": "white"},
         ),
-
-        # Account Summary
-        html.H4("Account Summary", className="mt-4 mb-2"),
-        dash_table.DataTable(
-            id="account-summary-table",
-            columns=[{"name": "Metric", "id": "Metric"}, {"name": "Value", "id": "Value"}],
-            style_header={"backgroundColor": "#2c3e50", "color": "white", "fontWeight": "bold"},
-            style_data={"backgroundColor": "#212529", "color": "white"},
+        # ── Account Summary - now half width ────────────────────────────────
+        dbc.Row(
+            dbc.Col(
+                [
+                    html.H4("Account Summary", className="mt-5 mb-2"),
+                    dash_table.DataTable(
+                        id="account-summary-table",
+                        columns=[
+                            {"name": "Metric", "id": "Metric"},
+                            {"name": "Value", "id": "Value"},
+                        ],
+                        style_table={
+                            "overflowX": "auto",
+                            "maxWidth": "100%",
+                            "width": "100%",  # ← fills the column
+                        },
+                        style_cell={"textAlign": "left"},
+                        style_header={
+                            "backgroundColor": "#2c3e50",
+                            "color": "white",
+                            "fontWeight": "bold",
+                        },
+                        style_data={
+                            "color": "white",
+                            "backgroundColor": "#212529",
+                        },
+                    ),
+                ],
+                width=6,  # ← this is the key change: half width
+                lg=6,
+                md=12,  # full width on smaller screens
+                xs=12,
+            ),
+            className="mb-4",  # adds some bottom margin
         ),
-
-        html.Div(id="status-footer", className="mt-4 text-center"),
-
-        dcc.Interval(id="interval-component", interval=10 * 1000, n_intervals=0),
+        # Footer
+        html.Div(id="status-footer", className="mt-5 text-center"),
+        dcc.Interval(id="interval-component", interval=8 * 1000, n_intervals=0),
     ],
     fluid=True,
     className="p-4",
 )
 
 
+# FIXED CALLBACK
 @app.callback(
     [
         Output("all-holdings-table", "data"),
@@ -122,92 +200,130 @@ app.layout = dbc.Container(
         Output("account-summary-table", "data"),
         Output("status-footer", "children"),
     ],
-    [Input("interval-component", "n_intervals"), Input("refresh-button", "n_clicks")],
+    [
+        Input("interval-component", "n_intervals"),
+        Input("refresh-button", "n_clicks"),
+    ],
+    prevent_initial_call=True,  # optional: skip first empty call
 )
 def update_dashboard(n_interval, n_clicks):
     try:
-        # 1. Managed Symbols (Config)
-        managed_data = []
-        for sym, cfg in sorted(bot.symbols_config.items()):
-            managed_data.append({
-                "Symbol": sym,
-                "buy_target_price": f"${cfg.buy_target_price:.2f}",
-                "limit_sell_price": f"${cfg.limit_sell_price:.2f}",
-                "stop_loss_pct": f"{getattr(cfg, 'stop_loss_pct', 0):.1f}%",
-                "fixed_shares": cfg.fixed_shares,
-            })
+        # Managed Positions — from conf.yaml
+        managed_positions_data = []
+        with bot.lock:
+            for sym, cfg in sorted(bot.symbols_config.items()):
+                managed_positions_data.append(
+                    {
+                        "Symbol": sym,
+                        "buy_target_price": f"{cfg.buy_target_price:.2f}",
+                        "limit_sell_price": f"{cfg.limit_sell_price:.2f}",
+                        "buy_drop_pct": f"{cfg.buy_drop_pct:.1f}",
+                        "limit_sell_pct": f"{cfg.limit_sell_pct:.1f}",
+                        "stop_loss_pct": f"{cfg.stop_loss_pct:.1f}",
+                        "fixed_shares": cfg.fixed_shares,
+                    }
+                )
 
-        # 2. Open Orders
-        raw_orders = bot.get_open_orders()
+        # Open Orders
+        orders_list = bot.get_open_orders()
         orders_data = []
-        seen = set()
+        for o in orders_list:
+            orders_data.append(
+                {
+                    "ID": str(o.get("orderId", "N/A")),
+                    "Symbol": o.get("symbol", "—"),
+                    "Qty": o.get("quantity", 0),
+                    "Price": (
+                        f"${float(o.get('price') or 0):,.2f}" if o.get("price") else "—"
+                    ),
+                    "Side": o.get("instruction", "—"),
+                    "Type": o.get("type", "—"),
+                    "Duration": o.get("duration", "—"),
+                }
+            )
 
-        for o in raw_orders:
-            key = (o.get("orderId"), o.get("symbol"), o.get("instruction"))
-            if key in seen:
-                continue
-            seen.add(key)
+        # Account Summary
+        snapshot = bot.get_account_snapshot()
 
-            symbol = o.get("symbol", "—")
-            side = o.get("instruction", "—")
-            qty = o.get("quantity", "—")
-            price = o.get("price")
-            price_str = f"${float(price):.2f}" if price else "—"
-
-            order_type = "OCO BRACKET" if any(k in str(o) for k in ["childOrderStrategies", "OCO"]) else "SINGLE"
-
-            orders_data.append({
-                "Symbol": symbol,
-                "Type": order_type,
-                "Side": side,
-                "Qty": qty,
-                "Price": price_str,
-                "Status": "WORKING",
-            })
-
-        # 3. Account Summary
-        snap = bot.get_account_snapshot()
         account_data = [
-            {"Metric": "Equity (Net Liq)", "Value": f"${snap.get('equity', 0):,.2f}"},
-            {"Metric": "Cash & Sweep", "Value": f"${snap.get('cashBalance', 0):,.2f}"},
-            {"Metric": "Buying Power", "Value": f"${snap.get('buyingPower', 0):,.2f}"},
+            {"Metric": "Equity(Net Liq)", "Value": f"${snapshot['equity']:,.2f}"},
+            {
+                "Metric": "Cash & Sweep Vehicle",
+                "Value": f"${snapshot['cashBalance']:,.2f}",
+            },
+            {"Metric": "Buying Power", "Value": f"${snapshot['buyingPower']:,.2f}"},
+            {
+                "Metric": "Day Trading Buying Power",
+                "Value": f"${snapshot['dayTradingBP']:,.2f}",
+            },
+            {
+                "Metric": "Non-Marginable Buying Power",
+                "Value": f"${snapshot['nonMarginableBP']:,.2f}",
+            },
         ]
 
-        # 4. All Holdings
-        holdings_data = []
+        # All Holdings (full account — any symbol)
+        all_holdings_data = []
         with bot.lock:
             for sym, h in bot.all_holdings.items():
-                price = bot.current_market_prices.get(sym) or h.get("current_price")
-                shares = int(h.get("shares", 0))
+                price = bot.current_market_prices.get(sym) or h.get(
+                    "current_price", None
+                )
+                shares = h.get("shares", 0)
                 buy_p = h.get("buy_price")
-                pl = round(((price or 0) - (buy_p or 0)) / (buy_p or 1) * 100, 1) if buy_p and buy_p > 0 else 0
+                price_safe = price if price is not None else 0.0
+                buy_p_safe = buy_p if buy_p is not None else 0.0
+                pl = (
+                    round((price_safe - buy_p_safe) / buy_p_safe * 100, 1)
+                    if buy_p_safe > 0
+                    else 0.0
+                )
+                market_val = round(shares * (price or 0), 2)
+                day_chg_pct = h.get("day_pct", 0.0)
 
-                holdings_data.append({
-                    "Symbol": sym,
-                    "Shares": shares,
-                    "Price": f"${price:,.2f}" if price else "—",
-                    "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
-                    "P/L %": f"{pl:+.1f}%",
-                    "Market Value": f"${(shares * (price or 0)):,.2f}",
-                })
+                all_holdings_data.append(
+                    {
+                        "Symbol": sym,
+                        "Shares": shares,
+                        "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
+                        "Price": f"${price:,.2f}" if price else "—",
+                        "Today's % Chg": (
+                            f"{day_chg_pct:+.2f}%" if abs(day_chg_pct) > 0.001 else "—"
+                        ),
+                        "P/L %": f"{pl:+.1f}%",
+                        "Market Value": f"${market_val:,.2f}",
+                    }
+                )
+        all_holdings_data.sort(key=lambda x: x["Symbol"])
 
-        # Status Footer
+        daily_pnl = (
+            (snapshot["equity"] - bot.daily_start_equity) / bot.daily_start_equity * 100
+            if bot.daily_start_equity > 0
+            else 0
+        )
+        risk_used = len(bot.holdings) / bot.risk_config.max_positions * 100
         status_text = (
-            f"Equity: ${snap.get('equity', 0):,.0f} | "
-            f"Positions: {len(bot.holdings)} | "
-            f"Open Orders: {len(orders_data)} | "
-            f"Status: {'🛑 PAUSED' if bot.trading_paused else '✅ ACTIVE'}"
+            f"Equity(Net Liq): ${snapshot['equity']:,.0f} | Daily P/L: {daily_pnl:+.1f}% | "
+            f"Risk Used: {risk_used:.0f}% | {'PAUSED' if bot.trading_paused else 'ACTIVE'}"
         )
 
-        return holdings_data, managed_data, orders_data, account_data, status_text
+        return (
+            all_holdings_data,
+            managed_positions_data,
+            orders_data,
+            account_data,
+            status_text,
+        )
 
     except Exception as e:
-        console.print(f"[red]Dashboard update error: {e}[/red]")
-        return [], [], [], [], f"Error: {str(e)}"
+        console.print(f"[red]Dashboard callback error: {e}[/red]")
+        return [], [], [], "Dashboard error — check console"
 
 
 # ====================== MAIN ======================
 if __name__ == "__main__":
+    console.print(f"RUNNING FILE: {__file__}")
+    
     parser = argparse.ArgumentParser(description="Schwab Trading Bot")
     parser.add_argument("--mode", choices=["full", "cli"], default="cli")
     args = parser.parse_args()
@@ -228,4 +344,5 @@ if __name__ == "__main__":
         threading.Thread(target=cli_loop, daemon=True).start()
 
     console.print("[bold green]✅ Quiet Dashboard running at http://127.0.0.1:8050[/bold green]")
+    
     app.run(debug=False, use_reloader=False, port=8050)

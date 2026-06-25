@@ -86,10 +86,11 @@ order_b1 = buy_market_dict(
 )
 
 order_b3 = buy_limit_dict(
-    symbol="ACHR",
-    quantity=3000,
-    limit_price=6.2,
-    session="NORMAL",
+    symbol="IBM",
+    quantity=300,
+    limit_price=268.4,
+    #session="NORMAL", # ["NORMAL", "AM", "PM", "SEAMLESS"]
+    session="AM",
     duration="DAY",
 )
 
@@ -127,9 +128,9 @@ order_s2 = sell_market_dict(
 )
 
 order_s4 = sell_limit_dict(
-    symbol="JOBY",
-    quantity=1800,
-    limit_price=9.4,
+    symbol="IBM",
+    quantity=300,
+    limit_price=278.4,
     session="NORMAL",
     duration="DAY",
 )
@@ -221,7 +222,8 @@ order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
 )
 
 # submit an order
-order = order_s8
+order = order_b3
+order = order_s4
 order = order_ts_bs
 order = order_ts_sb
 

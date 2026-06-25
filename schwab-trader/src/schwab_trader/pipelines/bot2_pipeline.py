@@ -13,7 +13,6 @@ from rich.console import Console
 from schwab_trader.config.bot.config import TradingConfig, SymbolConfig
 from schwab_trader.utils.db import init_db, log_transaction, get_last_buy_price
 from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
-from schwab_trader.orders.utils import get_orders
 
 load_dotenv()
 console = Console()
@@ -76,11 +75,13 @@ class TradingBot:
                 "equity": float(bal.get("liquidationValue") or bal.get("equity") or 0.0),
                 "cashBalance": float(bal.get("cashBalance") or 0.0),
                 "buyingPower": float(bal.get("buyingPower") or 0.0),
+                "dayTradingBP": float(bal.get("dayTradingBuyingPower") or 0.0),
+                "nonMarginableBP": float(bal.get("buyingPowerNonMarginableTrade") or 0.0),
             }
         except Exception as e:
             console.print(f"[red]Snapshot error: {e}[/red]")
             return {"equity": 0.0, "cashBalance": 0.0, "buyingPower": 0.0}
-
+    
     def update_holdings_from_api(self):
         try:
             pos = self.client.account_details(self.account_hash, fields="positions").json()
@@ -91,15 +92,16 @@ class TradingBot:
             for p in positions:
                 sym = p["instrument"]["symbol"]
                 long_qty = float(p.get("longQuantity", 0))
+                day_pct = float(p.get("currentDayProfitLossPercentage", 0))
                 if long_qty > 0:
                     avg = float(p.get("averagePrice") or 0)
                     mv = float(p.get("marketValue") or 0)
                     price = mv / long_qty if long_qty > 0 else 0
-                    entry = {"shares": long_qty, "buy_price": avg, "current_price": price}
+                    entry = {"shares": long_qty, "buy_price": avg, "current_price": price, "day_pct": day_pct}
                     new_all[sym] = entry
                     if sym in self.symbols_config:
                         new_holdings[sym] = entry
-
+                        
             with self.lock:
                 self.holdings = new_holdings
                 self.all_holdings = new_all
@@ -109,8 +111,9 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Holdings update failed: {e}[/red]")
 
-    # ====================== IMPROVED ORDER DETECTION ======================
+
     def get_open_orders(self):
+        """Improved version that extracts prices from OCO brackets"""
         now = time.time()
         if self._open_orders_cache and now - self._open_orders_cache_time < self.open_orders_cache_ttl:
             return self._open_orders_cache
@@ -129,30 +132,42 @@ class TradingBot:
 
             flat = []
             for root in orders:
-                # Handle OCO / Bracket orders properly
-                order_id = root.get("orderId")
-                for leg in root.get("orderLegCollection", []):
-                    flat.append({
-                        "orderId": order_id,
-                        "symbol": leg["instrument"]["symbol"],
-                        "instruction": leg["instruction"],
-                        "quantity": leg.get("quantity"),
-                    })
-                # Also check child orders (important for OCO)
-                for child in root.get("childOrderStrategies", []):
-                    for leg in child.get("orderLegCollection", []):
-                        flat.append({
-                            "orderId": child.get("orderId") or order_id,
-                            "symbol": leg["instrument"]["symbol"],
-                            "instruction": leg["instruction"],
-                            "quantity": leg.get("quantity"),
-                        })
+                # Recurse into child orders (OCO brackets)
+                for order in self._flatten_order(root):
+                    flat.append(order)
+
             self._open_orders_cache = flat
             self._open_orders_cache_time = now
             return flat
+
         except Exception as e:
             console.print(f"[red]Open orders error: {e}[/red]")
             return self._open_orders_cache or []
+
+    def _flatten_order(self, order):
+        """Helper to flatten OCO / bracket orders with prices"""
+        results = []
+
+        # Main order
+        if "orderLegCollection" in order:
+            leg = order["orderLegCollection"][0]
+            price = order.get("price") or order.get("stopPrice") or order.get("stopLimitPrice") or order.get("limitPrice")
+            results.append({
+                "orderId": order.get("orderId"),
+                "symbol": leg["instrument"]["symbol"],
+                "instruction": leg["instruction"],
+                "quantity": leg.get("quantity"),
+                "price": price,
+                "orderStrategyType": order.get("orderStrategyType"),
+                "type": order.get("orderType", "N/A"),
+                "duration": order.get("duration", "N/A"),
+            })
+
+        # Child orders (OCO legs)
+        for child in order.get("childOrderStrategies", []):
+            results.extend(self._flatten_order(child))
+
+        return results
 
     def has_open_sell_order(self, symbol: str) -> bool:
         return any(
