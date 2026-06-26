@@ -41,11 +41,15 @@ conn.close()
 References:
 1. [developer.schwab Accounts and Trading Production](https://developer.schwab.com/products/trader-api--individual/details/specifications/Retail%20Trader%20API%20Production)
 2. [developer.schwab Market Data Production](https://developer.schwab.com/products/trader-api--individual/details/specifications/Market%20Data%20Production)
-3. [Goldman Sachs](https://github.com/goldmansachs)
-4. [freqtrade](https://github.com/freqtrade/freqtrade)
-5. [Microsoft Qlib](https://github.com/microsoft/qlib)
-6. [schwab-trader github](https://github.com/ibouazizi/schwab-trader/tree/main)
-7. [schwab-trader](https://pypi.org/project/schwab-trader/#description)
+3. [schwab-trader github](https://github.com/ibouazizi/schwab-trader/tree/main)
+4. [schwab-trader](https://pypi.org/project/schwab-trader/#description)
+5. [schwab-sdk-unofficial](https://socket.dev/pypi/package/schwab-sdk-unofficial)
+6. [schwab-py](https://schwab-py.readthedocs.io/en/latest/streaming.html)
+7. [Goldman Sachs](https://github.com/goldmansachs)
+8. [freqtrade](https://github.com/freqtrade/freqtrade)
+9. [Microsoft Qlib](https://github.com/microsoft/qlib)
+
+
 
 
 

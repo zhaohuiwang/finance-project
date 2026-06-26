@@ -3,6 +3,7 @@ import threading
 import logging
 from pathlib import Path
 
+import dash
 import dash_bootstrap_components as dbc
 from dash import Dash, dcc, html, dash_table, Input, Output
 from dotenv import load_dotenv
@@ -21,7 +22,7 @@ logging.getLogger('dash').setLevel(logging.ERROR)
 # Load config & bot
 config_path = Path(__file__).parent / "../conf/simple_bot_config.yaml"
 cfg = TradingConfig.load_from_file(config_path)
-bot = TradingBot(cfg, mode="cli")
+bot = TradingBot(cfg, mode="cli", config_path=config_path)
 
 # ====================== DASH APP ======================
 # Dash app
@@ -39,13 +40,22 @@ app.layout = dbc.Container(
         ),
         dbc.Row(
             dbc.Col(
-                dbc.Button(
-                    "Refresh Now",
-                    id="refresh-button",
-                    color="primary",
-                    className="mb-3",
-                ),
-                width={"size": 3, "offset": 0},
+                [
+                    dbc.Button(
+                        "Refresh Now",
+                        id="refresh-button",
+                        color="primary",
+                        className="mb-3",
+                    ),
+
+                    dbc.Button(
+                        "Reload Config",
+                        id="reload-config-button",
+                        color="warning",
+                        className="mb-3 ms-2",
+                    ),
+                ],
+                width={"size": 6},
             ),
             className="mb-3",
         ),
@@ -203,10 +213,22 @@ app.layout = dbc.Container(
     [
         Input("interval-component", "n_intervals"),
         Input("refresh-button", "n_clicks"),
+        Input("reload-config-button", "n_clicks"),
     ],
     prevent_initial_call=True,  # optional: skip first empty call
 )
-def update_dashboard(n_interval, n_clicks):
+def update_dashboard(n_interval, n_clicks, reload_clicks):
+    ctx = dash.callback_context
+
+    triggered_id = None
+    if ctx and ctx.triggered:
+        prop_id = ctx.triggered[0].get("prop_id", "")
+        triggered_id = prop_id.split(".")[0] if prop_id else None
+
+    # safe reload handling
+    if triggered_id == "reload-config-button" and reload_clicks:
+        bot.reload_config()
+        
     try:
         # Managed Positions — from conf.yaml
         managed_positions_data = []
@@ -339,6 +361,14 @@ if __name__ == "__main__":
                     if cmd == "stop":
                         bot.stop()
                         break
+                    elif cmd == "reload":
+                        bot.reload_config()
+                    elif cmd == "status":
+                        snap = bot.get_account_snapshot()
+                        print(f"Equity: {snap['equity']:.2f}")
+                        print(f"Positions: {len(bot.holdings)}")
+                    else:
+                        print("Commands: stop | reload | status")
                 except:
                     break
         threading.Thread(target=cli_loop, daemon=True).start()
@@ -346,3 +376,6 @@ if __name__ == "__main__":
     console.print("[bold green]✅ Quiet Dashboard running at http://127.0.0.1:8050[/bold green]")
     
     app.run(debug=False, use_reloader=False, port=8050)
+    
+    
+    

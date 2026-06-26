@@ -227,9 +227,16 @@ order = order_s4
 order = order_ts_bs
 order = order_ts_sb
 
+# Place an order
 status_code, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
 )  # status_code 201 >>> success
+
+order_id = '1006927395099'
+# Cancel an order
+status_code, date = cancel_order(
+    client=client, accountHash=hashValue, order_id=order_id,
+) # status_code 200 >>> success
 
 # ========================================================================
 # Place an option order

@@ -14,23 +14,25 @@ from schwab_trader.config.bot.config import TradingConfig, SymbolConfig
 from schwab_trader.utils.db import init_db, log_transaction, get_last_buy_price
 from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
 
+
 load_dotenv()
 console = Console()
 
 
 class TradingBot:
-    def __init__(self, cfg: TradingConfig, mode: str = "cli"):
+    def __init__(self, cfg: TradingConfig, mode: str = "cli", config_path=None):
         init_db()
         self.client = schwabdev.Client(
             os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
         )
+        self.config_path = config_path
         self.mode = mode
         self.streamer = None
 
         self.risk_config = cfg.risk
         self.symbols_config: dict[str, SymbolConfig] = cfg.symbols
 
-        self.current_market_prices = {sym: None for sym in self.symbols}
+        self.current_market_prices = {sym: None for sym in self.symbols} # get assigned by _handle_price() which streams the market prices
         self.holdings = {}
         self.all_holdings = {}
         self.pending_buy_orders = set()
@@ -81,7 +83,7 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Snapshot error: {e}[/red]")
             return {"equity": 0.0, "cashBalance": 0.0, "buyingPower": 0.0}
-    
+
     def update_holdings_from_api(self):
         try:
             pos = self.client.account_details(self.account_hash, fields="positions").json()
@@ -101,7 +103,7 @@ class TradingBot:
                     new_all[sym] = entry
                     if sym in self.symbols_config:
                         new_holdings[sym] = entry
-                        
+
             with self.lock:
                 self.holdings = new_holdings
                 self.all_holdings = new_all
@@ -111,15 +113,13 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Holdings update failed: {e}[/red]")
 
-
     def get_open_orders(self):
-        """Improved version that extracts prices from OCO brackets"""
         now = time.time()
         if self._open_orders_cache and now - self._open_orders_cache_time < self.open_orders_cache_ttl:
             return self._open_orders_cache
-        
+
         to_time = datetime.now(timezone.utc)
-        from_time = to_time - timedelta(days=30, hours=0, minutes=0)
+        from_time = to_time - timedelta(days=30)
 
         try:
             resp = self.client.account_orders(
@@ -129,26 +129,20 @@ class TradingBot:
                 status="WORKING"
             )
             orders = resp.json() or []
-
             flat = []
             for root in orders:
-                # Recurse into child orders (OCO brackets)
                 for order in self._flatten_order(root):
                     flat.append(order)
 
             self._open_orders_cache = flat
             self._open_orders_cache_time = now
             return flat
-
         except Exception as e:
             console.print(f"[red]Open orders error: {e}[/red]")
             return self._open_orders_cache or []
 
     def _flatten_order(self, order):
-        """Helper to flatten OCO / bracket orders with prices"""
         results = []
-
-        # Main order
         if "orderLegCollection" in order:
             leg = order["orderLegCollection"][0]
             price = order.get("price") or order.get("stopPrice") or order.get("stopLimitPrice") or order.get("limitPrice")
@@ -162,33 +156,42 @@ class TradingBot:
                 "type": order.get("orderType", "N/A"),
                 "duration": order.get("duration", "N/A"),
             })
-
-        # Child orders (OCO legs)
         for child in order.get("childOrderStrategies", []):
             results.extend(self._flatten_order(child))
-
         return results
 
     def has_open_sell_order(self, symbol: str) -> bool:
-        return any(
-            o["symbol"] == symbol and o["instruction"] in ("SELL", "SELL_SHORT")
-            for o in self.get_open_orders()
-        )
+        return any(o["symbol"] == symbol and o["instruction"] in ("SELL", "SELL_SHORT")
+                   for o in self.get_open_orders())
 
     def has_open_buy_order(self, symbol: str) -> bool:
-        return any(
-            o["symbol"] == symbol and o["instruction"] == "BUY"
-            for o in self.get_open_orders()
-        )
+        return any(o["symbol"] == symbol and o["instruction"] == "BUY"
+                   for o in self.get_open_orders())
 
     def can_place_order(self, symbol: str) -> bool:
-        """Prevent spam"""
         now = time.time()
         last = self.last_order_placement.get(symbol, 0)
-        if now - last < 25:   # 25 second cooldown
+        if now - last < 25:
             return False
         self.last_order_placement[symbol] = now
         return True
+
+    def cancel_all_orders_for_symbol(self, symbol: str):
+        """Cancel all working orders for a symbol (important on config change)"""
+        try:
+            orders = self.get_open_orders()
+            for o in orders:
+                if o.get("symbol") == symbol:
+                    order_id = o.get("orderId")
+                    if order_id:
+                        try:
+                            self.client.cancel_order(self.account_hash, order_id)
+                            console.print(f"[yellow]Cancelled order {order_id} for {symbol}[/yellow]")
+                        except Exception as e:
+                            console.print(f"[red]Failed to cancel order {order_id}: {e}[/red]")
+            self.invalidate_open_orders_cache()
+        except Exception as e:
+            console.print(f"[red]Error cancelling orders for {symbol}: {e}[/red]")
 
     # ====================== ORDER PLACEMENT ======================
     def place_buy_order(self, symbol: str, qty: int) -> bool:
@@ -272,12 +275,12 @@ class TradingBot:
             console.print(f"[red]Immediate sell failed: {e}[/red]")
 
     def invalidate_open_orders_cache(self):
+        """This forces get_open_orders() to fetch fresh data from Schwab the next time it's called."""
         self._open_orders_cache = None
         self._open_orders_cache_time = 0
 
     # ====================== CORE ENSURE LOGIC ======================
     def ensure_orders(self, symbol: str):
-        """Single source of truth for requirements 1, 2, 3"""
         cfg = self.symbols_config.get(symbol)
         if not cfg:
             return
@@ -304,6 +307,57 @@ class TradingBot:
             console.print(f"[yellow]Ensuring SELL bracket for {symbol}[/yellow]")
             self.submit_sell_bracket_oco(symbol)
 
+    # ====================== CONFIG RELOAD (ENHANCED) ======================
+    def reload_config(self):
+        """Hot-reload config and update live trade logic + orders"""
+        try:
+            new_cfg = TradingConfig.load_from_file(self.config_path)
+            
+            with self.lock:
+                self.risk_config = new_cfg.risk
+                self.symbols_config = new_cfg.symbols
+
+                # Update price dict for new symbols
+                for sym in self.symbols:
+                    if sym not in self.current_market_prices:
+                        self.current_market_prices[sym] = None
+                        self.auto_buy_allowed[sym] = True
+
+                # Remove old symbols that no longer exist in config
+                for sym in list(self.current_market_prices.keys()):
+                    if sym not in self.symbols_config:
+                        self.current_market_prices.pop(sym, None)
+                        self.auto_buy_allowed.pop(sym, None)
+
+            console.print("[bold cyan]Config reloaded successfully[/bold cyan]")
+
+            # Handle symbol changes
+            old_symbols = set(self.symbols)
+            new_symbols = set(self.symbols)
+            removed = old_symbols - new_symbols
+            added = new_symbols - old_symbols
+
+            if removed or added:
+                console.print(f"[yellow]Symbols changed → Removed: {removed} | Added: {added}[/yellow]")
+                if self.streamer:
+                    console.print("[yellow]Restarting streamer due to symbol change...[/yellow]")
+                    self.start_stream()  # restarts with new symbols
+
+            # Cancel stale orders and re-apply new logic
+            for sym in self.symbols:
+                self.cancel_all_orders_for_symbol(sym)
+                time.sleep(0.5)  # small delay between cancels
+                self.ensure_orders(sym)
+
+            # Also run for removed symbols (cleanup)
+            for sym in removed:
+                self.cancel_all_orders_for_symbol(sym)
+
+            console.print("[green]Trade logic and orders updated per new config[/green]")
+
+        except Exception as e:
+            console.print(f"[red]Config reload failed: {e}[/red]")
+
     # ====================== STREAM & FILL HANDLING ======================
     def unified_receiver(self, message):
         if isinstance(message, str):
@@ -326,7 +380,7 @@ class TradingBot:
             sym = content.get("key")
             if sym in self.current_market_prices:
                 try:
-                    price = float(content.get("3") or 0)
+                    price = float(content.get("3") or 0) # "3" = last price
                     if price > 0:
                         with self.lock:
                             self.current_market_prices[sym] = price
@@ -338,7 +392,7 @@ class TradingBot:
             if content.get("messageType", "").upper() not in ("FILL", "EXECUTION", "ORDER_FILL"):
                 continue
             symbol = content.get("symbol")
-            if not symbol or symbol not in self.symbols:
+            if not symbol or symbol not in self.symbols_config:
                 continue
 
             side = content.get("instruction", "").upper()
@@ -356,13 +410,13 @@ class TradingBot:
                     self.auto_buy_allowed[symbol] = True
                     log_transaction("SELL_FILLED", symbol, qty, price)
                     time.sleep(2)
-                    self.ensure_orders(symbol)   # Req 2
+                    self.ensure_orders(symbol)
 
                 elif side in ("BUY", "BUY_TO_COVER"):
                     self.holdings[symbol] = {"shares": qty, "buy_price": price}
                     log_transaction("BUY_FILLED", symbol, qty, price)
                     time.sleep(1.5)
-                    self.ensure_orders(symbol)   # Req 3
+                    self.ensure_orders(symbol)
 
             self.update_holdings_from_api()
             self.invalidate_open_orders_cache()
@@ -373,6 +427,7 @@ class TradingBot:
                 self.streamer.stop()
             except:
                 pass
+
         self.streamer = schwabdev.Stream(self.client)
         self.streamer.start(receiver=self.unified_receiver)
 
@@ -388,7 +443,7 @@ class TradingBot:
 
     def monitor_logic(self):
         while self.running:
-            time.sleep(15)   # Increased interval
+            time.sleep(15)
             if date.today() != self.today:
                 self.daily_start_equity = self.get_account_snapshot()["equity"]
                 self.today = date.today()
