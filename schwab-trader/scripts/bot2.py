@@ -102,6 +102,7 @@ app.layout = dbc.Container(
             id="managed-positions-table",
             columns=[
                 {"name": "Symbol", "id": "Symbol"},
+                {"name": "Current Price", "id": "current_price"},
                 {"name": "Buy Target Price", "id": "buy_target_price"},
                 {"name": "Limit Sell Price", "id": "limit_sell_price"},
                 {"name": "Buy Drop %", "id": "buy_drop_pct"},
@@ -129,6 +130,13 @@ app.layout = dbc.Container(
                 "color": "white",
                 "backgroundColor": "#212529",
             },
+            style_data_conditional=[
+                {
+                    "if": {"column_id": "current_price"},
+                    "fontWeight": "bold",
+                    "color": "#00FFAA"
+                },
+            ],
         ),
         # Open Orders - full width (unchanged)
         html.H4("Open Orders", className="mt-5 mb-2"),
@@ -137,9 +145,9 @@ app.layout = dbc.Container(
             columns=[
                 {"name": "ID", "id": "ID"},
                 {"name": "Symbol", "id": "Symbol"},
-                {"name": "Qty", "id": "Qty"},
-                {"name": "Price", "id": "Price"},
                 {"name": "Side", "id": "Side"},
+                {"name": "Price", "id": "Price"},
+                {"name": "Qty", "id": "Qty"},
                 {"name": "Type", "id": "Type"},
                 {"name": "Duration", "id": "Duration"},
             ],
@@ -234,9 +242,12 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         managed_positions_data = []
         with bot.lock:
             for sym, cfg in sorted(bot.symbols_config.items()):
+                current_price = bot.current_market_prices.get(sym)
+                price_str = f"${current_price:,.2f}" if current_price else "—"
                 managed_positions_data.append(
                     {
                         "Symbol": sym,
+                        "current_price": price_str,
                         "buy_target_price": f"{cfg.buy_target_price:.2f}",
                         "limit_sell_price": f"{cfg.limit_sell_price:.2f}",
                         "buy_drop_pct": f"{cfg.buy_drop_pct:.1f}",
@@ -254,11 +265,11 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                 {
                     "ID": str(o.get("orderId", "N/A")),
                     "Symbol": o.get("symbol", "—"),
-                    "Qty": o.get("quantity", 0),
+                    "Side": o.get("instruction", "—"),
                     "Price": (
                         f"${float(o.get('price') or 0):,.2f}" if o.get("price") else "—"
                     ),
-                    "Side": o.get("instruction", "—"),
+                    "Qty": o.get("quantity", 0),
                     "Type": o.get("type", "—"),
                     "Duration": o.get("duration", "—"),
                 }
