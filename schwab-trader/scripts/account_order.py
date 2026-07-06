@@ -32,6 +32,7 @@ from schwab_trader.orders.option import (
 )
 
 from schwab_trader.orders.utils import (
+    get_hashvalue,
     place_order,
     cancel_order,
     get_utc_time_range,
@@ -40,12 +41,13 @@ from schwab_trader.orders.utils import (
 )
 
 # Specified an accout number, instiate a client, the client will fetch the matching account hashValue for later identification
-
+# From account number (accountNumber) to account hash (hashValue)
 accountNumber = "29308909"
 
-
+hashValue = get_hashvalue(client, accountNumber)
+print(hashValue)
 # ========================================================================
-# From account number (accountNumber) to account hash (hashValue)
+# Account Summary
 # ========================================================================
 
 response = client.linked_accounts()

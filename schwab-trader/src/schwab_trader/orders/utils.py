@@ -7,6 +7,14 @@ from typing import Any
 
 from schwab_trader.accounts.schwab import client
 
+def get_hashvalue(client, accountNumber: str="29308909") -> str:
+    """ Get account hashValue from its accountNumber. """
+    response = client.linked_accounts()
+    data = response.json()
+    hashValue = next(
+        (item["hashValue"] for item in data if item["accountNumber"] == accountNumber), None
+    )
+    return hashValue
 
 def place_order(client, accountHash: str, order: dict) -> tuple[int, str, str]:
     """
