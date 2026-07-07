@@ -200,7 +200,7 @@ class TradingBot:
 
         order = {
             "orderType": "MARKET",
-            "session": "NORMAL",
+            "session": "SEAMLESS",
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
@@ -239,8 +239,8 @@ class TradingBot:
             sell_limit_price=str(cfg.limit_sell_price),
             sell_stop_price=str(stop_price),
             sell_stoplimit_price=str(round(stop_price * 0.99, 2)),
-            session_sell_limit="NORMAL",
-            session_sell_stoplimit="NORMAL",
+            session_sell_limit="SEAMLESS",
+            session_sell_stoplimit="SEAMLESS",
             duration="DAY"
         )
 
@@ -260,7 +260,7 @@ class TradingBot:
 
         order = {
             "orderType": "MARKET",
-            "session": "NORMAL",
+            "session": "SEAMLESS",
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [

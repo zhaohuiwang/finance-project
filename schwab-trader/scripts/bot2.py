@@ -85,7 +85,7 @@ app.layout = dbc.Container(
             },
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
-            style_data_conditional=[  # ← now valid
+            style_data_conditional=[
                 {
                     "if": {"filter_query": '{Today\'s % Chg} contains "+"'},
                     "color": "lime",
@@ -193,7 +193,7 @@ app.layout = dbc.Container(
                         },
                     ),
                 ],
-                width=6,  # ← this is the key change: half width
+                width=6,  # half width
                 lg=6,
                 md=12,  # full width on smaller screens
                 xs=12,
@@ -250,9 +250,9 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                         "current_price": price_str,
                         "buy_target_price": f"{cfg.buy_target_price:.2f}",
                         "limit_sell_price": f"{cfg.limit_sell_price:.2f}",
-                        "buy_drop_pct": f"{cfg.buy_drop_pct:.1f}",
-                        "limit_sell_pct": f"{cfg.limit_sell_pct:.1f}",
-                        "stop_loss_pct": f"{cfg.stop_loss_pct:.1f}",
+                        "buy_drop_pct": f"{cfg.buy_drop_pct:.1f}%",
+                        "limit_sell_pct": f"{cfg.limit_sell_pct:.1f}%",
+                        "stop_loss_pct": f"{cfg.stop_loss_pct:.1f}%",
                         "fixed_shares": cfg.fixed_shares,
                     }
                 )
@@ -334,7 +334,10 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
             if bot.daily_start_equity > 0
             else 0
         )
-        risk_used = len(bot.holdings) / bot.risk_config.max_positions * 100
+        risk_used = (
+            len(bot.holdings) / bot.risk_config.max_positions * 100 
+            if getattr(bot.risk_config, 'max_positions', 0) > 0 else 0
+            )
         status_text = (
             f"Equity(Net Liq): ${snapshot['equity']:,.0f} | Daily P/L: {daily_pnl:+.1f}% | "
             f"Risk Used: {risk_used:.0f}% | {'PAUSED' if bot.trading_paused else 'ACTIVE'}"
@@ -350,7 +353,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
 
     except Exception as e:
         console.print(f"[red]Dashboard callback error: {e}[/red]")
-        return [], [], [], "Dashboard error — check console"
+        return [], [], [], [], "Dashboard error — check console"
 
 
 # ====================== MAIN ======================

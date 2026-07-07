@@ -37,21 +37,21 @@ symbols:
 
 # Never touch CRWV !!!!!! This is one of the worst performing stocks.
   CRWV:
-    buy_target_price: 60.0
-    limit_sell_price: 120
-    stop_loss_dollar: 0.5
+    buy_target_price: 85.9
+    limit_sell_price: 88.8
+    stop_loss_dollar: 5.0
     buy_drop_pct: 10.0
     limit_sell_pct: 8.0
     stop_loss_pct: 8.0
     fixed_shares: 670
-  IBM:
-    buy_target_price: 248.4
-    limit_sell_price: 273.4
-    stop_loss_dollar: 0.5
-    buy_drop_pct: 10.0
-    limit_sell_pct: 8.0
-    stop_loss_pct: 8.0
-    fixed_shares: 300
+  # IBM:
+  #   buy_target_price: 248.4
+  #   limit_sell_price: 273.4
+  #   stop_loss_dollar: 0.5
+  #   buy_drop_pct: 10.0
+  #   limit_sell_pct: 8.0
+  #   stop_loss_pct: 8.0
+  #   fixed_shares: 300
 
   # USAR:    
   #   buy_target_price: 25
@@ -70,6 +70,6 @@ risk:
   default_shares: 1
 
 # Auto-shutdown configuration
-auto_shutdown_after_close: True
+auto_shutdown_after_close: False
 shutdown_buffer_minutes: 2
 shutdown_on_weekends: true
