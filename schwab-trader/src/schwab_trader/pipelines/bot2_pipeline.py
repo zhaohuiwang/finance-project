@@ -1,3 +1,5 @@
+# schwab-trader/src/schwab_trader/pipelines/bot2_pipeline.py
+
 import os
 import time
 import threading
@@ -161,19 +163,12 @@ class TradingBot:
         return results
 
     def has_open_sell_order(self, symbol: str) -> bool:
-        orders = self.get_open_orders()
-        return any(
-            o.get("symbol") == symbol and 
-            o.get("instruction") in ("SELL", "SELL_SHORT", "SELL_TO_CLOSE")
-            for o in orders
-        )
+        return any(o["symbol"] == symbol and o["instruction"] in ("SELL", "SELL_SHORT")
+                   for o in self.get_open_orders())
 
     def has_open_buy_order(self, symbol: str) -> bool:
-        orders = self.get_open_orders()
-        return any(
-            o.get("symbol") == symbol and o.get("instruction") == "BUY"
-            for o in orders
-        )
+        return any(o["symbol"] == symbol and o["instruction"] == "BUY"
+                   for o in self.get_open_orders())
 
     def can_place_order(self, symbol: str) -> bool:
         now = time.time()
@@ -207,7 +202,7 @@ class TradingBot:
 
         order = {
             "orderType": "MARKET",
-            "session": "SEAMLESS",
+            "session": "NORMAL",
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
@@ -246,8 +241,8 @@ class TradingBot:
             sell_limit_price=str(cfg.limit_sell_price),
             sell_stop_price=str(stop_price),
             sell_stoplimit_price=str(round(stop_price * 0.99, 2)),
-            session_sell_limit="SEAMLESS",
-            session_sell_stoplimit="SEAMLESS",
+            session_sell_limit="NORMAL",
+            session_sell_stoplimit="NORMAL",
             duration="DAY"
         )
 
@@ -267,7 +262,7 @@ class TradingBot:
 
         order = {
             "orderType": "MARKET",
-            "session": "SEAMLESS",
+            "session": "NORMAL",
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
@@ -288,7 +283,6 @@ class TradingBot:
 
     # ====================== CORE ENSURE LOGIC ======================
     def ensure_orders(self, symbol: str):
-        """Prevent duplicate bracket orders"""
         cfg = self.symbols_config.get(symbol)
         if not cfg:
             return
@@ -301,28 +295,19 @@ class TradingBot:
         has_buy = self.has_open_buy_order(symbol)
         has_sell = self.has_open_sell_order(symbol)
 
-        # === ANTI-SPAM PROTECTION ===
-        if not self.can_place_order(symbol):
-            return
-
         if not has_position and not has_buy:
-            # Buy logic (unchanged)
             last_buy = get_last_buy_price(symbol)
             trigger = price <= cfg.buy_target_price or (
                 last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100)
             )
             if trigger and self.risk_checks_pass(symbol):
                 console.print(f"[yellow]Ensuring BUY order for {symbol}[/yellow]")
-                self.place_buy_order(symbol, cfg.fixed_shares)
+                qty = cfg.fixed_shares
+                self.place_buy_order(symbol, qty)
 
         elif has_position and not has_sell:
-            # Only place bracket if no open sell order
             console.print(f"[yellow]Ensuring SELL bracket for {symbol}[/yellow]")
             self.submit_sell_bracket_oco(symbol)
-            
-        else:
-            # Optional
-            pass
 
     # ====================== CONFIG RELOAD (ENHANCED) ======================
     def reload_config(self):
@@ -460,7 +445,7 @@ class TradingBot:
 
     def monitor_logic(self):
         while self.running:
-            time.sleep(45)
+            time.sleep(15)
             if date.today() != self.today:
                 self.daily_start_equity = self.get_account_snapshot()["equity"]
                 self.today = date.today()
