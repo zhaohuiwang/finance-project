@@ -1,5 +1,24 @@
 # schwab-trader/scripts/bot2.py
 
+"""
+Dashboard and entry point for the Schwab Trading Bot.
+
+This script initializes the trading bot, launches an optional command-line
+interface, and hosts a Dash-based web dashboard for monitoring account
+activity in real time.
+
+The dashboard displays:
+
+- All brokerage account holdings.
+- Strategy-managed positions defined in the configuration.
+- Working open orders.
+- Account summary metrics.
+- Overall bot status and risk utilization.
+
+The dashboard also supports manually refreshing displayed data and
+hot-reloading the trading configuration without restarting the bot.
+"""
+
 import argparse
 import threading
 import logging
@@ -21,19 +40,21 @@ console = Console()
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 logging.getLogger('dash').setLevel(logging.ERROR)
 
+# ====================== INITIALIZATION ======================
 # Load config & bot
 config_path = Path(__file__).parent / "../conf/simple_bot_config.yaml"
 cfg = TradingConfig.load_from_file(config_path)
 bot = TradingBot(cfg, mode="cli", config_path=config_path)
 
 # ====================== DASH APP ======================
-# Dash app
+# Dash application providing a real-time monitoring interface for the trading bot.
 app = Dash(
     __name__,
     external_stylesheets=[dbc.themes.DARKLY],  # SLATE, CYBORG or FLATLY, etc
     assets_folder="assets",
 )
 
+# ====================== DASH LAYOUT ======================
 app.layout = dbc.Container(
     [
         dbc.Row(
@@ -210,7 +231,7 @@ app.layout = dbc.Container(
     className="p-4",
 )
 
-
+# ====================== DASH CALLBACKS ======================
 # FIXED CALLBACK
 @app.callback(
     [
@@ -228,6 +249,27 @@ app.layout = dbc.Container(
     prevent_initial_call=True,  # optional: skip first empty call
 )
 def update_dashboard(n_interval, n_clicks, reload_clicks):
+    """
+    Refresh all dashboard components.
+
+    This callback is triggered periodically by a timer or manually through
+    the dashboard controls. It gathers the latest account snapshot,
+    holdings, managed positions, open orders, and bot status before
+    updating every table on the page.
+
+    If requested, the trading configuration is reloaded before refreshing
+    the displayed data.
+
+    Args:
+        n_interval: Number of elapsed interval timer events.
+        n_clicks: Refresh button click count.
+        reload_clicks: Reload configuration button click count.
+
+    Returns:
+        A tuple containing updated data for all dashboard tables and the
+        footer status message.
+    """
+
     ctx = dash.callback_context
 
     triggered_id = None
@@ -355,8 +397,15 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         return [], [], [], "Dashboard error — check console"
 
 
-# ====================== MAIN ======================
+# ====================== APPLICATION ENTRY POINT ======================
 if __name__ == "__main__":
+    """
+    Application entry point.
+
+    Starts the trading engine, optionally launches the interactive CLI, and
+    runs the Dash web server for monitoring the trading bot.
+    """
+
     console.print(f"RUNNING FILE: {__file__}")
     
     parser = argparse.ArgumentParser(description="Schwab Trading Bot")
@@ -366,7 +415,17 @@ if __name__ == "__main__":
     bot.start()
 
     if args.mode == "cli":
+
+        # ====================== CLI ======================
         def cli_loop():
+            """
+            Run a simple interactive command-line interface.
+
+            The CLI executes in a background thread while the Dash server is
+            running, allowing basic operational commands such as stopping the
+            bot, reloading configuration, and viewing account status.
+            """
+            
             console.print("[cyan]CLI ready — type 'stop' to shutdown[/cyan]")
             while bot.running:
                 try:
