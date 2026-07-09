@@ -394,7 +394,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
 
     except Exception as e:
         console.print(f"[red]Dashboard callback error: {e}[/red]")
-        return [], [], [], "Dashboard error — check console"
+        return [], [], [], [], "Dashboard error — check console"
 
 
 # ====================== APPLICATION ENTRY POINT ======================
