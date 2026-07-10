@@ -54,8 +54,10 @@ sudo systemctl reset-failed                     # Reset any failed state (option
 """
 
 import argparse
-import threading
 import sys
+import threading
+import time
+
 from pathlib import Path
 from rich.console import Console
 
@@ -115,8 +117,6 @@ if __name__ == "__main__":
         console.print("[yellow]Running in headless mode (no dashboard)[/yellow]")
         try:
             while bot.running:
-                import time
-
                 time.sleep(10)
         except KeyboardInterrupt:
             bot.stop()
