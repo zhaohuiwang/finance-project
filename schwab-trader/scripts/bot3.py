@@ -29,7 +29,7 @@ sudo nano /etc/systemd/system/schwab-bot.service
 # Fill the servie file
 
 # Run the service file
-# Reload systemd
+# Reload systemd to apply changes
 sudo systemctl daemon-reload
 
 # Enable and start the service
@@ -48,6 +48,12 @@ sudo systemctl disable schwab-bot.service   # Disable auto-start on boot
 sudo systemctl enable schwab-bot.service    # Enable auto-start on boot
 sudo systemctl is-enabled schwab-bot.service    # Check if auto-start is enabled
 
+# To remove the service
+sudo systemctl stop schwab-bot.service          # Stop the service (if it's running)
+sudo systemctl disable schwab-bot.service       # Disable auto-start
+sudo rm /etc/systemd/system/schwab-bot.service  # Remove the service file
+sudo systemctl daemon-reload                    # Reload systemd to apply changes
+sudo systemctl reset-failed                     # Reset any failed state (optional but recommended)
 """
 import argparse
 import threading
