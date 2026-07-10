@@ -26,7 +26,41 @@ python3 bot3.py --help
 
 # Create/Edit the Service File
 sudo nano /etc/systemd/system/schwab-bot.service
-# Fill the servie file
+# Fill the servie file with the following:
+
+[Unit]
+Description=Schwab Trading Bot
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=zhaohuiwang
+WorkingDirectory=/home/zhaohuiwang/Projects/finance-project/schwab-trader
+ExecStart=/home/zhaohuiwang/Projects/finance-project/schwab-trader/.venv/bin/py>
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+# If you use a .env file
+EnvironmentFile=/home/zhaohuiwang/Projects/finance-project/.env
+
+# Restart policy
+Restart=always
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Optional: Lower priority
+Nice=10
+CPUSchedulingPolicy=idle
+
+[Install]
+WantedBy=multi-user.target
+
+
 
 # Run the service file
 # Reload systemd to apply changes
@@ -42,6 +76,7 @@ sudo systemctl start schwab-bot.service     # Start the bot
 sudo systemctl restart schwab-bot.service   # Restart the bot
 
 journalctl -u schwab-bot.service -f         # View live logs
+journalctl -u schwab-bot.service -n 50      # view recent 50 logs
 
 sudo systemctl status schwab-bot.service    # Check current status
 sudo systemctl disable schwab-bot.service   # Disable auto-start on boot
@@ -62,7 +97,7 @@ from pathlib import Path
 from rich.console import Console
 
 from schwab_trader.config.bot.config import TradingConfig
-from schwab_trader.pipelines.bot2_pipeline import TradingBot
+from schwab_trader.pipelines.bot3_pipeline import TradingBot
 from dashboard import run_dashboard
 
 console = Console()

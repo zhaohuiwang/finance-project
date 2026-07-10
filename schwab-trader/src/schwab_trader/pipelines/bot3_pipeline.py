@@ -23,7 +23,7 @@ import schwabdev
 from dotenv import load_dotenv
 from rich.console import Console
 from schwab_trader.config.bot.config import TradingConfig, SymbolConfig
-from schwab_trader.utils.db import init_db, log_transaction, get_last_buy_price
+from schwab_trader.utils.db import init_db, log_transaction, get_last_buy_price, get_last_sell_price, save_state
 from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
 
 load_dotenv()
@@ -380,17 +380,25 @@ class TradingBot:
                     pass
 
     def _handle_fill(self, item):
-        """Process order fill events."""
+        """
+        Process order execution events.
+        Updates holdings, transaction history, and order state after buy or
+        sell executions before re-evaluating the trading strategy.
+        """
         for content in item.get("content", []):
             if content.get("messageType", "").upper() not in ("FILL", "EXECUTION", "ORDER_FILL"):
                 continue
+
             symbol = content.get("symbol")
             if not symbol or symbol not in self.symbols_config:
                 continue
+
             side = content.get("instruction", "").upper()
+            
             try:
                 qty = float(content.get("quantity") or 0)
                 price = float(content.get("price") or 0)
+                order_id = content.get("orderId") or content.get("order_id")
             except:
                 continue
 
@@ -400,15 +408,55 @@ class TradingBot:
                 if side in ("SELL", "SELL_SHORT"):
                     self.holdings.pop(symbol, None)
                     self.auto_buy_allowed[symbol] = True
-                    log_transaction("SELL_FILLED", symbol, qty, price)
+
+                    # Log the transaction
+                    log_transaction(
+                        action="SELL_FILLED",
+                        symbol=symbol,
+                        qty=qty,
+                        price=price,
+                        order_id=order_id,
+                        order_status="FILLED",
+                        note="OCO or manual sell"
+                    )
+
+                    # Update state: record sell + reset buy fields
+                    save_state(
+                        symbol=symbol,
+                        last_sell_price=price,
+                        last_sell_qty=qty,
+                        last_buy_price=None,   # Position closed
+                        last_buy_qty=None,
+                    )
+
                     time.sleep(2)
                     self.ensure_orders(symbol)
+
                 elif side in ("BUY", "BUY_TO_COVER"):
                     self.holdings[symbol] = {"shares": qty, "buy_price": price}
-                    log_transaction("BUY_FILLED", symbol, qty, price)
+
+                    # Log the transaction
+                    log_transaction(
+                        action="BUY_FILLED",
+                        symbol=symbol,
+                        qty=qty,
+                        price=price,
+                        order_id=order_id,
+                        order_status="FILLED",
+                        note="Auto buy"
+                    )
+
+                    # Update state: record buy
+                    save_state(
+                        symbol=symbol,
+                        last_buy_price=price,
+                        last_buy_qty=qty,
+                    )
+
                     time.sleep(1.5)
                     self.ensure_orders(symbol)
 
+            # Refresh data after any fill
             self.update_holdings_from_api()
             self.invalidate_open_orders_cache()
 
