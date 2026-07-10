@@ -627,7 +627,7 @@ def on_quote(message: Any):
                                 f"move_down={move_down:.2f} "
                                 f"threshold={down_threshold:.2f} "
                                 f"(ATR={atr:.2f})"
-                                )
+                            )
                             place_trailing_buy(
                                 cfg.buy_quantity,
                                 quote_cache[cfg.symbol]["ask"] or last_price,

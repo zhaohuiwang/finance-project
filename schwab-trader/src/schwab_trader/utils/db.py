@@ -139,8 +139,7 @@ def save_state(
 
 def load_state() -> dict:
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        """
+    rows = conn.execute("""
         SELECT
             symbol,
             last_buy_price,
@@ -148,8 +147,7 @@ def load_state() -> dict:
             last_sell_price,
             last_sell_qty
         FROM state
-        """
-    ).fetchall()
+        """).fetchall()
     conn.close()
 
     return {
@@ -184,7 +182,8 @@ def get_last_buy_qty(symbol: str) -> float | None:
 def get_last_sell_price(symbol: str) -> float | None:
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
-        "SELECT last_sell_price FROM state WHERE symbol=?", (symbol,),
+        "SELECT last_sell_price FROM state WHERE symbol=?",
+        (symbol,),
     ).fetchone()
     conn.close()
     return float(row[0]) if row and row[0] is not None else None
@@ -193,7 +192,8 @@ def get_last_sell_price(symbol: str) -> float | None:
 def get_last_sell_qty(symbol: str) -> float | None:
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute(
-        "SELECT last_sell_qty FROM state WHERE symbol=?", (symbol,),
+        "SELECT last_sell_qty FROM state WHERE symbol=?",
+        (symbol,),
     ).fetchone()
     conn.close()
     return float(row[0]) if row and row[0] is not None else None

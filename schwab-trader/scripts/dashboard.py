@@ -1,9 +1,9 @@
-
 # schwab-trader/scripts/dashboard.py
 """
 Dash-based web dashboard for the Schwab Trading Bot.
 Completely separated from core bot logic.
 """
+
 import logging
 import dash
 import dash_bootstrap_components as dbc
@@ -12,8 +12,8 @@ from dash import Dash, dcc, html, dash_table, Input, Output
 from schwab_trader.pipelines.bot2_pipeline import TradingBot
 
 # Suppress logs
-logging.getLogger('werkzeug').setLevel(logging.ERROR)
-logging.getLogger('dash').setLevel(logging.ERROR)
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
+logging.getLogger("dash").setLevel(logging.ERROR)
 
 app = Dash(
     __name__,
@@ -27,16 +27,30 @@ bot: TradingBot = None
 # ====================== LAYOUT ======================
 app.layout = dbc.Container(
     [
-        dbc.Row([dbc.Col(html.H2("Schwab Trading Bot Dashboard"), width=12)], className="mb-4"),
-
         dbc.Row(
-            dbc.Col([
-                dbc.Button("Refresh Now", id="refresh-button", color="primary", className="mb-3"),
-                dbc.Button("Reload Config", id="reload-config-button", color="warning", className="mb-3 ms-2"),
-            ], width={"size": 6}),
+            [dbc.Col(html.H2("Schwab Trading Bot Dashboard"), width=12)],
+            className="mb-4",
+        ),
+        dbc.Row(
+            dbc.Col(
+                [
+                    dbc.Button(
+                        "Refresh Now",
+                        id="refresh-button",
+                        color="primary",
+                        className="mb-3",
+                    ),
+                    dbc.Button(
+                        "Reload Config",
+                        id="reload-config-button",
+                        color="warning",
+                        className="mb-3 ms-2",
+                    ),
+                ],
+                width={"size": 6},
+            ),
             className="mb-3",
         ),
-
         html.H4("All Account Holdings", className="mt-4 mb-2"),
         dash_table.DataTable(
             id="all-holdings-table",
@@ -54,11 +68,16 @@ app.layout = dbc.Container(
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
             style_data_conditional=[
-                {"if": {"filter_query": '{Today\'s % Chg} contains "+"'}, "color": "lime"},
-                {"if": {"filter_query": '{Today\'s % Chg} contains "-"'}, "color": "tomato"},
+                {
+                    "if": {"filter_query": '{Today\'s % Chg} contains "+"'},
+                    "color": "lime",
+                },
+                {
+                    "if": {"filter_query": '{Today\'s % Chg} contains "-"'},
+                    "color": "tomato",
+                },
             ],
         ),
-
         html.H4("Managed Positions (config only)", className="mt-4 mb-2"),
         dash_table.DataTable(
             id="managed-positions-table",
@@ -74,11 +93,20 @@ app.layout = dbc.Container(
             ],
             style_table={"overflowX": "auto", "width": "100%"},
             style_cell={"textAlign": "right", "minWidth": "100px"},
-            style_header={"backgroundColor": "#2c3e50", "color": "white", "fontWeight": "bold"},
+            style_header={
+                "backgroundColor": "#2c3e50",
+                "color": "white",
+                "fontWeight": "bold",
+            },
             style_data={"color": "white", "backgroundColor": "#212529"},
-            style_data_conditional=[{"if": {"column_id": "current_price"}, "fontWeight": "bold", "color": "#00FFAA"}],
+            style_data_conditional=[
+                {
+                    "if": {"column_id": "current_price"},
+                    "fontWeight": "bold",
+                    "color": "#00FFAA",
+                }
+            ],
         ),
-
         html.H4("Open Orders", className="mt-5 mb-2"),
         dash_table.DataTable(
             id="orders-table",
@@ -96,21 +124,29 @@ app.layout = dbc.Container(
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
         ),
-
         dbc.Row(
-            dbc.Col([
-                html.H4("Account Summary", className="mt-5 mb-2"),
-                dash_table.DataTable(
-                    id="account-summary-table",
-                    columns=[{"name": "Metric", "id": "Metric"}, {"name": "Value", "id": "Value"}],
-                    style_table={"width": "100%"},
-                    style_header={"backgroundColor": "#2c3e50", "color": "white", "fontWeight": "bold"},
-                    style_data={"color": "white", "backgroundColor": "#212529"},
-                ),
-            ], width=6),
+            dbc.Col(
+                [
+                    html.H4("Account Summary", className="mt-5 mb-2"),
+                    dash_table.DataTable(
+                        id="account-summary-table",
+                        columns=[
+                            {"name": "Metric", "id": "Metric"},
+                            {"name": "Value", "id": "Value"},
+                        ],
+                        style_table={"width": "100%"},
+                        style_header={
+                            "backgroundColor": "#2c3e50",
+                            "color": "white",
+                            "fontWeight": "bold",
+                        },
+                        style_data={"color": "white", "backgroundColor": "#212529"},
+                    ),
+                ],
+                width=6,
+            ),
             className="mb-4",
         ),
-
         html.Div(id="status-footer", className="mt-5 text-center"),
         dcc.Interval(id="interval-component", interval=8000, n_intervals=0),
     ],
@@ -151,29 +187,35 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         with bot.lock:
             for sym, cfg in sorted(bot.symbols_config.items()):
                 price = bot.current_market_prices.get(sym)
-                managed_data.append({
-                    "Symbol": sym,
-                    "current_price": f"${price:,.2f}" if price else "—",
-                    "buy_target_price": f"{cfg.buy_target_price:.2f}",
-                    "limit_sell_price": f"{cfg.limit_sell_price:.2f}",
-                    "buy_drop_pct": f"{cfg.buy_drop_pct:.1f}",
-                    "limit_sell_pct": f"{cfg.limit_sell_pct:.1f}",
-                    "stop_loss_pct": f"{cfg.stop_loss_pct:.1f}",
-                    "fixed_shares": cfg.fixed_shares,
-                })
+                managed_data.append(
+                    {
+                        "Symbol": sym,
+                        "current_price": f"${price:,.2f}" if price else "—",
+                        "buy_target_price": f"{cfg.buy_target_price:.2f}",
+                        "limit_sell_price": f"{cfg.limit_sell_price:.2f}",
+                        "buy_drop_pct": f"{cfg.buy_drop_pct:.1f}",
+                        "limit_sell_pct": f"{cfg.limit_sell_pct:.1f}",
+                        "stop_loss_pct": f"{cfg.stop_loss_pct:.1f}",
+                        "fixed_shares": cfg.fixed_shares,
+                    }
+                )
 
         # Open Orders
         orders_data = []
         for o in bot.get_open_orders():
-            orders_data.append({
-                "ID": str(o.get("orderId", "N/A")),
-                "Symbol": o.get("symbol", "—"),
-                "Side": o.get("instruction", "—"),
-                "Price": f"${float(o.get('price') or 0):,.2f}" if o.get("price") else "—",
-                "Qty": o.get("quantity", 0),
-                "Type": o.get("type", "—"),
-                "Duration": o.get("duration", "—"),
-            })
+            orders_data.append(
+                {
+                    "ID": str(o.get("orderId", "N/A")),
+                    "Symbol": o.get("symbol", "—"),
+                    "Side": o.get("instruction", "—"),
+                    "Price": (
+                        f"${float(o.get('price') or 0):,.2f}" if o.get("price") else "—"
+                    ),
+                    "Qty": o.get("quantity", 0),
+                    "Type": o.get("type", "—"),
+                    "Duration": o.get("duration", "—"),
+                }
+            )
 
         # Account Summary
         snapshot = bot.get_account_snapshot()
@@ -182,7 +224,10 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
             {"Metric": "Cash & Sweep", "Value": f"${snapshot['cashBalance']:,.2f}"},
             {"Metric": "Buying Power", "Value": f"${snapshot['buyingPower']:,.2f}"},
             {"Metric": "Day Trading BP", "Value": f"${snapshot['dayTradingBP']:,.2f}"},
-            {"Metric": "Non-Marginable BP", "Value": f"${snapshot['nonMarginableBP']:,.2f}"},
+            {
+                "Metric": "Non-Marginable BP",
+                "Value": f"${snapshot['nonMarginableBP']:,.2f}",
+            },
         ]
 
         # All Holdings
@@ -192,24 +237,37 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                 price = bot.current_market_prices.get(sym) or h.get("current_price")
                 shares = h.get("shares", 0)
                 buy_p = h.get("buy_price")
-                pl = round((price - buy_p) / buy_p * 100, 1) if buy_p and buy_p > 0 else 0.0
+                pl = (
+                    round((price - buy_p) / buy_p * 100, 1)
+                    if buy_p and buy_p > 0
+                    else 0.0
+                )
                 market_val = round(shares * (price or 0), 2)
                 day_chg = h.get("day_pct", 0.0)
 
-                all_holdings_data.append({
-                    "Symbol": sym,
-                    "Shares": shares,
-                    "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
-                    "Price": f"${price:,.2f}" if price else "—",
-                    "Today's % Chg": f"{day_chg:+.2f}%" if abs(day_chg) > 0.001 else "—",
-                    "P/L %": f"{pl:+.1f}%",
-                    "Market Value": f"${market_val:,.2f}",
-                })
+                all_holdings_data.append(
+                    {
+                        "Symbol": sym,
+                        "Shares": shares,
+                        "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
+                        "Price": f"${price:,.2f}" if price else "—",
+                        "Today's % Chg": (
+                            f"{day_chg:+.2f}%" if abs(day_chg) > 0.001 else "—"
+                        ),
+                        "P/L %": f"{pl:+.1f}%",
+                        "Market Value": f"${market_val:,.2f}",
+                    }
+                )
         all_holdings_data.sort(key=lambda x: x["Symbol"])
 
-        daily_pnl = ((snapshot["equity"] - bot.daily_start_equity) / bot.daily_start_equity * 100
-                     if bot.daily_start_equity > 0 else 0)
-        risk_used = len(bot.holdings) / getattr(bot.risk_config, 'max_positions', 4) * 100
+        daily_pnl = (
+            (snapshot["equity"] - bot.daily_start_equity) / bot.daily_start_equity * 100
+            if bot.daily_start_equity > 0
+            else 0
+        )
+        risk_used = (
+            len(bot.holdings) / getattr(bot.risk_config, "max_positions", 4) * 100
+        )
 
         status_text = (
             f"Equity(Net Liq): ${snapshot['equity']:,.0f} | "
