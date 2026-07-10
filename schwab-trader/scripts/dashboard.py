@@ -1,275 +1,233 @@
-""" "
-Purpose: Real-time streaming and visualization of stock market data using Schwab's streaming API and Dash/Matplotlib for live charting.
 
-Data Buffers
-Stores time, price, and volume in deque buffers with a fixed MAX_POINTS to prevent memory overflow.
-Optional OHLC buffers for candlestick aggregation.
-
-Indicators Computed
-Moving Averages (MA20, MA50) for smoothing prices.
-VWAP (Volume-Weighted Average Price) for volume-weighted price benchmark.
-
-Live Plotting / Dashboard
-Uses Dash or Matplotlib in interactive mode for real-time chart updates.
-Plots: Price line, VWAP line, optional candlestick + volume bars
-Chart refresh interval controlled by dcc.Interval or time.sleep() in Matplotlib loop.
-
-Threaded Consumer
-A background thread consumes streaming messages, updates buffers, and prints debug information.
-Ensures the UI thread remains responsive.
-
-Command-Line Arguments
-Symbols can be passed via argparse, or just the default list:
-```Bash
-python dashboard.py AMD NVDA AAPL
-python dashboard.py
-```
-Supports nargs="+" to require at least one symbol.
-
+# schwab-trader/scripts/dashboard.py
 """
-
-import argparse
-import json
-import os
-import threading
-from collections import deque
-from datetime import datetime
-
-import pandas as pd
-import dotenv
-import schwabdev
-
+Dash-based web dashboard for the Schwab Trading Bot.
+Completely separated from core bot logic.
+"""
+import logging
 import dash
-from dash import dcc, html
-from dash.dependencies import Input, Output
-import plotly.graph_objs as go
+import dash_bootstrap_components as dbc
+from dash import Dash, dcc, html, dash_table, Input, Output
 
-parser = argparse.ArgumentParser(description="Live Trading Dashboard")
-parser.add_argument(
-    "symbols",
-    nargs="*",
-    default=["AMD", "NVDA", "AAPL"],
-    help="List of symbols to track, e.g. AMD NVDA AAPL",
-)
-args = parser.parse_args()
+from schwab_trader.pipelines.bot2_pipeline import TradingBot
 
-# ---------------- SETTINGS ----------------
+# Suppress logs
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
+logging.getLogger('dash').setLevel(logging.ERROR)
 
-SYMBOLS = args.symbols
-
-FIELD_PRICE = "3"
-FIELD_VOLUME = "8"
-# https://tda-api.readthedocs.io/en/v1.3.3/streaming.html#equities-quotes
-
-MAX_POINTS = 500  # at most 500 recent points to hold.
-
-dotenv.load_dotenv()
-
-client = schwabdev.Client(
-    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+app = Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.DARKLY],
+    assets_folder="assets",
 )
 
-streamer = schwabdev.Stream(client)
+# Global reference
+bot: TradingBot = None
 
-shared = []
-
-# collections.deque ensure data to hold at most MAX_POINTS recent points per symbol.
-data = {
-    sym: {
-        "time": deque(maxlen=MAX_POINTS),
-        "price": deque(maxlen=MAX_POINTS),
-        "volume": deque(maxlen=MAX_POINTS),
-        "open": deque(maxlen=MAX_POINTS),
-        "high": deque(maxlen=MAX_POINTS),
-        "low": deque(maxlen=MAX_POINTS),
-    }
-    for sym in SYMBOLS
-}
-
-
-# ---------------- STREAM HANDLER ----------------
-def response_handler(msg):
-    shared.append(msg)
-
-
-streamer.start(response_handler)
-streamer.send(
-    streamer.level_one_equities(",".join(SYMBOLS), f"0,{FIELD_PRICE},{FIELD_VOLUME}")
-)
-
-
-# ---------------- CONSUMER ----------------
-def consumer():
-    while True:
-        while shared:
-            msg = json.loads(shared.pop(0))
-            if "data" not in msg:
-                continue
-
-            for service in msg["data"]:
-                ts = datetime.fromtimestamp(service["timestamp"] / 1000)
-
-                for content in service["content"]:
-                    symbol = content.get("key")
-                    if symbol not in SYMBOLS:
-                        continue
-
-                    price = content.get(FIELD_PRICE)
-                    volume = content.get(FIELD_VOLUME)
-
-                    if price is not None:
-                        price_float = float(price)
-                        vol_float = float(volume) if volume else 0.0
-
-                        data[symbol]["time"].append(ts)
-                        data[symbol]["price"].append(price_float)
-                        data[symbol]["volume"].append(vol_float)
-
-                        # Candlestick OHLC logic still running, but we can comment it later if desired
-                        if (
-                            len(data[symbol]["open"]) == 0
-                            or ts != data[symbol]["time"][-2]
-                        ):
-                            data[symbol]["open"].append(price_float)
-                            data[symbol]["high"].append(price_float)
-                            data[symbol]["low"].append(price_float)
-                        else:
-                            data[symbol]["high"][-1] = max(
-                                data[symbol]["high"][-1], price_float
-                            )
-                            data[symbol]["low"][-1] = min(
-                                data[symbol]["low"][-1], price_float
-                            )
-
-
-threading.Thread(target=consumer, daemon=True).start()
-
-# ---------------- DASH APP ----------------
-app = dash.Dash(__name__)
-
-app.layout = html.Div(
+# ====================== LAYOUT ======================
+app.layout = dbc.Container(
     [
-        html.H2("Live Dashboard (Line + Indicators)"),
-        dcc.Dropdown(
-            id="symbol",
-            options=[{"label": s, "value": s} for s in SYMBOLS],
-            value=SYMBOLS[0],
+        dbc.Row([dbc.Col(html.H2("Schwab Trading Bot Dashboard"), width=12)], className="mb-4"),
+
+        dbc.Row(
+            dbc.Col([
+                dbc.Button("Refresh Now", id="refresh-button", color="primary", className="mb-3"),
+                dbc.Button("Reload Config", id="reload-config-button", color="warning", className="mb-3 ms-2"),
+            ], width={"size": 6}),
+            className="mb-3",
         ),
-        dcc.Graph(id="price-chart"),
-        dcc.Interval(
-            id="update",
-            interval=2000,  # dashboard updates/redraws the chart with the latest buffered data in milliseconds, i.e., 1000 is 1 second
+
+        html.H4("All Account Holdings", className="mt-4 mb-2"),
+        dash_table.DataTable(
+            id="all-holdings-table",
+            columns=[
+                {"name": "Symbol", "id": "Symbol"},
+                {"name": "Price", "id": "Price"},
+                {"name": "Today's % Chg", "id": "Today's % Chg"},
+                {"name": "Shares", "id": "Shares"},
+                {"name": "Avg Buy", "id": "Avg Buy"},
+                {"name": "P/L %", "id": "P/L %"},
+                {"name": "Market Value", "id": "Market Value"},
+            ],
+            style_table={"overflowX": "auto", "width": "100%"},
+            style_cell={"textAlign": "left", "minWidth": "80px"},
+            style_data={"color": "white", "backgroundColor": "#212529"},
+            style_header={"backgroundColor": "#2c3e50", "color": "white"},
+            style_data_conditional=[
+                {"if": {"filter_query": '{Today\'s % Chg} contains "+"'}, "color": "lime"},
+                {"if": {"filter_query": '{Today\'s % Chg} contains "-"'}, "color": "tomato"},
+            ],
         ),
-    ]
+
+        html.H4("Managed Positions (config only)", className="mt-4 mb-2"),
+        dash_table.DataTable(
+            id="managed-positions-table",
+            columns=[
+                {"name": "Symbol", "id": "Symbol"},
+                {"name": "Current Price", "id": "current_price"},
+                {"name": "Buy Target", "id": "buy_target_price"},
+                {"name": "Limit Sell", "id": "limit_sell_price"},
+                {"name": "Buy Drop %", "id": "buy_drop_pct"},
+                {"name": "Limit Sell %", "id": "limit_sell_pct"},
+                {"name": "Stop Loss %", "id": "stop_loss_pct"},
+                {"name": "Fixed Shares", "id": "fixed_shares"},
+            ],
+            style_table={"overflowX": "auto", "width": "100%"},
+            style_cell={"textAlign": "right", "minWidth": "100px"},
+            style_header={"backgroundColor": "#2c3e50", "color": "white", "fontWeight": "bold"},
+            style_data={"color": "white", "backgroundColor": "#212529"},
+            style_data_conditional=[{"if": {"column_id": "current_price"}, "fontWeight": "bold", "color": "#00FFAA"}],
+        ),
+
+        html.H4("Open Orders", className="mt-5 mb-2"),
+        dash_table.DataTable(
+            id="orders-table",
+            columns=[
+                {"name": "ID", "id": "ID"},
+                {"name": "Symbol", "id": "Symbol"},
+                {"name": "Side", "id": "Side"},
+                {"name": "Price", "id": "Price"},
+                {"name": "Qty", "id": "Qty"},
+                {"name": "Type", "id": "Type"},
+                {"name": "Duration", "id": "Duration"},
+            ],
+            style_table={"overflowX": "auto", "width": "100%"},
+            style_cell={"textAlign": "left", "minWidth": "80px"},
+            style_data={"color": "white", "backgroundColor": "#212529"},
+            style_header={"backgroundColor": "#2c3e50", "color": "white"},
+        ),
+
+        dbc.Row(
+            dbc.Col([
+                html.H4("Account Summary", className="mt-5 mb-2"),
+                dash_table.DataTable(
+                    id="account-summary-table",
+                    columns=[{"name": "Metric", "id": "Metric"}, {"name": "Value", "id": "Value"}],
+                    style_table={"width": "100%"},
+                    style_header={"backgroundColor": "#2c3e50", "color": "white", "fontWeight": "bold"},
+                    style_data={"color": "white", "backgroundColor": "#212529"},
+                ),
+            ], width=6),
+            className="mb-4",
+        ),
+
+        html.Div(id="status-footer", className="mt-5 text-center"),
+        dcc.Interval(id="interval-component", interval=8000, n_intervals=0),
+    ],
+    fluid=True,
+    className="p-4",
 )
 
 
-# ---------------- DATAFRAME & INDICATORS ----------------
-def compute_df(sym):
-    min_len = min(
-        len(data[sym]["time"]), len(data[sym]["price"]), len(data[sym]["volume"])
-    )
-    df = pd.DataFrame(
-        {
-            "time": list(data[sym]["time"])[-min_len:],
-            "price": list(data[sym]["price"])[-min_len:],
-            "volume": list(data[sym]["volume"])[-min_len:],
-            # Candlestick arrays included but can be ignored in plotting
-            "open": list(data[sym]["open"])[-min_len:],
-            "high": list(data[sym]["high"])[-min_len:],
-            "low": list(data[sym]["low"])[-min_len:],
-        }
-    )
-
-    if len(df) > 0:
-        df["ma20"] = df["price"].rolling(20).mean()
-        df["ma50"] = df["price"].rolling(50).mean()
-        cumulative_pv = (df["price"] * df["volume"]).cumsum()
-        cumulative_vol = df["volume"].cumsum()
-        df["vwap"] = cumulative_pv / cumulative_vol.replace(0, 1)
-        # Volume-Weighted Average Price or VWAP = Cumulative Price × Volume​ / Cumulative Volume
-
-    return df
-
-
-# ---------------- DASH CALLBACK ----------------
 @app.callback(
-    Output("price-chart", "figure"),
-    Input("update", "n_intervals"),
-    Input("symbol", "value"),
+    [
+        Output("all-holdings-table", "data"),
+        Output("managed-positions-table", "data"),
+        Output("orders-table", "data"),
+        Output("account-summary-table", "data"),
+        Output("status-footer", "children"),
+    ],
+    [
+        Input("interval-component", "n_intervals"),
+        Input("refresh-button", "n_clicks"),
+        Input("reload-config-button", "n_clicks"),
+    ],
+    prevent_initial_call=True,
 )
-def update_chart(_, sym):
-    df = compute_df(sym)
-    fig = go.Figure()
+def update_dashboard(n_interval, n_clicks, reload_clicks):
+    """Update all dashboard components."""
+    ctx = dash.callback_context
+    triggered_id = None
+    if ctx and ctx.triggered:
+        prop_id = ctx.triggered[0].get("prop_id", "")
+        triggered_id = prop_id.split(".")[0] if prop_id else None
 
-    if len(df) > 0:
-        # ---------------- COMMENTED OUT CANDLESTICKS & VOLUME ----------------
-        # fig.add_trace(go.Candlestick(
-        #     x=df["time"],
-        #     open=df["open"],
-        #     high=df["high"],
-        #     low=df["low"],
-        #     close=df["price"],
-        #     name="Candlestick"
-        # ))
+    if triggered_id == "reload-config-button" and reload_clicks and bot:
+        bot.reload_config()
 
-        # fig.add_trace(go.Bar(
-        #     x=df["time"],
-        #     y=df["volume"],
-        #     name="Volume",
-        #     marker_color="grey",
-        #     yaxis="y2",
-        #     opacity=0.3
-        # ))
+    try:
+        # Managed Positions
+        managed_data = []
+        with bot.lock:
+            for sym, cfg in sorted(bot.symbols_config.items()):
+                price = bot.current_market_prices.get(sym)
+                managed_data.append({
+                    "Symbol": sym,
+                    "current_price": f"${price:,.2f}" if price else "—",
+                    "buy_target_price": f"{cfg.buy_target_price:.2f}",
+                    "limit_sell_price": f"{cfg.limit_sell_price:.2f}",
+                    "buy_drop_pct": f"{cfg.buy_drop_pct:.1f}",
+                    "limit_sell_pct": f"{cfg.limit_sell_pct:.1f}",
+                    "stop_loss_pct": f"{cfg.stop_loss_pct:.1f}",
+                    "fixed_shares": cfg.fixed_shares,
+                })
 
-        # ---------------- LINE PRICE + INDICATORS ----------------
-        fig.add_trace(
-            go.Scatter(
-                x=df["time"],
-                y=df["price"],
-                name="Price",
-                mode="lines",
-                line=dict(color="green"),
-            )
+        # Open Orders
+        orders_data = []
+        for o in bot.get_open_orders():
+            orders_data.append({
+                "ID": str(o.get("orderId", "N/A")),
+                "Symbol": o.get("symbol", "—"),
+                "Side": o.get("instruction", "—"),
+                "Price": f"${float(o.get('price') or 0):,.2f}" if o.get("price") else "—",
+                "Qty": o.get("quantity", 0),
+                "Type": o.get("type", "—"),
+                "Duration": o.get("duration", "—"),
+            })
+
+        # Account Summary
+        snapshot = bot.get_account_snapshot()
+        account_data = [
+            {"Metric": "Equity(Net Liq)", "Value": f"${snapshot['equity']:,.2f}"},
+            {"Metric": "Cash & Sweep", "Value": f"${snapshot['cashBalance']:,.2f}"},
+            {"Metric": "Buying Power", "Value": f"${snapshot['buyingPower']:,.2f}"},
+            {"Metric": "Day Trading BP", "Value": f"${snapshot['dayTradingBP']:,.2f}"},
+            {"Metric": "Non-Marginable BP", "Value": f"${snapshot['nonMarginableBP']:,.2f}"},
+        ]
+
+        # All Holdings
+        all_holdings_data = []
+        with bot.lock:
+            for sym, h in bot.all_holdings.items():
+                price = bot.current_market_prices.get(sym) or h.get("current_price")
+                shares = h.get("shares", 0)
+                buy_p = h.get("buy_price")
+                pl = round((price - buy_p) / buy_p * 100, 1) if buy_p and buy_p > 0 else 0.0
+                market_val = round(shares * (price or 0), 2)
+                day_chg = h.get("day_pct", 0.0)
+
+                all_holdings_data.append({
+                    "Symbol": sym,
+                    "Shares": shares,
+                    "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
+                    "Price": f"${price:,.2f}" if price else "—",
+                    "Today's % Chg": f"{day_chg:+.2f}%" if abs(day_chg) > 0.001 else "—",
+                    "P/L %": f"{pl:+.1f}%",
+                    "Market Value": f"${market_val:,.2f}",
+                })
+        all_holdings_data.sort(key=lambda x: x["Symbol"])
+
+        daily_pnl = ((snapshot["equity"] - bot.daily_start_equity) / bot.daily_start_equity * 100
+                     if bot.daily_start_equity > 0 else 0)
+        risk_used = len(bot.holdings) / getattr(bot.risk_config, 'max_positions', 4) * 100
+
+        status_text = (
+            f"Equity(Net Liq): ${snapshot['equity']:,.0f} | "
+            f"Daily P/L: {daily_pnl:+.1f}% | "
+            f"Risk Used: {risk_used:.0f}% | "
+            f"{'PAUSED' if bot.trading_paused else 'ACTIVE'}"
         )
 
-        fig.add_trace(
-            go.Scatter(
-                x=df["time"],
-                y=df["ma20"],
-                name="MA20",
-                line=dict(color="blue"),
-            )
-        )
+        return all_holdings_data, managed_data, orders_data, account_data, status_text
 
-        fig.add_trace(
-            go.Scatter(
-                x=df["time"],
-                y=df["ma50"],
-                name="MA50",
-                line=dict(color="orange"),
-            )
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=df["time"],
-                y=df["vwap"],
-                name="VWAP",
-                line=dict(color="purple"),
-            )
-        )
-
-    fig.update_layout(
-        template="plotly_dark",
-        xaxis_title="Time",
-        yaxis_title="Price",
-        title=f"Live Line & Indicators: {sym}",
-    )
-
-    return fig
+    except Exception as e:
+        print(f"[red]Dashboard callback error: {e}[/red]")
+        return [], [], [], [], "Dashboard error — check console"
 
 
-# ---------------- RUN APP ----------------
-if __name__ == "__main__":
-    app.run(debug=True)
+def run_dashboard(trading_bot: TradingBot, port: int = 8050):
+    """Start the dashboard."""
+    global bot
+    bot = trading_bot
+    print(f"[bold green]✅ Dashboard running at http://127.0.0.1:{port}[/bold green]")
+    app.run(debug=False, use_reloader=False, port=port)
