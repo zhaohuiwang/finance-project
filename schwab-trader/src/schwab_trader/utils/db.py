@@ -24,7 +24,7 @@ def init_db():
     try:
         conn = get_connection()
         c = conn.cursor()
-        
+
         c.execute("""CREATE TABLE IF NOT EXISTS transactions (
                     action TEXT NOT NULL,
                     symbol TEXT,
@@ -35,7 +35,7 @@ def init_db():
                     note TEXT,
                     ts TEXT NOT NULL
                 )""")
-        
+
         c.execute("""
               CREATE TABLE IF NOT EXISTS state (
               symbol TEXT PRIMARY KEY,
@@ -47,13 +47,14 @@ def init_db():
               last_sell_time TEXT
               )
               """)
-        
+
         conn.commit()
         conn.close()
         print(f"[DB] ✅ Database initialized successfully at {DB_PATH}")
     except Exception as e:
         print(f"[DB ERROR] Failed to initialize database: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -70,7 +71,7 @@ def log_transaction(
     try:
         conn = get_connection()
         ts = datetime.datetime.now().isoformat()
-        
+
         conn.execute(
             """
             INSERT INTO transactions
@@ -85,10 +86,12 @@ def log_transaction(
     except sqlite3.Error as e:
         print(f"[DB ERROR] SQLite error while logging {action} {symbol}: {e}")
         import traceback
+
         traceback.print_exc()
     except Exception as e:
         print(f"[DB ERROR] Unexpected error while logging {action} {symbol}: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -145,10 +148,12 @@ def save_state(
     except Exception as e:
         print(f"[DB ERROR] Failed to save state for {symbol}: {e}")
         import traceback
+
         traceback.print_exc()
 
 
 # ==================== GETTERS ====================
+
 
 def get_last_buy_price(symbol: str) -> float | None:
     try:
@@ -205,15 +210,13 @@ def get_last_sell_qty(symbol: str) -> float | None:
 def load_state() -> dict:
     try:
         conn = get_connection()
-        rows = conn.execute(
-            """
+        rows = conn.execute("""
             SELECT symbol, last_buy_price, last_buy_qty,
                    last_sell_price, last_sell_qty
             FROM state
-            """
-        ).fetchall()
+            """).fetchall()
         conn.close()
-        
+
         return {
             sym: {
                 "buy_price": buy_price,

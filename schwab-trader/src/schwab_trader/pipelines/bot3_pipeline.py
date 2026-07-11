@@ -24,7 +24,13 @@ import schwabdev
 from dotenv import load_dotenv
 from rich.console import Console
 from schwab_trader.config.bot.config import TradingConfig, SymbolConfig
-from schwab_trader.utils.db import init_db, log_transaction, get_last_buy_price, get_last_sell_price, save_state
+from schwab_trader.utils.db import (
+    init_db,
+    log_transaction,
+    get_last_buy_price,
+    get_last_sell_price,
+    save_state,
+)
 from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
 
 load_dotenv()
@@ -448,7 +454,7 @@ class TradingBot:
                 continue
 
             side = content.get("instruction", "").upper()
-            
+
             try:
                 qty = float(content.get("quantity") or 0)
                 price = float(content.get("price") or 0)
@@ -471,7 +477,7 @@ class TradingBot:
                         price=price,
                         order_id=order_id,
                         order_status="FILLED",
-                        note="OCO or manual sell"
+                        note="OCO or manual sell",
                     )
 
                     # Update state: record sell + reset buy fields
@@ -479,7 +485,7 @@ class TradingBot:
                         symbol=symbol,
                         last_sell_price=price,
                         last_sell_qty=qty,
-                        last_buy_price=None,   # Position closed
+                        last_buy_price=None,  # Position closed
                         last_buy_qty=None,
                     )
 
@@ -497,7 +503,7 @@ class TradingBot:
                         price=price,
                         order_id=order_id,
                         order_status="FILLED",
-                        note="Auto buy"
+                        note="Auto buy",
                     )
 
                     # Update state: record buy

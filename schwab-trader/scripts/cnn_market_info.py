@@ -136,8 +136,7 @@ class FearGreedClient:
         df["date"] = pd.to_datetime(df["x"], unit="ms")
 
         df = (
-            df.rename(columns={"y": "fear_greed"})
-            [["date", "fear_greed"]]
+            df.rename(columns={"y": "fear_greed"})[["date", "fear_greed"]]
             .sort_values("date")
             .reset_index(drop=True)
         )
@@ -164,8 +163,7 @@ def save_historical_data(
     csv_path = output_dir / CSV_FILENAME
 
     (
-        df.set_index("date")
-        .to_csv(
+        df.set_index("date").to_csv(
             csv_path,
             date_format="%Y-%m-%d",
         )
@@ -222,7 +220,7 @@ def plot_historical_data(
         bbox_inches="tight",
     )
 
-    plt.close(fig) # Destroy figure, release it from the momory
+    plt.close(fig)  # Destroy figure, release it from the momory
 
     return plot_path
 
