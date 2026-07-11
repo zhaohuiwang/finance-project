@@ -16,7 +16,6 @@ The bot maintains an internal view of prices, holdings, and outstanding
 orders to ensure desired trading state is continuously enforced.
 """
 
-
 import os
 import time
 import threading
@@ -32,7 +31,6 @@ from rich.console import Console
 from schwab_trader.config.bot.config import TradingConfig, SymbolConfig
 from schwab_trader.utils.db import init_db, log_transaction, get_last_buy_price
 from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
-
 
 load_dotenv()
 console = Console()
@@ -56,6 +54,7 @@ class TradingBot:
     - Enforcing configurable risk controls.
     - Reloading trading configuration without restarting.
     """
+
     def __init__(self, cfg: TradingConfig, mode: str = "cli", config_path=None):
         """
         Initialize the trading bot.
@@ -80,7 +79,9 @@ class TradingBot:
         self.risk_config = cfg.risk
         self.symbols_config: dict[str, SymbolConfig] = cfg.symbols
 
-        self.current_market_prices = {sym: None for sym in self.symbols} # get assigned by _handle_price() which streams the market prices
+        self.current_market_prices = {
+            sym: None for sym in self.symbols
+        }  # get assigned by _handle_price() which streams the market prices
         self.holdings = {}
         self.all_holdings = {}
         self.pending_buy_orders = set()
@@ -103,9 +104,9 @@ class TradingBot:
         self.today = date.today()
 
         # Shutdown config
-        self.auto_shutdown_after_close = getattr(cfg, 'auto_shutdown_after_close', True)
-        self.shutdown_buffer_minutes = getattr(cfg, 'shutdown_buffer_minutes', 2)
-        self.shutdown_on_weekends = getattr(cfg, 'shutdown_on_weekends', True)
+        self.auto_shutdown_after_close = getattr(cfg, "auto_shutdown_after_close", True)
+        self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
+        self.shutdown_on_weekends = getattr(cfg, "shutdown_on_weekends", True)
 
         console.print("[bold green]TradingBot initialized[/bold green]")
 
@@ -134,11 +135,15 @@ class TradingBot:
             acc = self.client.account_details(self.account_hash).json()
             bal = acc.get("securitiesAccount", {}).get("currentBalances", {})
             return {
-                "equity": float(bal.get("liquidationValue") or bal.get("equity") or 0.0),
+                "equity": float(
+                    bal.get("liquidationValue") or bal.get("equity") or 0.0
+                ),
                 "cashBalance": float(bal.get("cashBalance") or 0.0),
                 "buyingPower": float(bal.get("buyingPower") or 0.0),
                 "dayTradingBP": float(bal.get("dayTradingBuyingPower") or 0.0),
-                "nonMarginableBP": float(bal.get("buyingPowerNonMarginableTrade") or 0.0),
+                "nonMarginableBP": float(
+                    bal.get("buyingPowerNonMarginableTrade") or 0.0
+                ),
             }
         except Exception as e:
             console.print(f"[red]Snapshot error: {e}[/red]")
@@ -154,7 +159,9 @@ class TradingBot:
         """
 
         try:
-            pos = self.client.account_details(self.account_hash, fields="positions").json()
+            pos = self.client.account_details(
+                self.account_hash, fields="positions"
+            ).json()
             positions = pos.get("securitiesAccount", {}).get("positions", [])
             new_holdings = {}
             new_all = {}
@@ -167,7 +174,12 @@ class TradingBot:
                     avg = float(p.get("averagePrice") or 0)
                     mv = float(p.get("marketValue") or 0)
                     price = mv / long_qty if long_qty > 0 else 0
-                    entry = {"shares": long_qty, "buy_price": avg, "current_price": price, "day_pct": day_pct}
+                    entry = {
+                        "shares": long_qty,
+                        "buy_price": avg,
+                        "current_price": price,
+                        "day_pct": day_pct,
+                    }
                     new_all[sym] = entry
                     if sym in self.symbols_config:
                         new_holdings[sym] = entry
@@ -190,7 +202,10 @@ class TradingBot:
         """
 
         now = time.time()
-        if self._open_orders_cache and now - self._open_orders_cache_time < self.open_orders_cache_ttl:
+        if (
+            self._open_orders_cache
+            and now - self._open_orders_cache_time < self.open_orders_cache_ttl
+        ):
             return self._open_orders_cache
 
         to_time = datetime.now(timezone.utc)
@@ -201,7 +216,7 @@ class TradingBot:
                 self.account_hash,
                 fromEnteredTime=from_time,
                 toEnteredTime=to_time,
-                status="WORKING"
+                status="WORKING",
             )
             orders = resp.json() or []
             flat = []
@@ -234,17 +249,24 @@ class TradingBot:
         results = []
         if "orderLegCollection" in order:
             leg = order["orderLegCollection"][0]
-            price = order.get("price") or order.get("stopPrice") or order.get("stopLimitPrice") or order.get("limitPrice")
-            results.append({
-                "orderId": order.get("orderId"),
-                "symbol": leg["instrument"]["symbol"],
-                "instruction": leg["instruction"],
-                "quantity": leg.get("quantity"),
-                "price": price,
-                "orderStrategyType": order.get("orderStrategyType"),
-                "type": order.get("orderType", "N/A"),
-                "duration": order.get("duration", "N/A"),
-            })
+            price = (
+                order.get("price")
+                or order.get("stopPrice")
+                or order.get("stopLimitPrice")
+                or order.get("limitPrice")
+            )
+            results.append(
+                {
+                    "orderId": order.get("orderId"),
+                    "symbol": leg["instrument"]["symbol"],
+                    "instruction": leg["instruction"],
+                    "quantity": leg.get("quantity"),
+                    "price": price,
+                    "orderStrategyType": order.get("orderStrategyType"),
+                    "type": order.get("orderType", "N/A"),
+                    "duration": order.get("duration", "N/A"),
+                }
+            )
         for child in order.get("childOrderStrategies", []):
             results.extend(self._flatten_order(child))
         return results
@@ -259,17 +281,21 @@ class TradingBot:
         Returns:
             True if a sell order is currently open.
         """
-        
-        return any(o["symbol"] == symbol and o["instruction"] in ("SELL", "SELL_SHORT")
-                   for o in self.get_open_orders())
+
+        return any(
+            o["symbol"] == symbol and o["instruction"] in ("SELL", "SELL_SHORT")
+            for o in self.get_open_orders()
+        )
 
     def has_open_buy_order(self, symbol: str) -> bool:
         """
         Determine whether a working buy order exists for a symbol.
         """
-        
-        return any(o["symbol"] == symbol and o["instruction"] == "BUY"
-                   for o in self.get_open_orders())
+
+        return any(
+            o["symbol"] == symbol and o["instruction"] == "BUY"
+            for o in self.get_open_orders()
+        )
 
     def can_place_order(self, symbol: str) -> bool:
         """
@@ -281,7 +307,7 @@ class TradingBot:
         Returns:
             True if a new order may be submitted.
         """
-        
+
         now = time.time()
         last = self.last_order_placement.get(symbol, 0)
         if now - last < 25:
@@ -308,9 +334,13 @@ class TradingBot:
                     if order_id:
                         try:
                             self.client.cancel_order(self.account_hash, order_id)
-                            console.print(f"[yellow]Cancelled order {order_id} for {symbol}[/yellow]")
+                            console.print(
+                                f"[yellow]Cancelled order {order_id} for {symbol}[/yellow]"
+                            )
                         except Exception as e:
-                            console.print(f"[red]Failed to cancel order {order_id}: {e}[/red]")
+                            console.print(
+                                f"[red]Failed to cancel order {order_id}: {e}[/red]"
+                            )
             self.invalidate_open_orders_cache()
         except Exception as e:
             console.print(f"[red]Error cancelling orders for {symbol}: {e}[/red]")
@@ -330,7 +360,7 @@ class TradingBot:
         Returns:
             True if the order submission succeeded.
         """
-        
+
         if not self.risk_checks_pass(symbol) or not self.can_place_order(symbol):
             return False
 
@@ -340,8 +370,12 @@ class TradingBot:
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
-                {"instruction": "BUY", "quantity": qty, "instrument": {"symbol": symbol, "assetType": "EQUITY"}}
-            ]
+                {
+                    "instruction": "BUY",
+                    "quantity": qty,
+                    "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                }
+            ],
         }
         try:
             self.client.place_order(self.account_hash, order)
@@ -360,7 +394,7 @@ class TradingBot:
         stop-limit order. If the market price has already exceeded the
         configured target, an immediate market sell is submitted instead.
         """
-        
+
         if not self.can_place_order(symbol):
             return
         if symbol not in self.holdings:
@@ -385,12 +419,14 @@ class TradingBot:
             sell_stoplimit_price=str(round(stop_price * 0.99, 2)),
             session_sell_limit="NORMAL",
             session_sell_stoplimit="NORMAL",
-            duration="DAY"
+            duration="DAY",
         )
 
         try:
             self.client.place_order(self.account_hash, oco)
-            console.print(f"[green]✓ OCO Bracket placed for {symbol} (Limit ${cfg.limit_sell_price})[/green]")
+            console.print(
+                f"[green]✓ OCO Bracket placed for {symbol} (Limit ${cfg.limit_sell_price})[/green]"
+            )
             self.invalidate_open_orders_cache()
         except Exception as e:
             console.print(f"[red]OCO failed for {symbol}: {e}[/red]")
@@ -401,7 +437,7 @@ class TradingBot:
 
         Used when the configured profit target has already been exceeded.
         """
-        
+
         if not self.can_place_order(symbol):
             return
         holding = self.holdings.get(symbol)
@@ -414,12 +450,18 @@ class TradingBot:
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
-                {"instruction": "SELL", "quantity": int(holding["shares"]), "instrument": {"symbol": symbol, "assetType": "EQUITY"}}
-            ]
+                {
+                    "instruction": "SELL",
+                    "quantity": int(holding["shares"]),
+                    "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                }
+            ],
         }
         try:
             self.client.place_order(self.account_hash, order)
-            console.print(f"[bold green]Immediate SELL executed for {symbol}[/bold green]")
+            console.print(
+                f"[bold green]Immediate SELL executed for {symbol}[/bold green]"
+            )
             self.invalidate_open_orders_cache()
         except Exception as e:
             console.print(f"[red]Immediate sell failed: {e}[/red]")
@@ -447,7 +489,7 @@ class TradingBot:
         - create a missing OCO exit bracket, or
         - leave existing orders unchanged.
         """
-        
+
         cfg = self.symbols_config.get(symbol)
         if not cfg:
             return
@@ -456,7 +498,9 @@ class TradingBot:
         if not price:
             return
 
-        has_position = symbol in self.holdings and self.holdings[symbol].get("shares", 0) > 0
+        has_position = (
+            symbol in self.holdings and self.holdings[symbol].get("shares", 0) > 0
+        )
         has_buy = self.has_open_buy_order(symbol)
         has_sell = self.has_open_sell_order(symbol)
 
@@ -487,7 +531,7 @@ class TradingBot:
 
         try:
             new_cfg = TradingConfig.load_from_file(self.config_path)
-            
+
             with self.lock:
                 self.risk_config = new_cfg.risk
                 self.symbols_config = new_cfg.symbols
@@ -505,7 +549,6 @@ class TradingBot:
                         self.auto_buy_allowed.pop(sym, None)
 
             console.print("[bold cyan]Config reloaded successfully[/bold cyan]")
-            
 
             # Handle symbol changes
             old_symbols = set(self.symbols)
@@ -514,9 +557,13 @@ class TradingBot:
             added = new_symbols - old_symbols
 
             if removed or added:
-                console.print(f"[yellow]Symbols changed → Removed: {removed} | Added: {added}[/yellow]")
+                console.print(
+                    f"[yellow]Symbols changed → Removed: {removed} | Added: {added}[/yellow]"
+                )
                 if self.streamer:
-                    console.print("[yellow]Restarting streamer due to symbol change...[/yellow]")
+                    console.print(
+                        "[yellow]Restarting streamer due to symbol change...[/yellow]"
+                    )
                     self.start_stream()  # restarts with new symbols
 
             # Cancel stale orders and re-apply new logic
@@ -529,7 +576,9 @@ class TradingBot:
             for sym in removed:
                 self.cancel_all_orders_for_symbol(sym)
 
-            console.print("[green]Trade logic and orders updated per new config[/green]")
+            console.print(
+                "[green]Trade logic and orders updated per new config[/green]"
+            )
 
         except Exception as e:
             console.print(f"[red]Config reload failed: {e}[/red]")
@@ -542,7 +591,7 @@ class TradingBot:
         Market data is forwarded to the price handler while account activity
         events are forwarded to the fill handler.
         """
-        
+
         if isinstance(message, str):
             try:
                 message = json.loads(message)
@@ -565,12 +614,12 @@ class TradingBot:
         Updates the latest known price for configured symbols using streamed
         Level One equity data.
         """
-        
+
         for content in item.get("content", []):
             sym = content.get("key")
             if sym in self.current_market_prices:
                 try:
-                    price = float(content.get("3") or 0) # "3" = last price
+                    price = float(content.get("3") or 0)  # "3" = last price
                     if price > 0:
                         with self.lock:
                             self.current_market_prices[sym] = price
@@ -584,9 +633,13 @@ class TradingBot:
         Updates holdings, transaction history, and order state after buy or
         sell executions before re-evaluating the trading strategy.
         """
-        
+
         for content in item.get("content", []):
-            if content.get("messageType", "").upper() not in ("FILL", "EXECUTION", "ORDER_FILL"):
+            if content.get("messageType", "").upper() not in (
+                "FILL",
+                "EXECUTION",
+                "ORDER_FILL",
+            ):
                 continue
             symbol = content.get("symbol")
             if not symbol or symbol not in self.symbols_config:
@@ -626,7 +679,7 @@ class TradingBot:
         established, holdings are synchronized and desired orders are
         verified for every configured symbol.
         """
-        
+
         if self.streamer:
             try:
                 self.streamer.stop()
@@ -639,7 +692,9 @@ class TradingBot:
         symbols_str = ",".join(self.symbols)
         if symbols_str:
             self.streamer.send(self.streamer.level_one_equities(symbols_str, "0,1,2,3"))
-        self.streamer.send(self.streamer.account_activity("Account Activity", "0,1,2,3"))
+        self.streamer.send(
+            self.streamer.account_activity("Account Activity", "0,1,2,3")
+        )
 
         self.update_holdings_from_api()
         time.sleep(2)
@@ -654,7 +709,7 @@ class TradingBot:
         tracking at the start of a new trading day, and ensure required
         orders remain in place.
         """
-            
+
         while self.running:
             time.sleep(15)
             if date.today() != self.today:
@@ -680,14 +735,14 @@ class TradingBot:
         Returns:
             True if a new trade may be placed.
         """
-        
+
         if self.trading_paused:
             return False
         snap = self.get_account_snapshot()
-        if snap["equity"] < getattr(self.risk_config, 'min_account_equity', 5000):
+        if snap["equity"] < getattr(self.risk_config, "min_account_equity", 5000):
             self.trading_paused = True
             return False
-        if len(self.holdings) >= getattr(self.risk_config, 'max_positions', 4):
+        if len(self.holdings) >= getattr(self.risk_config, "max_positions", 4):
             return False
         return True
 
@@ -697,16 +752,18 @@ class TradingBot:
 
         Launches streaming services and the background monitoring thread.
         """
-        
+
         self.start_stream()
-        threading.Thread(target=self.monitor_logic, daemon=True, name="MonitorLogic").start()
+        threading.Thread(
+            target=self.monitor_logic, daemon=True, name="MonitorLogic"
+        ).start()
         console.print("[bold green]✅ Bot started[/bold green]")
 
     def stop(self):
         """
         Stop the trading bot and terminate active market streams.
         """
-        
+
         self.running = False
         if self.streamer:
             self.streamer.stop()

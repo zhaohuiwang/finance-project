@@ -1,4 +1,3 @@
-
 import logging
 import os
 from dotenv import load_dotenv
@@ -11,18 +10,15 @@ load_dotenv()
 
 # ========================= LOGGING SETUP =========================
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
+    level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
 # ========================= SCHWAB AUTH SETUP =========================
-def initialize_client(
-    tokens_path="~/.schwabdev/tokens.db"
-    ):
+def initialize_client(tokens_path="~/.schwabdev/tokens.db"):
     """Normal initialization using existing tokens.db"""
-    try:        
+    try:
         tokens_path = str(Path(tokens_path).expanduser())
         APP_KEY = os.getenv("APP_KEY")
         APP_SECRET = os.getenv("APP_SECRET")
@@ -37,18 +33,17 @@ def initialize_client(
         APP_SECRET,
         callback_url=CALLBACK_URL,
         tokens_db=tokens_path,
-        encryption=None, # the following are defaults.
+        encryption=None,  # the following are defaults.
         timeout=10,
         call_on_auth=None,
-        open_browser_for_auth=True
+        open_browser_for_auth=True,
     )
-
 
 
 # ========================= SCHWAB ACCOUNT =========================
 client = initialize_client()
 
-  
+
 class Position:
     """Represents a single account position"""
 

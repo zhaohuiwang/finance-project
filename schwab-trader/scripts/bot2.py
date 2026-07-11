@@ -37,8 +37,8 @@ load_dotenv()
 console = Console()
 
 # Suppress noisy logs
-logging.getLogger('werkzeug').setLevel(logging.ERROR)
-logging.getLogger('dash').setLevel(logging.ERROR)
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
+logging.getLogger("dash").setLevel(logging.ERROR)
 
 # ====================== INITIALIZATION ======================
 # Load config & bot
@@ -70,7 +70,6 @@ app.layout = dbc.Container(
                         color="primary",
                         className="mb-3",
                     ),
-
                     dbc.Button(
                         "Reload Config",
                         id="reload-config-button",
@@ -157,7 +156,7 @@ app.layout = dbc.Container(
                 {
                     "if": {"column_id": "current_price"},
                     "fontWeight": "bold",
-                    "color": "#00FFAA"
+                    "color": "#00FFAA",
                 },
             ],
         ),
@@ -231,6 +230,7 @@ app.layout = dbc.Container(
     className="p-4",
 )
 
+
 # ====================== DASH CALLBACKS ======================
 # FIXED CALLBACK
 @app.callback(
@@ -280,7 +280,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
     # safe reload handling
     if triggered_id == "reload-config-button" and reload_clicks:
         bot.reload_config()
-        
+
     try:
         # Managed Positions — from conf.yaml
         managed_positions_data = []
@@ -407,7 +407,7 @@ if __name__ == "__main__":
     """
 
     console.print(f"RUNNING FILE: {__file__}")
-    
+
     parser = argparse.ArgumentParser(description="Schwab Trading Bot")
     parser.add_argument("--mode", choices=["full", "cli"], default="cli")
     args = parser.parse_args()
@@ -425,7 +425,7 @@ if __name__ == "__main__":
             running, allowing basic operational commands such as stopping the
             bot, reloading configuration, and viewing account status.
             """
-            
+
             console.print("[cyan]CLI ready — type 'stop' to shutdown[/cyan]")
             while bot.running:
                 try:
@@ -443,11 +443,11 @@ if __name__ == "__main__":
                         print("Commands: stop | reload | status")
                 except:
                     break
+
         threading.Thread(target=cli_loop, daemon=True).start()
 
-    console.print("[bold green]✅ Quiet Dashboard running at http://127.0.0.1:8050[/bold green]")
-    
+    console.print(
+        "[bold green]✅ Quiet Dashboard running at http://127.0.0.1:8050[/bold green]"
+    )
+
     app.run(debug=False, use_reloader=False, port=8050)
-    
-    
-    

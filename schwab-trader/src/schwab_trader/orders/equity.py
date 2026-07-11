@@ -1,5 +1,11 @@
 from enum import Enum
-from schwab_trader.accounts.type_literal import OrderType, stopPriceLinkBasis, stopPriceLinkType,Session, Duration
+from schwab_trader.accounts.type_literal import (
+    OrderType,
+    stopPriceLinkBasis,
+    stopPriceLinkType,
+    Session,
+    Duration,
+)
 
 # Dictionary specification for equity orders.
 # Note: Prices must be string in the JSON for precision
@@ -285,9 +291,8 @@ def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
 def buy_trailing_stop_dict(
     symbol: str,
     quantity: int,
-    
     stop_price_link_basis: stopPriceLinkBasis = "BID",
-    stop_price_link_type: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_type: stopPriceLinkType = "PERCENT",  # "VALUE" or "PERCENT" or "TICK"
     stop_price_offset: float = 2.0,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
@@ -357,7 +362,7 @@ def buy_trailing_stop_dict(
         dict:
             Schwab API trailing stop BUY order payload.
     """
-    
+
     return {
         "complexOrderStrategyType": "NONE",
         "orderType": "TRAILING_STOP",
@@ -375,14 +380,13 @@ def buy_trailing_stop_dict(
             }
         ],
     }
-    
+
 
 def sell_trailing_stop_dict(
     symbol: str,
     quantity: int,
-    
     stop_price_link_basis: stopPriceLinkBasis = "BID",
-    stop_price_link_type: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_type: stopPriceLinkType = "PERCENT",  # "VALUE" or "PERCENT" or "TICK"
     stop_price_offset: float = 2.0,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
@@ -452,7 +456,7 @@ def sell_trailing_stop_dict(
         dict:
             Schwab API trailing stop SELL order payload.
     """
-    
+
     return {
         "complexOrderStrategyType": "NONE",
         "orderType": "TRAILING_STOP",
@@ -477,19 +481,17 @@ def buy_trailingstop_trigger_sell_trailingstop_dict(
     quantity_buy: int,
     quantity_sell: int,
     stop_price_link_basis_buy: stopPriceLinkBasis = "MARK",
-    stop_price_link_type_buy: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_type_buy: stopPriceLinkType = "PERCENT",  # "VALUE" or "PERCENT" or "TICK"
     stop_price_offset_buy: float = 2.0,
     session_buy: Session = "NORMAL",
-    buy_duration: Duration = "DAY", # "GOOD_TILL_CANCEL", "END_OF_WEEK", "END_OF_MONTH", ...
-    
+    buy_duration: Duration = "DAY",  # "GOOD_TILL_CANCEL", "END_OF_WEEK", "END_OF_MONTH", ...
     stop_price_link_basis_sell: stopPriceLinkBasis = "MARK",
-    stop_price_link_type_sell: stopPriceLinkType = "PERCENT",stop_price_offset_sell: float = 2.0,
+    stop_price_link_type_sell: stopPriceLinkType = "PERCENT",
+    stop_price_offset_sell: float = 2.0,
     session_sell: Session = "NORMAL",
     sell_duration: Duration = "DAY",
 ) -> dict:
-    """
-
-    """
+    """ """
     return {
         "orderType": "TRAILING_STOP",
         "session": session_buy,
@@ -532,25 +534,24 @@ def buy_trailingstop_trigger_sell_trailingstop_dict(
             }
         ],
     }
-    
+
+
 def sell_trailingstop_trigger_buy_trailingstop_dict(
     symbol: str,
     quantity_sell: int,
     quantity_buy: int,
     stop_price_link_basis_sell: stopPriceLinkBasis = "MARK",
-    stop_price_link_type_sell: stopPriceLinkType = "PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_type_sell: stopPriceLinkType = "PERCENT",  # "VALUE" or "PERCENT" or "TICK"
     stop_price_offset_sell: float = 2.0,
     session_sell: Session = "NORMAL",
-    sell_duration: Duration = "DAY", # "GOOD_TILL_CANCEL", "END_OF_WEEK", "END_OF_MONTH", ...
-    
+    sell_duration: Duration = "DAY",  # "GOOD_TILL_CANCEL", "END_OF_WEEK", "END_OF_MONTH", ...
     stop_price_link_basis_buy: stopPriceLinkBasis = "MARK",
-    stop_price_link_type_buy: stopPriceLinkType = "PERCENT",stop_price_offset_buy: float = 2.0,
+    stop_price_link_type_buy: stopPriceLinkType = "PERCENT",
+    stop_price_offset_buy: float = 2.0,
     session_buy: Session = "NORMAL",
     buy_duration: Duration = "DAY",
 ) -> dict:
-    """
-
-    """
+    """ """
     return {
         "orderType": "TRAILING_STOP",
         "session": session_sell,

@@ -1,5 +1,3 @@
-
-
 """
 Access token expires in: 30 minutes
 Refresh token expires in: 7 days
@@ -9,12 +7,11 @@ python3 src/schwab_trader/accounts/init_client.py
 
 # Reset tokens (with confirmation)
 python3 src/schwab_trader/accounts/init_client.py --clean-tokens
-or 
+or
 python3 src/schwab_trader/accounts/init_client.py --reset
 
 --tokens-path allows you to specify a custom location for the tokens.db file. By default, it uses ~/.schwabdev/tokens.db.
 """
-
 
 import argparse
 import logging
@@ -29,19 +26,17 @@ load_dotenv()
 
 # ========================= LOGGING SETUP =========================
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
+    level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 
 # ========================= SCHWAB AUTH SETUP =========================
 
-def initialize_client(
-    tokens_path="~/.schwabdev/tokens.db"
-    ):
+
+def initialize_client(tokens_path="~/.schwabdev/tokens.db"):
     """Normal initialization using existing tokens.db"""
-    try:        
+    try:
         tokens_path = str(Path(tokens_path).expanduser())
         APP_KEY = os.getenv("APP_KEY")
         APP_SECRET = os.getenv("APP_SECRET")
@@ -52,16 +47,14 @@ def initialize_client(
         raise
 
     return schwabdev.Client(
-        APP_KEY,
-        APP_SECRET,
-        callback_url=CALLBACK_URL,
-        tokens_db=tokens_path
+        APP_KEY, APP_SECRET, callback_url=CALLBACK_URL, tokens_db=tokens_path
     )
-    
+
+
 # ========================= CLEAN TOKENS =========================
 def clean_file(file_path: str | Path):
     """Safely delete a file with user confirmation. Accepts str or Path."""
-    
+
     # Convert to Path if string is passed
     if isinstance(file_path, str):
         file_path = Path(file_path).expanduser()
@@ -78,13 +71,15 @@ def clean_file(file_path: str | Path):
     logger.warning("This action cannot be undone.")
 
     # User confirmation
-    confirm = input("Are you sure you want to delete this file? (yes/y): ").strip().lower()
-    
+    confirm = (
+        input("Are you sure you want to delete this file? (yes/y): ").strip().lower()
+    )
+
     if confirm in ["yes", "y", "ye"]:
         try:
             file_path.unlink(missing_ok=True)
             logger.info(f"✅ Successfully deleted: {file_path}")
-            
+
             # Optional: Clean up parent directory if empty
             parent = file_path.parent
             if not any(parent.iterdir()):
@@ -93,7 +88,7 @@ def clean_file(file_path: str | Path):
                     logger.info(f"🗑️  Removed empty directory: {parent}")
                 except Exception:
                     pass
-                    
+
         except Exception as e:
             logger.error(f"❌ Failed to delete file: {e}")
     else:
@@ -105,26 +100,27 @@ def clean_file(file_path: str | Path):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description="Schwab Trader API Authentication Setup")
+    parser = argparse.ArgumentParser(
+        description="Schwab Trader API Authentication Setup"
+    )
     parser.add_argument(
         "--clean-tokens",
         "--reset",
         action="store_true",
-        help="Delete existing tokens.db and force re-authentication"
+        help="Delete existing tokens.db and force re-authentication",
     )
     parser.add_argument(
         "--tokens-path",
         type=str,
         default=None,
-        help="Custom path to tokens.db (default: ~/.schwabdev/tokens.db)"
+        help="Custom path to tokens.db (default: ~/.schwabdev/tokens.db)",
     )
-    
-    args =parser.parse_args()
+
+    args = parser.parse_args()
     tokens_path = args.tokens_path or str(Path("~/.schwabdev/tokens.db").expanduser())
-    
+
     # Handle token cleaning
     if args.clean_tokens:
         clean_file(tokens_path)
-    
-    client = initialize_client()
 
+    client = initialize_client()

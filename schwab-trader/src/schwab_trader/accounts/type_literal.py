@@ -121,41 +121,15 @@ ComplexOrderStrategyType = Literal[
 ]
 
 stopPriceLinkBasis = Literal[
-    "MANUAL",
-    "BASE",
-    "TRIGGER",
-    "LAST",
-    "BID",
-    "ASK",
-    "ASK_BID",
-    "MARK",
-    "AVERAGE"
-    ]
+    "MANUAL", "BASE", "TRIGGER", "LAST", "BID", "ASK", "ASK_BID", "MARK", "AVERAGE"
+]
 
-stopPriceLinkType = Literal[
-    "VALUE",
-    "PERCENT",
-    "TICK"
-    ]
+stopPriceLinkType = Literal["VALUE", "PERCENT", "TICK"]
 
-stopTypestring = Literal[
-    "STANDARD",
-    "BID",
-    "ASK",
-    "LAST",
-    "MARK"
-    ]
+stopTypestring = Literal["STANDARD", "BID", "ASK", "LAST", "MARK"]
 priceLinkBasisstring = Literal[
-    "MANUAL",
-    "BASE",
-    "TRIGGER",
-    "LAST",
-    "BID",
-    "ASK",
-    "ASK_BID",
-    "MARK",
-    "AVERAGE"
-    ]
+    "MANUAL", "BASE", "TRIGGER", "LAST", "BID", "ASK", "ASK_BID", "MARK", "AVERAGE"
+]
 
 orderStrategyTypestring = Literal[
     "SINGLE",
@@ -166,10 +140,8 @@ orderStrategyTypestring = Literal[
     "TWO_DAY_SWAP",
     "BLAST_ALL",
     "OCO",
-    "TRIGGER"
-    ]
-
-
+    "TRIGGER",
+]
 
 
 # from enum import Enum

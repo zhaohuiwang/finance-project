@@ -1,5 +1,4 @@
-
-""""
+""" "
 The bot trades one stock (default: NBIS) using:
 Short Moving Average - SHORT_MA (e.g. 9 periods)
 Long Moving Average - LONG_MA (e.g. 21 periods)
@@ -11,7 +10,6 @@ The bot only trades during market hours (8:30 AM - 3:00 PM CT) and logs all acti
 
 
 """
-
 
 import os
 import time

@@ -1,6 +1,3 @@
-
-
-
 # schwab-trader/scripts/bot2.py
 """
 Main entry point for the Schwab Trading Bot.
@@ -90,9 +87,12 @@ sudo rm /etc/systemd/system/schwab-bot.service  # Remove the service file
 sudo systemctl daemon-reload                    # Reload systemd to apply changes
 sudo systemctl reset-failed                     # Reset any failed state (optional but recommended)
 """
+
 import argparse
-import threading
 import sys
+import threading
+import time
+
 from pathlib import Path
 from rich.console import Console
 
@@ -104,8 +104,12 @@ console = Console()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Schwab Trading Bot")
-    parser.add_argument("--mode", choices=["full", "cli", "headless"], default="full",
-                        help="full = bot + dashboard, cli = bot + CLI, headless = bot only")
+    parser.add_argument(
+        "--mode",
+        choices=["full", "cli", "headless"],
+        default="full",
+        help="full = bot + dashboard, cli = bot + CLI, headless = bot only",
+    )
     parser.add_argument("--port", type=int, default=8050, help="Dashboard port")
     args = parser.parse_args()
 
@@ -118,6 +122,7 @@ if __name__ == "__main__":
 
     # CLI
     if args.mode in ("full", "cli") and sys.stdin.isatty():
+
         def cli_loop():
             console.print("[cyan]CLI ready — commands: stop | reload | status[/cyan]")
             while bot.running:
@@ -130,7 +135,9 @@ if __name__ == "__main__":
                         bot.reload_config()
                     elif cmd == "status":
                         snap = bot.get_account_snapshot()
-                        print(f"Equity: ${snap['equity']:,.2f} | Positions: {len(bot.holdings)}")
+                        print(
+                            f"Equity: ${snap['equity']:,.2f} | Positions: {len(bot.holdings)}"
+                        )
                     else:
                         print("Commands: stop | reload | status")
                 except:
@@ -145,9 +152,6 @@ if __name__ == "__main__":
         console.print("[yellow]Running in headless mode (no dashboard)[/yellow]")
         try:
             while bot.running:
-                import time
                 time.sleep(10)
         except KeyboardInterrupt:
             bot.stop()
-
-

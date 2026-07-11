@@ -23,7 +23,7 @@ from schwab_trader.orders.equity import (
     buy_limit_trigger_sell_limit_sell_stop_oco_dict,
     sell_trailing_stop_dict,
     buy_trailingstop_trigger_sell_trailingstop_dict,
-    sell_trailingstop_trigger_buy_trailingstop_dict
+    sell_trailingstop_trigger_buy_trailingstop_dict,
 )
 from schwab_trader.orders.option import (
     buy_limit_single_option_dict,
@@ -91,7 +91,7 @@ order_b3 = buy_limit_dict(
     symbol="IBM",
     quantity=300,
     limit_price=268.4,
-    #session="NORMAL", # ["NORMAL", "AM", "PM", "SEAMLESS"]
+    # session="NORMAL", # ["NORMAL", "AM", "PM", "SEAMLESS"]
     session="AM",
     duration="DAY",
 )
@@ -194,11 +194,10 @@ order_ts_bs = buy_trailingstop_trigger_sell_trailingstop_dict(
     quantity_buy=1,
     quantity_sell=1,
     stop_price_link_basis_buy="MARK",
-    stop_price_link_type_buy="PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_type_buy="PERCENT",  # "VALUE" or "PERCENT" or "TICK"
     stop_price_offset_buy=2.0,
     session_buy="NORMAL",
-    buy_duration="GOOD_TILL_CANCEL", # "DAY", "END_OF_WEEK", "END_OF_MONTH", ...
-    
+    buy_duration="GOOD_TILL_CANCEL",  # "DAY", "END_OF_WEEK", "END_OF_MONTH", ...
     stop_price_link_basis_sell="MARK",
     stop_price_link_type_sell="PERCENT",
     stop_price_offset_sell=2.0,
@@ -211,11 +210,10 @@ order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
     quantity_buy=1,
     quantity_sell=1,
     stop_price_link_basis_sell="MARK",
-    stop_price_link_type_sell="PERCENT", # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_type_sell="PERCENT",  # "VALUE" or "PERCENT" or "TICK"
     stop_price_offset_sell=2.0,
     session_sell="NORMAL",
-    sell_duration="GOOD_TILL_CANCEL", # "DAY", "END_OF_WEEK", "END_OF_MONTH", ...
-    
+    sell_duration="GOOD_TILL_CANCEL",  # "DAY", "END_OF_WEEK", "END_OF_MONTH", ...
     stop_price_link_basis_buy="MARK",
     stop_price_link_type_buy="PERCENT",
     stop_price_offset_buy=2.0,
@@ -234,11 +232,13 @@ status_code, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
 )  # status_code 201 >>> success
 
-order_id = '1006927395099'
+order_id = "1006927395099"
 # Cancel an order
 status_code, date = cancel_order(
-    client=client, accountHash=hashValue, order_id=order_id,
-) # status_code 200 >>> success
+    client=client,
+    accountHash=hashValue,
+    order_id=order_id,
+)  # status_code 200 >>> success
 
 # ========================================================================
 # Place an option order
@@ -307,7 +307,7 @@ all_orders = get_orders(
     hashValue,
     fromTime=from_time,
     toTime=to_time,
-    status='WORKING',
+    status="WORKING",
     # status="FILLED",
     # status="AWAITING_PARENT_ORDER",
     # status="PENDING_ACTIVATION"

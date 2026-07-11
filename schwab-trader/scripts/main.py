@@ -34,24 +34,23 @@ ACCOUNT_NUMBER = "29308909"
 SYMBOLS = ["AAPL", "MSFT"]
 
 BAR_INTERVAL = 60  # seconds for 1-min bars
-ATR_PERIOD = 14     # standard ATR period for volatility measurement
-ATR_MULTIPLIER = 1.5        # ATR-based stop loss distance (e.g., 1.5x ATR)
-REWARD_MULTIPLIER = 2.5       # ATR-based take profit distance (e.g., 2.5x ATR) 
+ATR_PERIOD = 14  # standard ATR period for volatility measurement
+ATR_MULTIPLIER = 1.5  # ATR-based stop loss distance (e.g., 1.5x ATR)
+REWARD_MULTIPLIER = 2.5  # ATR-based take profit distance (e.g., 2.5x ATR)
 
-RISK_PER_TRADE = 0.002      # 2% of equity
+RISK_PER_TRADE = 0.002  # 2% of equity
 STARTING_EQUITY = 25000
 MAX_DAILY_LOSS = 10
 
-MAX_ORDERS_PER_SECOND = 1       # Schwab API rate limit (adjust as needed)
+MAX_ORDERS_PER_SECOND = 1  # Schwab API rate limit (adjust as needed)
 RECONCILE_INTERVAL = 60  # seconds for position polling
-
 
 
 # ====================== LOGGING ======================
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s | %(levelname)s | %(message)s',
-    datefmt='%H:%M:%S'
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -61,9 +60,7 @@ logger = logging.getLogger(__name__)
 # ==========================================================
 
 client = schwabdev.Client(
-    os.getenv("APP_KEY"), 
-    os.getenv("APP_SECRET"), 
-    os.getenv("CALLBACK_URL")
+    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
 )
 
 stream = schwabdev.Stream(client)
@@ -80,7 +77,9 @@ start_equity = STARTING_EQUITY
 daily_pnl = 0
 kill_switch = False
 
-positions = {s: {"shares": 0, "entry_price": None, "unrealized_pnl": 0} for s in SYMBOLS}
+positions = {
+    s: {"shares": 0, "entry_price": None, "unrealized_pnl": 0} for s in SYMBOLS
+}
 ohlc = {s: [] for s in SYMBOLS}
 current_bars = {s: None for s in SYMBOLS}
 
@@ -99,6 +98,7 @@ last_equity_print = 0
 # ==========================================================
 # STREAM HANDLERS
 # ==========================================================
+
 
 def quote_handler(message: str):
     try:
@@ -122,7 +122,7 @@ def quote_handler(message: str):
                             "price": float(price),
                             "timestamp": timestamp_ms / 1000,
                             "volume": float(volume),
-                        }
+                        },
                     )
     except Exception as e:
         logger.error(f"Quote handler error: {e}")
@@ -149,14 +149,16 @@ def activity_handler(message: str):
                         "shares": float(activity.get("ExecutedShares", 0)),
                         "price": float(activity.get("ExecutionPrice", 0)),
                         "side": activity.get("Side"),
-                    }
+                    },
                 )
     except Exception as e:
         logger.error(f"Activity handler error: {e}")
 
+
 # ==========================================================
 # BAR AGGREGATION
 # ==========================================================
+
 
 def update_ohlc(symbol: str, price: float, timestamp: float, volume_delta: float):
     bar_start = (int(timestamp) // BAR_INTERVAL) * BAR_INTERVAL
@@ -185,9 +187,11 @@ def update_ohlc(symbol: str, price: float, timestamp: float, volume_delta: float
 
     return new_bar
 
+
 # ==========================================================
 # ATR CALCULATION
 # ==========================================================
+
 
 def calculate_atr(symbol: str):
     data = ohlc[symbol]
@@ -202,9 +206,11 @@ def calculate_atr(symbol: str):
         trs.append(tr)
     return sum(trs[-ATR_PERIOD:]) / ATR_PERIOD
 
+
 # ==========================================================
 # ENTRY CONDITION (Improved)
 # ==========================================================
+
 
 def entry_condition(symbol: str) -> bool:
     data = ohlc[symbol]
@@ -230,9 +236,11 @@ def entry_condition(symbol: str) -> bool:
 
     return True
 
+
 # ==========================================================
 # POSITION SIZING & RISK
 # ==========================================================
+
 
 def calculate_position_size(entry_price: float, stop_price: float) -> int:
     global equity
@@ -256,9 +264,11 @@ def risk_check() -> bool:
         return False
     return True
 
+
 # ==========================================================
 # BUILD BRACKET ORDER
 # ==========================================================
+
 
 def build_bracket(symbol: str, entry_price: float):
     atr = calculate_atr(symbol)
@@ -279,7 +289,11 @@ def build_bracket(symbol: str, entry_price: float):
         "duration": "DAY",
         "price": round(entry_price, 2),
         "orderLegCollection": [
-            {"instruction": "BUY", "quantity": shares, "instrument": {"symbol": symbol, "assetType": "EQUITY"}}
+            {
+                "instruction": "BUY",
+                "quantity": shares,
+                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+            }
         ],
         "childOrderStrategies": [
             {
@@ -292,8 +306,12 @@ def build_bracket(symbol: str, entry_price: float):
                         "duration": "DAY",
                         "price": take_profit,
                         "orderLegCollection": [
-                            {"instruction": "SELL", "quantity": shares, "instrument": {"symbol": symbol, "assetType": "EQUITY"}}
-                        ]
+                            {
+                                "instruction": "SELL",
+                                "quantity": shares,
+                                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                            }
+                        ],
                     },
                     # Stop Loss
                     {
@@ -302,17 +320,23 @@ def build_bracket(symbol: str, entry_price: float):
                         "duration": "DAY",
                         "stopPrice": stop_price,
                         "orderLegCollection": [
-                            {"instruction": "SELL", "quantity": shares, "instrument": {"symbol": symbol, "assetType": "EQUITY"}}
-                        ]
-                    }
-                ]
+                            {
+                                "instruction": "SELL",
+                                "quantity": shares,
+                                "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                            }
+                        ],
+                    },
+                ],
             }
-        ]
+        ],
     }
+
 
 # ==========================================================
 # FILL HANDLING
 # ==========================================================
+
 
 def handle_fill(symbol: str, shares: float, price: float, side: str):
     global equity, daily_pnl
@@ -323,7 +347,9 @@ def handle_fill(symbol: str, shares: float, price: float, side: str):
             pos["entry_price"] = price
         pos["shares"] += shares
         equity -= shares * price
-        logger.info(f"🟢 BOUGHT {shares:.0f} {symbol} @ ${price:.2f} | Pos: {pos['shares']}")
+        logger.info(
+            f"🟢 BOUGHT {shares:.0f} {symbol} @ ${price:.2f} | Pos: {pos['shares']}"
+        )
 
     elif side == "S":  # Sell
         pos["shares"] -= shares
@@ -331,14 +357,18 @@ def handle_fill(symbol: str, shares: float, price: float, side: str):
             realized = (price - pos["entry_price"]) * shares
             daily_pnl += realized
             equity += shares * price
-            logger.info(f"🔴 SOLD {shares:.0f} {symbol} @ ${price:.2f} | Realized: ${realized:.2f}")
+            logger.info(
+                f"🔴 SOLD {shares:.0f} {symbol} @ ${price:.2f} | Realized: ${realized:.2f}"
+            )
 
     if pos["shares"] <= 0:
         pos["shares"] = 0
         pos["entry_price"] = None
 
     if pos["shares"] > 0 and ohlc[symbol]:
-        pos["unrealized_pnl"] = (ohlc[symbol][-1]["close"] - pos["entry_price"]) * pos["shares"]
+        pos["unrealized_pnl"] = (ohlc[symbol][-1]["close"] - pos["entry_price"]) * pos[
+            "shares"
+        ]
 
 
 async def handle_fill_async(symbol: str, shares: float, price: float, side: str):
@@ -352,24 +382,26 @@ async def handle_fill_async(symbol: str, shares: float, price: float, side: str)
 # PRICE MONITORING (for visibility)
 # ==========================================================
 
+
 def log_price_update(symbol: str, price: float, volume: float):
     """Print live price updates every 10 seconds per symbol"""
     now = datetime.now().timestamp()
-    
-    if now - last_price_log_time.get(symbol, 0) > 10:   # Every 10 seconds
+
+    if now - last_price_log_time.get(symbol, 0) > 10:  # Every 10 seconds
         last_price_log_time[symbol] = now
-        
+
         bar_info = ""
         if ohlc[symbol] and len(ohlc[symbol]) > 0:
             bar = ohlc[symbol][-1]
             bar_info = f" | Bar: O{bar['open']:.2f} H{bar['high']:.2f} L{bar['low']:.2f} C{bar['close']:.2f}"
-        
+
         logger.info(f"📈 {symbol} @ ${price:.2f} | Vol: {volume:,.0f}{bar_info}")
 
 
 # ==========================================================
 # ORDER PLACEMENT
 # ==========================================================
+
 
 async def place_bracket(symbol: str, price: float):
     async with order_semaphore:
@@ -382,13 +414,15 @@ async def place_bracket(symbol: str, price: float):
         except Exception as e:
             logger.error(f"Order placement failed for {symbol}: {e}")
 
+
 # ==========================================================
 # POSITION RECONCILER
 # ==========================================================
 
+
 async def position_reconciler():
-    global equity, daily_pnl, start_equity, last_equity_print   # ← Global first
-    
+    global equity, daily_pnl, start_equity, last_equity_print  # ← Global first
+
     while not shutdown_event.is_set():
         if not account_hash:
             await asyncio.sleep(RECONCILE_INTERVAL)
@@ -396,9 +430,7 @@ async def position_reconciler():
 
         try:
             response = await asyncio.to_thread(
-                client.account_details, 
-                account_hash, 
-                fields="positions"
+                client.account_details, account_hash, fields="positions"
             )
 
             if response.ok:
@@ -410,9 +442,13 @@ async def position_reconciler():
                 for pos in data.get("positions", []):
                     sym = pos["instrument"]["symbol"]
                     if sym in SYMBOLS:
-                        positions[sym]["shares"] = pos["longQuantity"] - pos["shortQuantity"]
+                        positions[sym]["shares"] = (
+                            pos["longQuantity"] - pos["shortQuantity"]
+                        )
                         positions[sym]["entry_price"] = pos.get("averagePrice")
-                        positions[sym]["unrealized_pnl"] = pos.get("currentDayProfitLoss", 0)
+                        positions[sym]["unrealized_pnl"] = pos.get(
+                            "currentDayProfitLoss", 0
+                        )
 
                 # Print equity summary every 5 minutes
                 now = datetime.now().timestamp()
@@ -430,9 +466,11 @@ async def position_reconciler():
 
         await asyncio.sleep(RECONCILE_INTERVAL)
 
+
 # ==========================================================
 # MARKET HOURS
 # ==========================================================
+
 
 def is_market_open() -> bool:
     now = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=-5)))  # ET
@@ -442,9 +480,11 @@ def is_market_open() -> bool:
     close_time = dt_time(16, 0)
     return open_time <= now.time() <= close_time
 
+
 # ==========================================================
 # STREAM TASK
 # ==========================================================
+
 
 async def stream_task():
     while not shutdown_event.is_set():
@@ -459,6 +499,7 @@ async def stream_task():
         except Exception as e:
             logger.error(f"Stream error: {e}")
             await asyncio.sleep(5)
+
 
 # ==========================================================
 # BOT LOOP
@@ -477,10 +518,7 @@ async def bot_loop():
 
                 # Update OHLC bars
                 new_bar = update_ohlc(
-                    symbol, 
-                    event["price"], 
-                    event["timestamp"], 
-                    volume_delta
+                    symbol, event["price"], event["timestamp"], volume_delta
                 )
 
                 # === LIVE PRICE MONITORING ===
@@ -488,7 +526,7 @@ async def bot_loop():
 
                 # === ENTRY SIGNAL CHECK ===
                 if (
-                    new_bar 
+                    new_bar
                     and risk_check()
                     and positions[symbol]["shares"] == 0
                     and entry_condition(symbol)
@@ -500,16 +538,19 @@ async def bot_loop():
                     )
 
             elif event["type"] == "fill":
-                await handle_fill_async(symbol, event["shares"], event["price"], event["side"])
+                await handle_fill_async(
+                    symbol, event["shares"], event["price"], event["side"]
+                )
 
         except Exception as e:
             logger.error(f"Bot loop error: {e}")
             await asyncio.sleep(0.1)
-            
+
 
 # ==========================================================
 # MAIN
 # ==========================================================
+
 
 async def main():
     global start_equity, account_hash
@@ -530,12 +571,16 @@ async def main():
             logger.error(f"Account {ACCOUNT_NUMBER} not found")
             return
 
-        acc_resp = await asyncio.to_thread(client.account_details, account_hash, fields="positions")
+        acc_resp = await asyncio.to_thread(
+            client.account_details, account_hash, fields="positions"
+        )
         if acc_resp.ok:
             data = acc_resp.json()["securitiesAccount"]
             start_equity = data["currentBalances"]["equity"]
             equity = start_equity
-            logger.info(f"✅ Account initialized | Starting Equity: ${start_equity:,.2f}")
+            logger.info(
+                f"✅ Account initialized | Starting Equity: ${start_equity:,.2f}"
+            )
     except Exception as e:
         logger.error(f"Account init failed: {e}")
         return
@@ -546,10 +591,7 @@ async def main():
     loop.add_signal_handler(signal.SIGTERM, lambda: shutdown_event.set())
 
     await asyncio.gather(
-        stream_task(),
-        bot_loop(),
-        position_reconciler(),
-        return_exceptions=True
+        stream_task(), bot_loop(), position_reconciler(), return_exceptions=True
     )
 
 
