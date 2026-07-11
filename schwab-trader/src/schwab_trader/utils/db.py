@@ -148,29 +148,7 @@ def save_state(
         traceback.print_exc()
 
 
-def load_state() -> dict:
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("""
-        SELECT
-            symbol,
-            last_buy_price,
-            last_buy_qty,
-            last_sell_price,
-            last_sell_qty
-        FROM state
-        """).fetchall()
-    conn.close()
-
-    return {
-        sym: {
-            "buy_price": buy_price,
-            "buy_qty": buy_qty,
-            "sell_price": sell_price,
-            "sell_qty": sell_qty,
-        }
-        for sym, buy_price, buy_qty, sell_price, sell_qty in rows
-    }
-
+# ==================== GETTERS ====================
 
 def get_last_buy_price(symbol: str) -> float | None:
     try:
@@ -199,23 +177,55 @@ def get_last_buy_qty(symbol: str) -> float | None:
 
 
 def get_last_sell_price(symbol: str) -> float | None:
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT last_sell_price FROM state WHERE symbol=?",
-        (symbol,),
-    ).fetchone()
-    conn.close()
-    return float(row[0]) if row and row[0] is not None else None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT last_sell_price FROM state WHERE symbol=?", (symbol,)
+        ).fetchone()
+        conn.close()
+        return float(row[0]) if row and row[0] is not None else None
+    except Exception as e:
+        print(f"[DB] Error getting last sell price for {symbol}: {e}")
+        return None
 
 
 def get_last_sell_qty(symbol: str) -> float | None:
-    conn = sqlite3.connect(DB_PATH)
-    row = conn.execute(
-        "SELECT last_sell_qty FROM state WHERE symbol=?",
-        (symbol,),
-    ).fetchone()
-    conn.close()
-    return float(row[0]) if row and row[0] is not None else None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT last_sell_qty FROM state WHERE symbol=?", (symbol,)
+        ).fetchone()
+        conn.close()
+        return float(row[0]) if row and row[0] is not None else None
+    except Exception as e:
+        print(f"[DB] Error getting last sell qty for {symbol}: {e}")
+        return None
+
+
+def load_state() -> dict:
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            """
+            SELECT symbol, last_buy_price, last_buy_qty,
+                   last_sell_price, last_sell_qty
+            FROM state
+            """
+        ).fetchall()
+        conn.close()
+        
+        return {
+            sym: {
+                "buy_price": buy_price,
+                "buy_qty": buy_qty,
+                "sell_price": sell_price,
+                "sell_qty": sell_qty,
+            }
+            for sym, buy_price, buy_qty, sell_price, sell_qty in rows
+        }
+    except Exception as e:
+        print(f"[DB] Error loading state: {e}")
+        return {}
 
 
 def get_transaction_history() -> list:
