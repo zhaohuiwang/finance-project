@@ -242,3 +242,20 @@ def get_transaction_history() -> list:
     except Exception as e:
         print(f"[DB] Error getting transaction history: {e}")
         return []
+
+
+""""
+# Common commands. 
+
+sqlite3 logs/trading.db
+.tables
+sqlite> select * from state;
+sqlite> select * from transactions;
+.schema transactions;
+.schema state;
+.headers on
+.mode column
+SELECT * FROM transactions;
+SELECT * FROM state;
+"""
+

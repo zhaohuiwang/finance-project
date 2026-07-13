@@ -1,12 +1,8 @@
 # scripts/main.py
 
-# import asyncio
-# from src.schwab_bot.pipelines.monitor import SchwabBot
-
-# if __name__ == "__main__":
-#     bot = SchwabBot(config_path="conf/config.yaml")
-#     asyncio.run(bot.run())
 """
+A complete prototype of a real-time automated trading system. It integrates streaming market data, technical analysis (ATR and moving averages), rule-based signal generation, volatility-adjusted risk management, bracket order execution, and continuous account reconciliation within a single asynchronous application.
+
 ATR - Average True Range is a popular technical analysis indicator that measures market volatility. It is commonly used by traders to set stop-loss levels, take-profit targets, and position sizing based on current market conditions. \(\text{TR} = \max[(\text{High} - \text{Low}), | \text{High} - \text{Previous Close} |, | \text{Low} - \text{Previous Close} |]\)
 
 

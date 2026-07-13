@@ -66,6 +66,9 @@ sudo systemctl daemon-reload
 # Enable and start the service
 sudo systemctl enable --now schwab-bot.service
 
+# The service file defines how the service runs. Whether it starts at boot is controlled separately by systemd's enabled/disabled state. You may also mask the service file so that it can not be start at all without unmask it (extra insurance to prevent it from starting by dependencies or other units)
+sudo systemctl mask schwab-bot
+sudo systemctl unmask schwab-bot
 
 Command                                     Action
 sudo systemctl stop schwab-bot.service      # Stop the bot
@@ -155,3 +158,5 @@ if __name__ == "__main__":
                 time.sleep(10)
         except KeyboardInterrupt:
             bot.stop()
+
+
