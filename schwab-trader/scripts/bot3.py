@@ -109,7 +109,8 @@ Wants=network.target
 Type=simple
 User=zhaohuiwang
 WorkingDirectory=/home/zhaohuiwang/Projects/finance-project/schwab-trader
-ExecStart=/home/zhaohuiwang/Projects/finance-project/schwab-trader/.venv/bin/py>
+ExecStart=/home/zhaohuiwang/Projects/finance-project/schwab-trader/.venv/bin/python /home/zhaohuiwang/Projects/finance-project/schwab-trader/scripts/bot3.py
+
 
 # Environment
 Environment=PYTHONUNBUFFERED=1
