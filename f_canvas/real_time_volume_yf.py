@@ -1,3 +1,10 @@
+
+"""
+This Python program is a real-time stock trading volume monitor. It continuously watches selected stock symbols (default: AAPL, MSFT, GOOGL) using Yahoo Finance data, detects unusual volume spikes, and sends alerts through email and Pushover notifications. It also writes logs to the console and a rotating log file.
+
+The normal output is nothing except a startup log. It becomes active only when a stock's trading volume suddenly increases.
+"""
+
 import click
 from dotenv import load_dotenv
 import logging

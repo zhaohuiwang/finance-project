@@ -37,8 +37,8 @@ symbols:
 
 # Never touch CRWV !!!!!! This is one of the worst performing stocks.
   CRWV:
-    buy_target_price: 89.8
-    limit_sell_price: 91.8
+    buy_target_price: 81.5
+    limit_sell_price: 84.8
     stop_loss_dollar: 5.0
     buy_drop_pct: 10.0
     limit_sell_pct: 8.0
