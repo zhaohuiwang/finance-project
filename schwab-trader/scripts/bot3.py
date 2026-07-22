@@ -1,4 +1,4 @@
-# schwab-trader/scripts/bot2.py
+# schwab-trader/scripts/bot3.py
 """
 Main entry point for the Schwab Trading Bot.
 Supports headless, CLI, and full dashboard modes.
