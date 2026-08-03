@@ -32,7 +32,7 @@ from rich.console import Console
 
 from schwab_trader.config.bot.config import TradingConfig
 from schwab_trader.pipelines.bot3_pipeline import TradingBot
-from dashboard import run_dashboard
+from schwab_trader.dashboard.bot3_dashboard import run_dashboard
 
 console = Console()
 
