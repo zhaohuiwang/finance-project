@@ -12,3 +12,5 @@ tokens.json
 uv.lock
 
 /schwab-trader/logs/
+/my_IULs/
+f_canvas/my_IULs/
