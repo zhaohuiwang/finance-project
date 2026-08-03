@@ -1,0 +1,47 @@
+
+# schwab-trader/conf/bot4_config.yaml
+
+risk:
+  min_account_equity: 5000
+  max_positions: 4
+
+auto_shutdown_after_close: true
+shutdown_buffer_minutes: 2
+
+symbols:
+  MU:
+    fixed_shares: 49        # Position size.
+
+    momentum_up_pct: 5.0    # How much the stock must rise from the previous day’s close to trigger a sell setup.
+    trailing_sell_pct: 2.0  # Trailing stop distance for the sell order.
+
+    pullback_buy_pct: 3.0   # How far price must drop from the last sell price to trigger a buy setup.
+    trailing_buy_pct: 1.5   # Trailing stop distance for the buy order.
+
+  INTC:
+    fixed_shares: 30
+    momentum_up_pct: 6.0
+    trailing_sell_pct: 2.5
+    pullback_buy_pct: 3.5
+    trailing_buy_pct: 2.0
+
+
+# On every price tick the bot evaluates:
+
+# Momentum Sell Setup
+# No current position
+# No open SELL order
+# Current price ≥ previous close × (1 + momentum_up_pct/100)
+# → Place a trailing-stop SELL order for fixed_shares with offset = trailing_sell_pct (percent of last price).
+
+# Pullback Buy Setup (after a sell)
+# Have a recorded last sell price
+# No current position
+# No open BUY order
+# Price has dropped ≥ pullback_buy_pct from the last sell price
+# → Place a trailing-stop BUY order for fixed_shares with offset = trailing_buy_pct.
+
+# Protect Existing Position
+# Currently holding shares
+# No open SELL order
+# → Immediately place a trailing-stop SELL on the full position.
