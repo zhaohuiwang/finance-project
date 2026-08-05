@@ -16,7 +16,7 @@ from rich.console import Console
 
 console = Console()
 
-DB_PATH = Path("trading_bot4.db")
+DB_PATH = Path("logs/trading_bot4.db")
 
 
 def init_db():
