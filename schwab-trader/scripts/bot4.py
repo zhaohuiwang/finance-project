@@ -1,4 +1,3 @@
-
 """
 Schwab Trailing Momentum Bot - Launcher
 =======================================
@@ -24,7 +23,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config_path = Path(__file__).parent / "../conf/bot4_config.yaml"
-    
+
     if not config_path.exists():
         console.print(f"[red]Config not found: {config_path}[/red]")
         sys.exit(1)
@@ -32,12 +31,15 @@ if __name__ == "__main__":
     cfg = TradingConfig.load_from_file(config_path)
     bot = TradingBot(cfg, mode=args.mode, config_path=config_path)
 
-    console.print(f"[bold green]Starting Trailing Momentum Bot in {args.mode} mode[/bold green]")
+    console.print(
+        f"[bold green]Starting Trailing Momentum Bot in {args.mode} mode[/bold green]"
+    )
 
     bot.start()
 
     # CLI
     if args.mode in ("full", "cli") and sys.stdin.isatty():
+
         def cli_loop():
             console.print("[cyan]Commands: stop | reload | status | positions[/cyan]")
             while bot.running:
@@ -50,13 +52,16 @@ if __name__ == "__main__":
                         bot.reload_config()
                     elif cmd == "status":
                         snap = bot.get_account_snapshot()
-                        print(f"Equity: ${snap['equity']:,.2f} | Positions: {len(bot.holdings)}")
+                        print(
+                            f"Equity: ${snap['equity']:,.2f} | Positions: {len(bot.holdings)}"
+                        )
                     elif cmd == "positions":
                         bot.update_holdings_from_api()
                         for sym, h in bot.holdings.items():
                             print(f"{sym}: {h['shares']} shares")
                 except:
                     break
+
         threading.Thread(target=cli_loop, daemon=True).start()
 
     # Dashboard
@@ -72,5 +77,3 @@ if __name__ == "__main__":
             time.sleep(10)
     except KeyboardInterrupt:
         bot.stop()
-
-

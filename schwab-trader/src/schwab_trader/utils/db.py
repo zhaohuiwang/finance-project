@@ -258,4 +258,3 @@ sqlite> select * from transactions;
 SELECT * FROM transactions;
 SELECT * FROM state;
 """
-

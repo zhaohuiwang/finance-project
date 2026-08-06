@@ -1,4 +1,3 @@
-
 """
 schwab-trader/src/schwab_trader/pipelines/bot4_pipeline.py
 
@@ -42,7 +41,7 @@ class TradingBot:
     def __init__(self, cfg: TradingConfig, mode: str = "cli", config_path=None):
         """
         Initialize the trading bot.
-        
+
         Args:
             cfg: Trading configuration
             mode: Operating mode (cli/full/headless)
@@ -57,29 +56,31 @@ class TradingBot:
         self.streamer = None
         self.risk_config = cfg.risk
         self.symbols_config: dict[str, SymbolConfig] = cfg.symbols
-        
+
         self.current_market_prices = {sym: None for sym in self.symbols}
         self.previous_closes = {}
         self.holdings = {}
         self.last_sell_prices = {}
-        
+
         self.lock = threading.RLock()
         self.running = True
         self.trading_paused = False
         self.account_hash = self._get_account_hash()
-        
+
         self.last_order_placement = {}
         self._open_orders_cache = None
         self._open_orders_cache_time = 0
         self.open_orders_cache_ttl = 30
-        
+
         self.daily_start_equity = self.get_account_snapshot()["equity"]
         self.today = date.today()
-        
+
         self.auto_shutdown_after_close = getattr(cfg, "auto_shutdown_after_close", True)
         self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
-        
-        console.print("[bold green]TradingBot (Trailing Momentum Strategy) initialized[/bold green]")
+
+        console.print(
+            "[bold green]TradingBot (Trailing Momentum Strategy) initialized[/bold green]"
+        )
 
     @property
     def symbols(self):
@@ -97,7 +98,9 @@ class TradingBot:
             acc = self.client.account_details(self.account_hash).json()
             bal = acc.get("securitiesAccount", {}).get("currentBalances", {})
             return {
-                "equity": float(bal.get("liquidationValue") or bal.get("equity") or 0.0),
+                "equity": float(
+                    bal.get("liquidationValue") or bal.get("equity") or 0.0
+                ),
                 "cashBalance": float(bal.get("cashBalance") or 0.0),
                 "buyingPower": float(bal.get("buyingPower") or 0.0),
             }
@@ -108,7 +111,9 @@ class TradingBot:
     def update_holdings_from_api(self):
         """Synchronize holdings from Schwab API."""
         try:
-            pos = self.client.account_details(self.account_hash, fields="positions").json()
+            pos = self.client.account_details(
+                self.account_hash, fields="positions"
+            ).json()
             positions = pos.get("securitiesAccount", {}).get("positions", [])
             new_holdings = {}
             for p in positions:
@@ -125,13 +130,19 @@ class TradingBot:
     def get_open_orders(self):
         """Get working orders with caching."""
         now = time.time()
-        if self._open_orders_cache and now - self._open_orders_cache_time < self.open_orders_cache_ttl:
+        if (
+            self._open_orders_cache
+            and now - self._open_orders_cache_time < self.open_orders_cache_ttl
+        ):
             return self._open_orders_cache
         try:
             to_time = datetime.now(timezone.utc)
             from_time = to_time - timedelta(days=30)
             resp = self.client.account_orders(
-                self.account_hash, fromEnteredTime=from_time, toEnteredTime=to_time, status="WORKING"
+                self.account_hash,
+                fromEnteredTime=from_time,
+                toEnteredTime=to_time,
+                status="WORKING",
             )
             orders = resp.json() or []
             flat = []
@@ -149,13 +160,15 @@ class TradingBot:
         results = []
         if "orderLegCollection" in order:
             leg = order["orderLegCollection"][0]
-            results.append({
-                "orderId": order.get("orderId"),
-                "symbol": leg["instrument"]["symbol"],
-                "instruction": leg["instruction"],
-                "quantity": leg.get("quantity"),
-                "type": order.get("orderType"),
-            })
+            results.append(
+                {
+                    "orderId": order.get("orderId"),
+                    "symbol": leg["instrument"]["symbol"],
+                    "instruction": leg["instruction"],
+                    "quantity": leg.get("quantity"),
+                    "type": order.get("orderType"),
+                }
+            )
         for child in order.get("childOrderStrategies", []):
             results.extend(self._flatten_order(child))
         return results
@@ -163,7 +176,9 @@ class TradingBot:
     def has_open_order_for_symbol(self, symbol: str, instruction=None) -> bool:
         """Check for open orders."""
         for o in self.get_open_orders():
-            if o["symbol"] == symbol and (not instruction or o["instruction"] == instruction):
+            if o["symbol"] == symbol and (
+                not instruction or o["instruction"] == instruction
+            ):
                 return True
         return False
 
@@ -201,15 +216,19 @@ class TradingBot:
             "stopPriceOffset": str(trail_pct),
             "stopPriceType": "PERCENT",
             "stopPriceBasis": "LAST",
-            "orderLegCollection": [{
-                "instruction": "SELL",
-                "quantity": qty,
-                "instrument": {"symbol": symbol, "assetType": "EQUITY"}
-            }]
+            "orderLegCollection": [
+                {
+                    "instruction": "SELL",
+                    "quantity": qty,
+                    "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                }
+            ],
         }
         try:
             self.client.place_order(self.account_hash, order)
-            console.print(f"[green]Trailing SELL placed for {symbol} ({trail_pct}% trail)[/green]")
+            console.print(
+                f"[green]Trailing SELL placed for {symbol} ({trail_pct}% trail)[/green]"
+            )
             self.invalidate_open_orders_cache()
             return True
         except Exception as e:
@@ -228,15 +247,19 @@ class TradingBot:
             "stopPriceOffset": str(trail_pct),
             "stopPriceType": "PERCENT",
             "stopPriceBasis": "LAST",
-            "orderLegCollection": [{
-                "instruction": "BUY",
-                "quantity": qty,
-                "instrument": {"symbol": symbol, "assetType": "EQUITY"}
-            }]
+            "orderLegCollection": [
+                {
+                    "instruction": "BUY",
+                    "quantity": qty,
+                    "instrument": {"symbol": symbol, "assetType": "EQUITY"},
+                }
+            ],
         }
         try:
             self.client.place_order(self.account_hash, order)
-            console.print(f"[green]Trailing BUY placed for {symbol} ({trail_pct}% trail)[/green]")
+            console.print(
+                f"[green]Trailing BUY placed for {symbol} ({trail_pct}% trail)[/green]"
+            )
             self.invalidate_open_orders_cache()
             return True
         except Exception as e:
@@ -360,7 +383,9 @@ class TradingBot:
         symbols_str = ",".join(self.symbols)
         if symbols_str:
             self.streamer.send(self.streamer.level_one_equities(symbols_str, "0,1,2,3"))
-            self.streamer.send(self.streamer.account_activity("Account Activity", "0,1,2,3"))
+            self.streamer.send(
+                self.streamer.account_activity("Account Activity", "0,1,2,3")
+            )
         self.update_holdings_from_api()
         self.load_previous_closes()
         time.sleep(2)

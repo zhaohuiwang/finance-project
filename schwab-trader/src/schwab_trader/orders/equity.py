@@ -131,6 +131,7 @@ def buy_limit_trigger_sell_limit_dict(
     Buy 10 shares of XYZ at a Limit price of $34.97 good for the Day. If filled, immediately submit an order to Sell 10 shares of XYZ with a Limit price of $42.03 good for the Day. Also known as 1st Trigger Sequence.
     a.k.a. 1st Trigger Sequence.
     """
+    instrument = {"symbol": symbol.upper(), "assetType": "EQUITY"}
     return {
         "orderType": "LIMIT",
         "session": session_buy,
@@ -141,7 +142,7 @@ def buy_limit_trigger_sell_limit_dict(
             {
                 "instruction": "BUY",
                 "quantity": quantity,
-                "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
+                "instrument": instrument,
             }
         ],
         "childOrderStrategies": [
@@ -155,7 +156,7 @@ def buy_limit_trigger_sell_limit_dict(
                     {
                         "instruction": "SELL",
                         "quantity": quantity,
-                        "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
+                        "instrument": instrument,
                     }
                 ],
             }
@@ -177,39 +178,85 @@ def sell_limit_sell_stoplimit_oco_dict(
     Conditional Order: One Cancels Another
     Sell 2 shares of XYZ at a Limit price of $45.97 and Sell 2 shares of XYZ with a Stop Limit order where the stop price is $37.03 and limit is $37.00. Both orders are sent at the same time. If one order fills, the other order is immediately cancelled. Both orders are good for the Day. Also known as an OCO order.
     """
+    instrument = {"symbol": symbol.upper(), "assetType": "EQUITY"}
+
+    limit_leg = {
+        "orderType": "LIMIT",
+        "session": session_sell_limit,
+        "price": str(sell_limit_price),  # "45.97"
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [
+            {
+                "instruction": "SELL",
+                "quantity": quantity,
+                "instrument": instrument,
+            }
+        ],
+    }
+    stop_limit_leg = {
+        "orderType": "STOP_LIMIT",
+        "session": session_sell_stoplimit,
+        "price": str(sell_stoplimit_price),  # "37.00"
+        "stopPrice": str(sell_stop_price),  # "37.03"
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [
+            {
+                "instruction": "SELL",
+                "quantity": quantity,
+                "instrument": instrument,
+            }
+        ],
+    }
+
     return {
         "orderStrategyType": "OCO",
-        "childOrderStrategies": [
-            {
-                "orderType": "LIMIT",
-                "session": session_sell_limit,
-                "price": str(sell_limit_price),  # "45.97"
-                "duration": duration,
-                "orderStrategyType": "SINGLE",
-                "orderLegCollection": [
-                    {
-                        "instruction": "SELL",
-                        "quantity": quantity,
-                        "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-                    }
-                ],
-            },
-            {
-                "orderType": "STOP_LIMIT",
-                "session": session_sell_stoplimit,
-                "price": str(sell_stoplimit_price),  # "37.00"
-                "stopPrice": str(sell_stop_price),  # "37.03"
-                "duration": duration,
-                "orderStrategyType": "SINGLE",
-                "orderLegCollection": [
-                    {
-                        "instruction": "SELL",
-                        "quantity": quantity,
-                        "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-                    }
-                ],
-            },
+        "childOrderStrategies": [limit_leg, stop_limit_leg],
+    }
+
+
+def sell_trailing_sell_limit_oco_dict(
+    symbol: str,
+    quantity: int,
+    sell_limit_price: float,
+    stop_price_offset: float,
+    stop_price_link_type: stopPriceLinkType = "PERCENT",
+    session: str = "NORMAL",
+    duration: str = "DAY",
+) -> dict:
+    """
+    OCO: Trailing Stop Sell  +  Limit Sell (take profit)
+    """
+    instrument = {"symbol": symbol, "assetType": "EQUITY"}
+
+    limit_leg = {
+        "orderType": "LIMIT",
+        "session": session,
+        "duration": duration,
+        "price": str(sell_limit_price),
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [
+            {"instruction": "SELL", "quantity": quantity, "instrument": instrument}
         ],
+    }
+
+    trailing_leg = {
+        "orderType": "TRAILING_STOP",
+        "session": session,
+        "duration": duration,
+        "stopPriceLinkBasis": "LAST",
+        "stopPriceLinkType": stop_price_link_type,
+        "stopPriceOffset": stop_price_offset,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [
+            {"instruction": "SELL", "quantity": quantity, "instrument": instrument}
+        ],
+    }
+
+    return {
+        "orderStrategyType": "OCO",
+        "childOrderStrategies": [limit_leg, trailing_leg],
     }
 
 
@@ -230,6 +277,35 @@ def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
     Buy 5 shares of XYZ at a Limit price of $14.97 good for the Day. Once filled, 2 sell orders are immediately sent: Sell 5 shares of XYZ at a Limit price of $15.27 and Sell 5 shares of XYZ with a Stop order where the stop price is $11.27. If one of the sell orders fill, the other order is immediately cancelled. Both Sell orders are Good till Cancel. Also known as a 1st Trigger OCO order.
 
     """
+    instrument = {"assetType": "EQUITY", "symbol": symbol.upper()}
+    sell_limit_leg = {
+        "orderStrategyType": "SINGLE",
+        "session": session_sell_limit,
+        "duration": sell_duration,
+        "orderType": "LIMIT",
+        "price": str(sell_limit_price),  # "15.27"
+        "orderLegCollection": [
+            {
+                "instruction": "SELL",
+                "quantity": quantity,
+                "instrument": instrument,
+            }
+        ],
+    }
+    sell_stop_leg = {
+        "orderStrategyType": "SINGLE",
+        "session": session_sell_stop,
+        "duration": sell_duration,
+        "orderType": "STOP",
+        "stopPrice": str(sell_stop_price),  # "11.27"
+        "orderLegCollection": [
+            {
+                "instruction": "SELL",
+                "quantity": quantity,
+                "instrument": instrument,
+            }
+        ],
+    }
 
     return {
         "orderStrategyType": "TRIGGER",
@@ -241,48 +317,13 @@ def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
             {
                 "instruction": "BUY",
                 "quantity": quantity,
-                "instrument": {"assetType": "EQUITY", "symbol": symbol.upper()},
+                "instrument": instrument,
             }
         ],
         "childOrderStrategies": [
             {
                 "orderStrategyType": "OCO",
-                "childOrderStrategies": [
-                    {
-                        "orderStrategyType": "SINGLE",
-                        "session": session_sell_limit,
-                        "duration": sell_duration,
-                        "orderType": "LIMIT",
-                        "price": str(sell_limit_price),  # "15.27"
-                        "orderLegCollection": [
-                            {
-                                "instruction": "SELL",
-                                "quantity": quantity,
-                                "instrument": {
-                                    "assetType": "EQUITY",
-                                    "symbol": symbol.upper(),
-                                },
-                            }
-                        ],
-                    },
-                    {
-                        "orderStrategyType": "SINGLE",
-                        "session": session_sell_stop,
-                        "duration": sell_duration,
-                        "orderType": "STOP",
-                        "stopPrice": str(sell_stop_price),  # "11.27"
-                        "orderLegCollection": [
-                            {
-                                "instruction": "SELL",
-                                "quantity": quantity,
-                                "instrument": {
-                                    "assetType": "EQUITY",
-                                    "symbol": symbol.upper(),
-                                },
-                            }
-                        ],
-                    },
-                ],
+                "childOrderStrategies": [sell_limit_leg, sell_stop_leg],
             }
         ],
     }

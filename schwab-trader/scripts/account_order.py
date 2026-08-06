@@ -224,18 +224,18 @@ order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
 # submit an order
 
 order_b3 = buy_limit_dict(
-    symbol="CRWV",
-    quantity=700,
-    limit_price=81.2,
+    symbol="WDC",
+    quantity=200,
+    limit_price=435.2,
     session="NORMAL",
     duration="DAY",
 )
 order = order_b3
 
 order_s4 = sell_limit_dict(
-    symbol="CRWV",
-    quantity=700,
-    limit_price=83.2,
+    symbol="WDC",
+    quantity=200,
+    limit_price=450.2,
     session="NORMAL",
     duration="DAY",
 )
@@ -247,9 +247,10 @@ status_code, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
 )  # status_code 201 >>> success
 
-order_id = '1007168170226' # Limit buy
+order_id = "1007168170226"  # Limit buy
 
-order_id = '1007168170617' # Limit sell
+order_id = "1007168170617"  # Limit sell
+order_id = "1007490828759"
 # Cancel an order
 status_code, date = cancel_order(
     client=client,

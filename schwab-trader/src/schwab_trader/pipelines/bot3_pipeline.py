@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 import schwabdev
 from dotenv import load_dotenv
 from rich.console import Console
-from schwab_trader.config.bot.config import TradingConfig, SymbolConfig
+from schwab_trader.config.bot.bot3_config import TradingConfig, SymbolConfig
 from schwab_trader.utils.db import (
     init_db,
     log_transaction,
@@ -31,7 +31,10 @@ from schwab_trader.utils.db import (
     get_last_sell_price,
     save_state,
 )
-from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
+from schwab_trader.orders.equity import (
+    sell_limit_sell_stoplimit_oco_dict,
+    sell_trailing_sell_limit_oco_dict,
+)
 
 load_dotenv()
 console = Console()
@@ -188,7 +191,6 @@ class TradingBot:
             return self._open_orders_cache or []
 
     def _flatten_order(self, order):
-        """Flatten nested Schwab order structures."""
         results = []
         if "orderLegCollection" in order:
             leg = order["orderLegCollection"][0]
@@ -197,6 +199,7 @@ class TradingBot:
                 or order.get("stopPrice")
                 or order.get("stopLimitPrice")
                 or order.get("limitPrice")
+                or order.get("stopPriceOffset")
             )
             results.append(
                 {
@@ -284,18 +287,49 @@ class TradingBot:
             return False
 
     def submit_sell_bracket_oco(self, symbol: str):
-        """Submit OCO exit bracket."""
+        """
+        Exit strategy:
+         < trail_activation_price < limit_sell_price
+        - If Price > limit_sell_price * 1.01, market sell
+        - If price >= trail_activation_price  → place Trailing Stop + Limit OCO
+        - Otherwise place classic Stop + Limit OCO (protective)
+        - If the price starts to climbing before touching the Stop value and reaches the trail activation price, then the ensure_orders() cancels the existing protective orders and replaces with a Trailing Stop _ Limit OCO order
+        """
         if not self.can_place_order(symbol) or symbol not in self.holdings:
             return
+
         holding = self.holdings[symbol]
         cfg = self.symbols_config[symbol]
         qty = int(holding["shares"])
         price = self.current_market_prices.get(symbol) or holding.get("buy_price", 0)
 
+        # Scenario 1 -- Immediate market sell if already past take-profit hard limit
         if price >= cfg.limit_sell_price * 1.01:
             self.place_immediate_sell(symbol)
             return
 
+        # Scenario 2 -- Trailing + Limit when above the trail_activation_price  and below the take-profit hard limit
+        if price >= cfg.trail_activation_price:
+            oco = sell_trailing_sell_limit_oco_dict(
+                symbol=symbol,
+                quantity=qty,
+                sell_limit_price=str(cfg.limit_sell_price),
+                trail_offset_pct=cfg.trail_offset_pct,
+                session="NORMAL",
+                duration="DAY",
+            )
+            try:
+                self.client.place_order(self.account_hash, oco)
+                console.print(
+                    f"[green]✓ Trailing+Limit OCO placed for {symbol} "
+                    f"(Trail {cfg.trail_offset_pct}% | Limit ${cfg.limit_sell_price})[/green]"
+                )
+                self.invalidate_open_orders_cache()
+            except Exception as e:
+                console.print(f"[red]Trailing OCO failed for {symbol}: {e}[/red]")
+            return
+
+        # Scenario 3 -- Classic protective OCO when below the trail_activation_price
         stop_price = round(cfg.buy_target_price * (1 - cfg.stop_loss_pct / 100), 2)
         oco = sell_limit_sell_stoplimit_oco_dict(
             symbol=symbol,
@@ -310,7 +344,8 @@ class TradingBot:
         try:
             self.client.place_order(self.account_hash, oco)
             console.print(
-                f"[green]✓ OCO Bracket placed for {symbol} (Limit ${cfg.limit_sell_price})[/green]"
+                f"[green]✓ Classic OCO Bracket placed for {symbol} "
+                f"(Limit ${cfg.limit_sell_price})[/green]"
             )
             self.invalidate_open_orders_cache()
         except Exception as e:
@@ -374,6 +409,19 @@ class TradingBot:
         elif has_position and not has_sell:
             console.print(f"[yellow]Ensuring SELL bracket for {symbol}[/yellow]")
             self.submit_sell_bracket_oco(symbol)
+
+        elif has_position and has_sell and price >= cfg.trail_activation_price:
+            # Check if we already have a trailing order; if not, replace
+            orders = self.get_open_orders()
+            has_trailing = any(
+                o["symbol"] == symbol and o.get("type") == "TRAILING_STOP"
+                for o in orders
+            )
+            if not has_trailing:
+                console.print(f"[cyan]Upgrading {symbol} to Trailing+Limit OCO[/cyan]")
+                self.cancel_all_orders_for_symbol(symbol)
+                time.sleep(0.8)
+                self.submit_sell_bracket_oco(symbol)
 
     def reload_config(self):
         """Hot-reload configuration."""

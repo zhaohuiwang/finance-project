@@ -1,4 +1,4 @@
-# schwab-trader/scripts/dashboard.py
+# schwab-trader/src/schwab_trader/dashboard/bot3_dashboard.py
 """
 Dash-based web dashboard for the Schwab Trading Bot.
 Completely separated from core bot logic.
@@ -85,14 +85,14 @@ app.layout = dbc.Container(
                 {"name": "Symbol", "id": "Symbol"},
                 {"name": "Current Price", "id": "current_price"},
                 {"name": "Buy Target", "id": "buy_target_price"},
-                {"name": "Limit Sell", "id": "limit_sell_price"},
-                {"name": "Buy Drop %", "id": "buy_drop_pct"},
-                {"name": "Limit Sell %", "id": "limit_sell_pct"},
+                {"name": "Trail Activate (T1)", "id": "trail_activation_price"},
+                {"name": "Limit Sell (T2)", "id": "limit_sell_price"},
+                {"name": "Trail Offset %", "id": "trail_offset_pct"},
                 {"name": "Stop Loss %", "id": "stop_loss_pct"},
                 {"name": "Fixed Shares", "id": "fixed_shares"},
             ],
             style_table={"overflowX": "auto", "width": "100%"},
-            style_cell={"textAlign": "right", "minWidth": "100px"},
+            style_cell={"textAlign": "right", "minWidth": "90px"},
             style_header={
                 "backgroundColor": "#2c3e50",
                 "color": "white",
@@ -114,15 +114,31 @@ app.layout = dbc.Container(
                 {"name": "ID", "id": "ID"},
                 {"name": "Symbol", "id": "Symbol"},
                 {"name": "Side", "id": "Side"},
-                {"name": "Price", "id": "Price"},
-                {"name": "Qty", "id": "Qty"},
                 {"name": "Type", "id": "Type"},
+                {"name": "Price / Offset", "id": "Price"},
+                {"name": "Qty", "id": "Qty"},
                 {"name": "Duration", "id": "Duration"},
+                {"name": "Strategy", "id": "Strategy"},
             ],
             style_table={"overflowX": "auto", "width": "100%"},
             style_cell={"textAlign": "left", "minWidth": "80px"},
             style_data={"color": "white", "backgroundColor": "#212529"},
             style_header={"backgroundColor": "#2c3e50", "color": "white"},
+            style_data_conditional=[
+                {
+                    "if": {"filter_query": '{Type} = "TRAILING_STOP"'},
+                    "color": "#00E5FF",
+                    "fontWeight": "bold",
+                },
+                {
+                    "if": {"filter_query": '{Type} = "LIMIT"'},
+                    "color": "lime",
+                },
+                {
+                    "if": {"filter_query": '{Type} contains "STOP"'},
+                    "color": "orange",
+                },
+            ],
         ),
         dbc.Row(
             dbc.Col(
@@ -192,9 +208,9 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                         "Symbol": sym,
                         "current_price": f"${price:,.2f}" if price else "—",
                         "buy_target_price": f"{cfg.buy_target_price:.2f}",
+                        "trail_activation_price": f"{getattr(cfg, 'trail_activation_price', 0):.2f}",
                         "limit_sell_price": f"{cfg.limit_sell_price:.2f}",
-                        "buy_drop_pct": f"{cfg.buy_drop_pct:.1f}",
-                        "limit_sell_pct": f"{cfg.limit_sell_pct:.1f}",
+                        "trail_offset_pct": f"{getattr(cfg, 'trail_offset_pct', 0):.1f}%",
                         "stop_loss_pct": f"{cfg.stop_loss_pct:.1f}",
                         "fixed_shares": cfg.fixed_shares,
                     }
@@ -203,17 +219,21 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         # Open Orders
         orders_data = []
         for o in bot.get_open_orders():
+            price_val = o.get("price")
+            price_str = (
+                f"${float(price_val):,.2f}" if price_val not in (None, "", 0) else "—"
+            )
+
             orders_data.append(
                 {
                     "ID": str(o.get("orderId", "N/A")),
                     "Symbol": o.get("symbol", "—"),
                     "Side": o.get("instruction", "—"),
-                    "Price": (
-                        f"${float(o.get('price') or 0):,.2f}" if o.get("price") else "—"
-                    ),
-                    "Qty": o.get("quantity", 0),
                     "Type": o.get("type", "—"),
+                    "Price": price_str,
+                    "Qty": o.get("quantity", 0),
                     "Duration": o.get("duration", "—"),
+                    "Strategy": o.get("orderStrategyType", "—"),
                 }
             )
 

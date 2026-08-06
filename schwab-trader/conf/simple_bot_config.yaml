@@ -1,5 +1,5 @@
 
-# schwab-trader/conf/bot/conf.yaml
+# schwab-trader/conf/simple_bot_conf.yaml
 
 symbols:
   # ACHR:
@@ -36,14 +36,14 @@ symbols:
   #   fixed_shares: 1600
 
 # Never touch CRWV !!!!!! This is one of the worst performing stocks.
-  CRWV:
-    buy_target_price: 81.5
-    limit_sell_price: 84.8
-    stop_loss_dollar: 5.0
-    buy_drop_pct: 10.0
-    limit_sell_pct: 8.0
-    stop_loss_pct: 8.0
-    fixed_shares: 700
+  # CRWV:
+  #   buy_target_price: 81.5
+  #   limit_sell_price: 84.8
+  #   stop_loss_dollar: 5.0
+  #   buy_drop_pct: 10.0
+  #   limit_sell_pct: 8.0
+  #   stop_loss_pct: 8.0
+  #   fixed_shares: 700
   # IBM:
   #   buy_target_price: 248.4
   #   limit_sell_price: 273.4
@@ -61,7 +61,14 @@ symbols:
   #   stop_loss_dollar: 3.0
   #   stop_loss_pct: 15.5
   #   fixed_shares: 38
-
+  WDC:
+    buy_target_price: 445.5
+    limit_sell_price: 465.5
+    stop_loss_dollar: 5.0
+    buy_drop_pct: 10.0
+    limit_sell_pct: 8.0
+    stop_loss_pct: 8.0
+    fixed_shares: 200
 risk:
   risk_per_trade_pct: 1.0
   max_positions: 4

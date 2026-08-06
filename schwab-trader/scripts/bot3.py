@@ -2,6 +2,8 @@
 """
 Main entry point for the Schwab Trading Bot.
 Supports headless, CLI, and full dashboard modes.
+Based on bot2, and has trading bot and baskboard seperated and simplified.
+buy/sell limit orders
 
 cd schwab-trader/scripts
 # Default mode (Bot + Dashboard)
@@ -30,7 +32,7 @@ import time
 from pathlib import Path
 from rich.console import Console
 
-from schwab_trader.config.bot.config import TradingConfig
+from schwab_trader.config.bot.bot3_config import TradingConfig
 from schwab_trader.pipelines.bot3_pipeline import TradingBot
 from schwab_trader.dashboard.bot3_dashboard import run_dashboard
 
@@ -47,7 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8050, help="Dashboard port")
     args = parser.parse_args()
 
-    config_path = Path(__file__).parent / "../conf/simple_bot_config.yaml"
+    config_path = Path(__file__).parent / "../conf/bot3_config.yaml"
     cfg = TradingConfig.load_from_file(config_path)
     bot = TradingBot(cfg, mode=args.mode, config_path=config_path)
 
