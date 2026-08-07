@@ -97,7 +97,11 @@ if __name__ == "__main__":
 ### Run the script as a service
 
 # Create/Edit the Service File
-sudo nano /etc/systemd/system/schwab-bot.service
+sudo nano /etc/systemd/system/schwab-bot3.service
+
+# Note: `.service` is a unit type suffix (like a file-name extension). With systemctl command, you normally can omit the `.service`. `sudo systemctl start schwab-bot3` is equivalent to `sudo systemctl start schwab-bot3.service`
+
+
 # Fill the servie file with the following:
 
 [Unit]
@@ -109,12 +113,13 @@ Wants=network.target
 Type=simple
 User=zhaohuiwang
 WorkingDirectory=/home/zhaohuiwang/Projects/finance-project/schwab-trader
+# uv venv python
 ExecStart=/home/zhaohuiwang/Projects/finance-project/schwab-trader/.venv/bin/python /home/zhaohuiwang/Projects/finance-project/schwab-trader/scripts/bot3.py
-
+# Hot-reload config without full restart
+ExecReload=/bin/kill -HUP $MAINPID
 
 # Environment
 Environment=PYTHONUNBUFFERED=1
-
 # If you use a .env file
 EnvironmentFile=/home/zhaohuiwang/Projects/finance-project/.env
 
@@ -140,29 +145,39 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 
 # Enable and start the service
-sudo systemctl enable --now schwab-bot.service
+sudo systemctl enable --now schwab-bot3.service
 
 # The service file defines how the service runs. Whether it starts at boot is controlled separately by systemd's enabled/disabled state. You may also mask the service file so that it can not be start at all without unmask it (extra insurance to prevent it from starting by dependencies or other units)
-sudo systemctl mask schwab-bot
-sudo systemctl unmask schwab-bot
+sudo systemctl mask schwab-bot3
+sudo systemctl unmask schwab-bot3
 
-Command                                     Action
-sudo systemctl stop schwab-bot.service      # Stop the bot
-sudo systemctl start schwab-bot.service     # Start the bot
-sudo systemctl restart schwab-bot.service   # Restart the bot
+### Common commands
+# Command                                       # Action
+sudo systemctl start schwab-bot3.service        # Start the bot
+# It runs as the full mode by default. Open the daskboard http://127.0.0.1:8050/
+sudo systemctl stop schwab-bot3.service         # Stop the bot
+sudo systemctl restart schwab-bot3.service      # Restart the bot
 
-journalctl -u schwab-bot.service -f         # View live logs
-journalctl -u schwab-bot.service -n 50      # view recent 50 logs
+journalctl -u schwab-bot3.service -f            # View live logs
+journalctl -u schwab-bot3.service -n 50         # view recent 50 logs
 
-sudo systemctl status schwab-bot.service    # Check current status
-sudo systemctl disable schwab-bot.service   # Disable auto-start on boot
-sudo systemctl enable schwab-bot.service    # Enable auto-start on boot
-sudo systemctl is-enabled schwab-bot.service    # Check if auto-start is enabled
+sudo systemctl status schwab-bot3.service       # Check current status
+sudo systemctl disable schwab-bot3.service      # Disable auto-start on boot
+sudo systemctl enable schwab-bot3.service       # Enable auto-start on boot
+sudo systemctl is-enabled schwab-bot3.service   # Check if auto-start is enabled
+
+
+### To apply an update
+# Command                                        # Change type  
+systemctl reload schwab-bot3.service             # Only YAML configsudo 
+sudo systemctl restart schwab-bot3.service       # Python code changes
+sudo systemctl daemon-reload && sudo systemctl restart schwab-bot.service                                          # Service file changes
+
 
 # To remove the service
-sudo systemctl stop schwab-bot.service          # Stop the service (if it's running)
-sudo systemctl disable schwab-bot.service       # Disable auto-start
-sudo rm /etc/systemd/system/schwab-bot.service  # Remove the service file
-sudo systemctl daemon-reload                    # Reload systemd to apply changes
-sudo systemctl reset-failed                     # Reset any failed state (optional but recommended)
+sudo systemctl stop schwab-bot3.service          # Stop the service (if it's running)
+sudo systemctl disable schwab-bot3.service       # Disable auto-start
+sudo rm /etc/systemd/system/schwab-bot3.service  # Remove the service file
+sudo systemctl daemon-reload                     # Reload systemd to apply changes
+sudo systemctl reset-failed                      # Reset any failed state (optional but recommended)
 """
