@@ -17,13 +17,21 @@ import os
 import time
 import threading
 import json
-from pathlib import Path
+import signal
+
 from datetime import datetime, timedelta, timezone, date
-from zoneinfo import ZoneInfo
-import schwabdev
 from dotenv import load_dotenv
+from pathlib import Path
 from rich.console import Console
+from zoneinfo import ZoneInfo
+
+import schwabdev
+
 from schwab_trader.config.bot.bot3_config import TradingConfig, SymbolConfig
+from schwab_trader.orders.equity import (
+    sell_limit_sell_stoplimit_oco_dict,
+    sell_trailing_sell_limit_oco_dict,
+)
 from schwab_trader.utils.db import (
     init_db,
     log_transaction,
@@ -31,10 +39,7 @@ from schwab_trader.utils.db import (
     get_last_sell_price,
     save_state,
 )
-from schwab_trader.orders.equity import (
-    sell_limit_sell_stoplimit_oco_dict,
-    sell_trailing_sell_limit_oco_dict,
-)
+
 
 load_dotenv()
 console = Console()
@@ -69,6 +74,8 @@ class TradingBot:
         self.auto_buy_allowed = {sym: True for sym in self.symbols}
         self.lock = threading.RLock()
         self.running = True
+        # Allow config reload via SIGHUP (used by systemd reload)
+        signal.signal(signal.SIGHUP, self._on_sighup)
         self.trading_paused = False
         self.account_hash = self._get_account_hash()
 
@@ -124,6 +131,15 @@ class TradingBot:
                 "dayTradingBP": 0.0,
                 "nonMarginableBP": 0.0,
             }
+
+    def _on_sighup(self, signum, frame):
+        """Handle SIGHUP → hot-reload config without stopping the bot."""
+        console.print("[bold cyan]SIGHUP received → reloading config...[/bold cyan]")
+        try:
+            self.reload_config()
+            console.print("[bold green]Config reload complete[/bold green]")
+        except Exception as e:
+            console.print(f"[red]Config reload via SIGHUP failed: {e}[/red]")
 
     def update_holdings_from_api(self):
         """Synchronize portfolio holdings from the Schwab account."""
@@ -330,7 +346,22 @@ class TradingBot:
             return
 
         # Scenario 3 -- Classic protective OCO when below the trail_activation_price
-        stop_price = round(cfg.buy_target_price * (1 - cfg.stop_loss_pct / 100), 2)
+        actual_buy_price = float(holding.get("buy_price") or 0)
+        # Note: the bot uses the Schwab API's average cost (averagePrice), not from the SQLite log.
+        reference_price = actual_buy_price if actual_buy_price > 0 else cfg.buy_target_price
+
+        # Prefer fixed $ stop when configured; otherwise use %
+        if cfg.stop_loss_dollar and cfg.stop_loss_dollar > 0:
+            stop_price = round(reference_price - cfg.stop_loss_dollar, 2)
+            stop_source = f"${cfg.stop_loss_dollar} below entry"
+        else:
+            stop_price = round(reference_price * (1 - cfg.stop_loss_pct / 100), 2)
+            stop_source = f"{cfg.stop_loss_pct}% below entry"
+
+        # Safety: stop must stay below current price
+        if stop_price >= price:
+            stop_price = round(price * 0.99, 2)
+
         oco = sell_limit_sell_stoplimit_oco_dict(
             symbol=symbol,
             quantity=qty,
@@ -344,8 +375,8 @@ class TradingBot:
         try:
             self.client.place_order(self.account_hash, oco)
             console.print(
-                f"[green]✓ Classic OCO Bracket placed for {symbol} "
-                f"(Limit ${cfg.limit_sell_price})[/green]"
+                f"[green]✓ Classic OCO placed for {symbol} "
+                f"(Stop ${stop_price} [{stop_source}] | Limit ${cfg.limit_sell_price})[/green]"
             )
             self.invalidate_open_orders_cache()
         except Exception as e:
