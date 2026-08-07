@@ -40,7 +40,6 @@ from schwab_trader.utils.db import (
     save_state,
 )
 
-
 load_dotenv()
 console = Console()
 
@@ -348,7 +347,9 @@ class TradingBot:
         # Scenario 3 -- Classic protective OCO when below the trail_activation_price
         actual_buy_price = float(holding.get("buy_price") or 0)
         # Note: the bot uses the Schwab API's average cost (averagePrice), not from the SQLite log.
-        reference_price = actual_buy_price if actual_buy_price > 0 else cfg.buy_target_price
+        reference_price = (
+            actual_buy_price if actual_buy_price > 0 else cfg.buy_target_price
+        )
 
         # Prefer fixed $ stop when configured; otherwise use %
         if cfg.stop_loss_dollar and cfg.stop_loss_dollar > 0:

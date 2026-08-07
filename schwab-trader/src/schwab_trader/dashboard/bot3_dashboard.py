@@ -88,7 +88,7 @@ app.layout = dbc.Container(
                 {"name": "Trail Activate (T1)", "id": "trail_activation_price"},
                 {"name": "Limit Sell (T2)", "id": "limit_sell_price"},
                 {"name": "Trail Offset %", "id": "trail_offset_pct"},
-                {"name": "Stop Loss", "id": "stop_loss"},          # $ or %
+                {"name": "Stop Loss", "id": "stop_loss"},  # $ or %
                 {"name": "Fixed Shares", "id": "fixed_shares"},
             ],
             style_table={"overflowX": "auto", "width": "100%"},
@@ -228,9 +228,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         for o in bot.get_open_orders():
             price_val = o.get("price")
             price_str = (
-                f"${float(price_val):,.2f}"
-                if price_val not in (None, "", 0)
-                else "—"
+                f"${float(price_val):,.2f}" if price_val not in (None, "", 0) else "—"
             )
             orders_data.append(
                 {
