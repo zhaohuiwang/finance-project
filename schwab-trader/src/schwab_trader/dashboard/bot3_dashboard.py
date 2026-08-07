@@ -88,7 +88,7 @@ app.layout = dbc.Container(
                 {"name": "Trail Activate (T1)", "id": "trail_activation_price"},
                 {"name": "Limit Sell (T2)", "id": "limit_sell_price"},
                 {"name": "Trail Offset %", "id": "trail_offset_pct"},
-                {"name": "Stop Loss %", "id": "stop_loss_pct"},
+                {"name": "Stop Loss", "id": "stop_loss"},          # $ or %
                 {"name": "Fixed Shares", "id": "fixed_shares"},
             ],
             style_table={"overflowX": "auto", "width": "100%"},
@@ -203,6 +203,13 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         with bot.lock:
             for sym, cfg in sorted(bot.symbols_config.items()):
                 price = bot.current_market_prices.get(sym)
+
+                # Show $ stop when configured, otherwise %
+                if getattr(cfg, "stop_loss_dollar", 0) and cfg.stop_loss_dollar > 0:
+                    stop_display = f"${cfg.stop_loss_dollar:.2f}"
+                else:
+                    stop_display = f"{cfg.stop_loss_pct:.1f}%"
+
                 managed_data.append(
                     {
                         "Symbol": sym,
@@ -211,7 +218,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                         "trail_activation_price": f"{getattr(cfg, 'trail_activation_price', 0):.2f}",
                         "limit_sell_price": f"{cfg.limit_sell_price:.2f}",
                         "trail_offset_pct": f"{getattr(cfg, 'trail_offset_pct', 0):.1f}%",
-                        "stop_loss_pct": f"{cfg.stop_loss_pct:.1f}",
+                        "stop_loss": stop_display,
                         "fixed_shares": cfg.fixed_shares,
                     }
                 )
@@ -221,9 +228,10 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         for o in bot.get_open_orders():
             price_val = o.get("price")
             price_str = (
-                f"${float(price_val):,.2f}" if price_val not in (None, "", 0) else "—"
+                f"${float(price_val):,.2f}"
+                if price_val not in (None, "", 0)
+                else "—"
             )
-
             orders_data.append(
                 {
                     "ID": str(o.get("orderId", "N/A")),
