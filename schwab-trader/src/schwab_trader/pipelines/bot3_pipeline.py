@@ -19,7 +19,7 @@ import threading
 import json
 import signal
 
-from datetime import datetime, timedelta, timezone, date
+from datetime import datetime, timedelta, timezone, date, time
 from dotenv import load_dotenv
 from pathlib import Path
 from rich.console import Console
@@ -52,7 +52,8 @@ class TradingBot:
     opportunities based on configuration, and manages orders throughout
     their lifecycle.
     """
-
+    ET = ZoneInfo("America/New_York")  # class-level constant
+    
     def __init__(self, cfg: TradingConfig, mode: str = "cli", config_path=None):
         """
         Initialize the trading bot.
@@ -89,6 +90,7 @@ class TradingBot:
         self.today = date.today()
 
         # Shutdown config
+        self.trading_enabled = False   # flipped by monitor based on clock
         self.auto_shutdown_after_close = getattr(cfg, "auto_shutdown_after_close", True)
         self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
         self.shutdown_on_weekends = getattr(cfg, "shutdown_on_weekends", True)
@@ -329,7 +331,7 @@ class TradingBot:
                 symbol=symbol,
                 quantity=qty,
                 sell_limit_price=str(cfg.limit_sell_price),
-                trail_offset_pct=cfg.trail_offset_pct,
+                stop_price_offset=cfg.trail_offset_pct,
                 session="NORMAL",
                 duration="DAY",
             )
@@ -417,6 +419,8 @@ class TradingBot:
     # ====================== CORE LOGIC ======================
     def ensure_orders(self, symbol: str):
         """Ensure correct order state for a symbol."""
+        if not getattr(self, "trading_enabled", False):
+            return
         cfg = self.symbols_config.get(symbol)
         if not cfg:
             return
@@ -617,6 +621,7 @@ class TradingBot:
             self.streamer.send(
                 self.streamer.account_activity("Account Activity", "0,1,2,3")
             )
+            # https://schwab-py.readthedocs.io/en/latest/streaming.html
 
         self.update_holdings_from_api()
         time.sleep(2)
@@ -626,17 +631,69 @@ class TradingBot:
     def monitor_logic(self):
         """Background monitoring thread."""
         while self.running:
-            time.sleep(15)
-            if date.today() != self.today:
-                self.daily_start_equity = self.get_account_snapshot()["equity"]
-                self.today = date.today()
-                self.trading_paused = False
-            self.update_holdings_from_api()
-            for sym in self.symbols:
-                self.ensure_orders(sym)
+            try:
+                self.refresh_trading_window()
+
+                today_et = self.now_et().date()
+                if today_et != self.today:
+                    self.today = today_et
+                    self.daily_start_equity = self.get_account_snapshot()["equity"]
+                    self.trading_paused = False
+
+                if self.trading_enabled:
+                    self.update_holdings_from_api()
+                    for sym in self.symbols:
+                        self.ensure_orders(sym)
+                    time.sleep(15)
+                else:
+                    time.sleep(60)  # idle overnight / weekend
+            except Exception as e:
+                console.print(f"[red]monitor_logic error: {e}[/red]")
+                time.sleep(15)
+
+    ### Market hours
+    def now_et(self) -> datetime:
+        return datetime.now(ZoneInfo(self.ET))
+
+    def is_weekday(self, dt: datetime | None = None) -> bool:
+        dt = dt or self.now_et()
+        return dt.weekday() < 5  # Mon–Fri
+
+    def is_regular_session(self, dt: datetime | None = None) -> bool:
+        """True only 09:30 - 16:00 America/New_York on trading weekdays."""
+        dt = dt or self.now_et()
+        if getattr(self, "shutdown_on_weekends", True) and not self.is_weekday(dt):
+            return False
+        t = dt.time()
+        return time(9, 30) <= t <= time(16, 0)
+
+    def refresh_trading_window(self) -> None:
+        """
+        Flip trading_enabled from the clock.
+        Does NOT stop the process (avoids systemd restart storms).
+        """
+        was = getattr(self, "trading_enabled", False)
+        self.trading_enabled = self.is_regular_session()
+
+        if self.trading_enabled and not was:
+            console.print("[bold green]Market open → TRADING mode[/bold green]")
+            try:
+                self.update_holdings_from_api()
+                for sym in self.symbols:
+                    self.ensure_orders(sym)
+            except Exception as e:
+                console.print(f"[red]Open transition error: {e}[/red]")
+
+        elif not self.trading_enabled and was:
+            console.print("[bold yellow]Market closed → IDLE mode[/bold yellow]")
+            # Optional: cancel working DAY orders at close
+            # for sym in list(self.symbols):
+            #     self.cancel_all_orders_for_symbol(sym)
 
     def risk_checks_pass(self, symbol: str) -> bool:
         """Evaluate risk constraints."""
+        if not getattr(self, "trading_enabled", False):
+            return False
         if self.trading_paused:
             return False
         snap = self.get_account_snapshot()
@@ -650,6 +707,7 @@ class TradingBot:
     def start(self):
         """Start the trading bot."""
         self.start_stream()
+        self.refresh_trading_window()  # set TRADING or IDLE immediately
         threading.Thread(
             target=self.monitor_logic, daemon=True, name="MonitorLogic"
         ).start()

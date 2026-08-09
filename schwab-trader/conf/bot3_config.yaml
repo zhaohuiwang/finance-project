@@ -1,30 +1,42 @@
 
 # schwab-trader/conf/bot3_conf.yaml
 
+# To change the dashboard port(from 8050 to 8051)
+# How you run             Where to change
+# Manual terminal         --port 8051 on the command linesy
+# stemd service           ExecStart=... --port 8051
+# New permanent default   default=8051 in bot3.py
+
 symbols:
     WDC:
-      buy_target_price: 428.5
-      trail_activation_price: 433.5   # threshold to trigger trailing sell order
-      trail_offset_pct: 0.01           # trail sell by % from high
-
-      limit_sell_price: 485.5         # hard take-profit limit
-      stop_loss_dollar: 5.0
-      buy_drop_pct: 10.0              # ignored while dollar > 0
-      limit_sell_pct: 8.0
-      stop_loss_pct: 8.0
       fixed_shares: 200
-    
-    # MU:
-    #   buy_target_price: 850.5
-    #   trail_activation_price: 950.5   # threshold to trigger trailing sell order
-    #   trail_offset_pct: 2.5           # trail sell by 2.5% from high
+      
+      buy_target_price: 401.1
 
-    #   limit_sell_price: 980.5         # hard take-profit limit
-    #   stop_loss_dollar: 50.0
-    #   buy_drop_pct: 10.0
-    #   limit_sell_pct: 8.0
-    #   stop_loss_pct: 8.0
-    #   fixed_shares: 49
+      trail_activation_price: 460.5   # threshold to trigger trailing sell order
+      trail_offset_pct: 0.1           # trail sell by % from high
+      limit_sell_price: 485.5         # hard take-profit limit
+
+      stop_loss_dollar: 0
+      stop_loss_pct: 8.0            # ignored while dollar > 0
+      
+      buy_drop_pct: 5.0              
+
+    
+    MU:
+      fixed_shares: 49
+      
+      buy_target_price: 830.1
+
+      trail_activation_price: 940   # threshold to trigger trailing sell order
+      trail_offset_pct: 1           # trail sell by % from high
+      limit_sell_price: 990         # hard take-profit limit
+
+      stop_loss_dollar: 0
+      stop_loss_pct: 8.0            # ignored while dollar > 0
+      
+      buy_drop_pct: 5.0 
+
 
 
 risk:

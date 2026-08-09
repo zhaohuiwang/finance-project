@@ -45,9 +45,11 @@ References:
 4. [schwab-trader](https://pypi.org/project/schwab-trader/#description)
 5. [schwab-sdk-unofficial](https://socket.dev/pypi/package/schwab-sdk-unofficial)
 6. [schwab-py](https://schwab-py.readthedocs.io/en/latest/streaming.html)
-7. [Goldman Sachs](https://github.com/goldmansachs)
-8. [freqtrade](https://github.com/freqtrade/freqtrade)
-9. [Microsoft Qlib](https://github.com/microsoft/qlib)
+7. [schwab-py streaming field information](https://schwab-py.readthedocs.io/en/latest/streaming.html)
+8. [Goldman Sachs](https://github.com/goldmansachs)
+9. [freqtrade](https://github.com/freqtrade/freqtrade)
+10. [Microsoft Qlib](https://github.com/microsoft/qlib)
+
 
 
 

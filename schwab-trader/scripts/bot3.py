@@ -46,7 +46,7 @@ if __name__ == "__main__":
         default="full",
         help="full = bot + dashboard, cli = bot + CLI, headless = bot only",
     )
-    parser.add_argument("--port", type=int, default=8050, help="Dashboard port")
+    parser.add_argument("--port", type=int, default=8051, help="Dashboard port")
     args = parser.parse_args()
 
     config_path = Path(__file__).parent / "../conf/bot3_config.yaml"
