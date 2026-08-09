@@ -91,10 +91,7 @@ class TradingBot:
 
         # Shutdown config
         self.trading_enabled = False   # flipped by monitor based on clock
-        self.auto_shutdown_after_close = getattr(cfg, "auto_shutdown_after_close", True)
-        self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
-        self.shutdown_on_weekends = getattr(cfg, "shutdown_on_weekends", True)
-
+        
         console.print("[bold green]TradingBot initialized[/bold green]")
 
     @property
@@ -662,7 +659,7 @@ class TradingBot:
     def is_regular_session(self, dt: datetime | None = None) -> bool:
         """True only 09:30 - 16:00 America/New_York on trading weekdays."""
         dt = dt or self.now_et()
-        if getattr(self, "shutdown_on_weekends", True) and not self.is_weekday(dt):
+        if not self.is_weekday(dt):
             return False
         t = dt.time()
         return time(9, 30) <= t <= time(16, 0)
