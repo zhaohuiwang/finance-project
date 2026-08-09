@@ -14,12 +14,18 @@ orders to ensure desired trading state is continuously enforced.
 """
 
 import os
-import time
+import time     # stdlib: sleep, time.time()
 import threading
 import json
 import signal
 
-from datetime import datetime, timedelta, timezone, date, time
+from datetime import (
+    datetime,
+    timedelta,
+    timezone,
+    date,
+    time as dt_time
+    )
 from dotenv import load_dotenv
 from pathlib import Path
 from rich.console import Console
@@ -648,9 +654,9 @@ class TradingBot:
                 console.print(f"[red]monitor_logic error: {e}[/red]")
                 time.sleep(15)
 
-    ### Market hours
+    # ====================== Market hours ======================
     def now_et(self) -> datetime:
-        return datetime.now(ZoneInfo(self.ET))
+        return datetime.now(self.ET)
 
     def is_weekday(self, dt: datetime | None = None) -> bool:
         dt = dt or self.now_et()
@@ -662,7 +668,7 @@ class TradingBot:
         if not self.is_weekday(dt):
             return False
         t = dt.time()
-        return time(9, 30) <= t <= time(16, 0)
+        return dt_time(9, 30) <= t <= dt_time(16, 0)
 
     def refresh_trading_window(self) -> None:
         """
