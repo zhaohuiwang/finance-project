@@ -43,12 +43,13 @@ References:
 2. [developer.schwab Market Data Production](https://developer.schwab.com/products/trader-api--individual/details/specifications/Market%20Data%20Production)
 3. [schwab-trader github](https://github.com/ibouazizi/schwab-trader/tree/main)
 4. [schwab-trader](https://pypi.org/project/schwab-trader/#description)
-5. [schwab-sdk-unofficial](https://socket.dev/pypi/package/schwab-sdk-unofficial)
-6. [schwab-py](https://schwab-py.readthedocs.io/en/latest/streaming.html)
-7. [schwab-py streaming field information](https://schwab-py.readthedocs.io/en/latest/streaming.html)
-8. [Goldman Sachs](https://github.com/goldmansachs)
-9. [freqtrade](https://github.com/freqtrade/freqtrade)
-10. [Microsoft Qlib](https://github.com/microsoft/qlib)
+5. [Schwabdev Stream Field Mappings](https://github.com/tylerebowers/Schwabdev/blob/main/schwabdev/translate.py)
+6. [schwab-sdk-unofficial](https://socket.dev/pypi/package/schwab-sdk-unofficial)
+7. [schwab-py](https://schwab-py.readthedocs.io/en/latest/streaming.html)
+8. [schwab-py streaming field information](https://schwab-py.readthedocs.io/en/latest/streaming.html)
+9. [Goldman Sachs](https://github.com/goldmansachs)
+10. [freqtrade](https://github.com/freqtrade/freqtrade)
+11. [Microsoft Qlib](https://github.com/microsoft/qlib)
 
 
 

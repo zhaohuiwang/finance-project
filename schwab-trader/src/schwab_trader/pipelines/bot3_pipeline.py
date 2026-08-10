@@ -621,10 +621,65 @@ class TradingBot:
         symbols_str = ",".join(self.symbols)
         if symbols_str:
             self.streamer.send(self.streamer.level_one_equities(symbols_str, "0,1,2,3"))
+            # Schwabdev translation map for fields.
+            # 0: "Symbol"
+            # 1: "Bid Price"
+            # 2: "Ask Price"
+            # 3: "Last Price"
+            # 4: "Bid Size"
+            # 5: "Ask Size"
+            # 6: "Ask ID"
+            # 7: "Bid ID"
+            # 8: "Total Volume"
+            # 9: "Last Size"
+            # 10: "High Price"
+            # 11: "Low Price"
+            # 12: "Close Price"
+            # 13: "Exchange ID"
+            # 14: "Marginable"
+            # 15: "Description"
+            # 16: "Last ID"
+            # 17: "Open Price"
+            # 18: "Net Change"
+            # 19: "52 Week High"
+            # 20: "52 Week Low"
+            # 21: "PE Ratio"
+            # 22: "Annual Dividend Amount"
+            # 23: "Dividend Yield"
+            # 24: "NAV"
+            # 25: "Exchange Name"
+            # 26: "Dividend Date"
+            # 27: "Regular Market Quote"
+            # 28: "Regular Market Trade"
+            # 29: "Regular Market Last Price"
+            # 30: "Regular Market Last Size"
+            # 31: "Regular Market Net Change"
+            # 32: "Security Status"
+            # 33: "Mark Price"
+            # 34: "Quote Time in Long"
+            # 35: "Trade Time in Long"
+            # 36: "Regular Market Trade Time in Long"
+            # 37: "Bid Time"
+            # 38: "Ask Time"
+            # 39: "Ask MIC ID"
+            # 40: "Bid MIC ID"
+            # 41: "Last MIC ID"
+            # 42: "Net Percent Change"
+            # 43: "Regular Market Percent Change"
+            # 44: "Mark Price Net Change"
+            # 45: "Mark Price Percent Change"
+            # 46: "Hard to Borrow Quantity"
+            # 47: "Hard To Borrow Rate"
+            # 48: "Hard to Borrow"
+            # 49: "shortable"
+            # 50: "Post-Market Net Change"
+            # 51: "Post-Market Percent Change"
+
             self.streamer.send(
                 self.streamer.account_activity("Account Activity", "0,1,2,3")
             )
-            # https://schwab-py.readthedocs.io/en/latest/streaming.html
+            
+            # https://tylerebowers.github.io/Schwabdev/?source=pages%2Fstream.html
 
         self.update_holdings_from_api()
         time.sleep(2)
