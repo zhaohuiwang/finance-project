@@ -11,6 +11,9 @@ This module implements the core trading engine responsible for:
 - Supporting hot-reloading of trading configuration during runtime.
 The bot maintains an internal view of prices, holdings, and outstanding
 orders to ensure desired trading state is continuously enforced.
+
+https://tylerebowers.github.io/Schwabdev/
+
 """
 
 import os
@@ -515,7 +518,7 @@ class TradingBot:
             sym = content.get("key")
             if sym in self.current_market_prices:
                 try:
-                    price = float(content.get("3") or 0)
+                    price = float(content.get("3") or 0) # 3 - Last Price (Last trade)
                     if price > 0:
                         with self.lock:
                             self.current_market_prices[sym] = price
@@ -776,3 +779,132 @@ class TradingBot:
         self.running = False
         if self.streamer:
             self.streamer.stop()
+
+
+"""
+WebSocket streaming
+streamer = schwabdev.Stream(client) - create objects that know how to authenticate and establish the streaming connection.
+streamer.start(receiver=print) - the streaming class manager.
+Conceptually, schwabdev eventually does something equivalent to: websocket.connect("wss://....") where wss means WebSocket Secure. 
+
+streamer.send(streamer.level_one_equities("AAPL", 0,1,2,3")) - subscription message
+
+start_stream() only connects and subscribes. The useful work happens in the receiver callbacks, which update in-memory state that the rest of the pipeline reads.
+
+start()
+  └─ start_stream()
+        ├─ create schwabdev.Stream(client)
+        ├─ streamer.start(receiver=self.unified_receiver)   # callback
+        ├─ subscribe LEVELONE_EQUITIES (prices)
+        ├─ subscribe account_activity (fills / account events)
+        ├─ update_holdings_from_api()
+        └─ ensure_orders() for each symbol
+
+_handle_price() maps the Symbol and Last Price or "3", using the following assignment, 
+sym = content.get("key")
+price = float(content.get("3") or 0)  # field 3 = Last Price
+self.current_market_prices[sym] = price
+
+# Payload Example
+streamer.send(streamer.level_one_equities("AMD,INTC", "0,1,2,3,4,5,6,7,8"))
+{
+  "data": [
+    {
+      "service": "LEVELONE_EQUITIES",
+      "timestamp": 1765081984668,
+      "command": "SUBS",
+      "content": [
+        {
+          "1": 217.86,
+          "2": 217.95,
+          "3": 217.93,
+          "4": 200,
+          "5": 100,
+          "6": "P",
+          "7": "P",
+          "8": 33292396,
+          "key": "AMD",
+          "delayed": false,
+          "assetMainType": "EQUITY",
+          "assetSubType": "COE",
+          "cusip": "007903107"
+        },
+        {
+          "1": 41.43,
+          "2": 41.44,
+          "3": 41.44,
+          "4": 200,
+          "5": 400,
+          "6": "P",
+          "7": "U",
+          "8": 103042015,
+          "key": "INTC",
+          "delayed": false,
+          "assetMainType": "EQUITY",
+          "assetSubType": "COE",
+          "cusip": "458140100"
+        }
+      ]
+    }
+  ]
+}
+
+streamer.send(streamer.level_one_equities("AMD,INTC", "0,1,2,3,4,5,6,7"))
+{
+    "data":[
+        {
+            "service":"LEVELONE_EQUITIES", 
+            "timestamp":1786461735280,
+            "command":"SUBS",
+            "content":[
+                {
+                    "key":"AMD",
+                    "delayed":false,
+                    "assetMainType":"EQUITY",
+                    "assetSubType":"COE",
+                    "cusip":"007903107",
+                    "1":470.77,
+                    "2":470.99,
+                    "3":470.925,
+                    "4":100,
+                    "5":600,
+                    "6":"Z",
+                    "7":"Q",
+                    },
+                    {
+                        "key":"INTC",
+                        "delayed":false,
+                        "assetMainType":"EQUITY",
+                        "assetSubType":"COE",
+                        "cusip":"458140100",
+                        "1":97.47,
+                        "2":97.5,
+                        "3":97.485,
+                        "4":200,
+                        "5":800,
+                        "6":"Q",
+                        "7":"Q",
+                        }
+                        ]
+        }
+    ]
+}
+streamer.send(streamer.account_activity("Account Activity", "0,1,2,3"))
+{
+    "response":[
+        {
+            "service":"ACCT_ACTIVITY",
+            "command":"ADD",
+            "requestid":"15","SchwabClientCorrelId":"98f4a74a-aead-f4aa-a6a6-f5adde0d1c8f",
+            "timestamp":1786461735291,
+            "content":{
+                "code":0,
+                "msg":"ADD command succeeded"
+                }
+        }
+    ]
+}
+
+So "key" is Schwab's always-present symbol identifier on the message. Field "0" is the Symbol data field you can also subscribe to. They both mean the ticker, but they are not the same JSON slot.
+"""
+

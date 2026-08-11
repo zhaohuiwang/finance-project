@@ -8,12 +8,15 @@ import logging
 import dash
 import dash_bootstrap_components as dbc
 from dash import Dash, dcc, html, dash_table, Input, Output
+from rich.console import Console
 
 from schwab_trader.pipelines.bot2_pipeline import TradingBot
-
+from rich.console import Console
 # Suppress logs
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 logging.getLogger("dash").setLevel(logging.ERROR)
+
+console = Console()
 
 app = Dash(
     __name__,
@@ -305,7 +308,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         return all_holdings_data, managed_data, orders_data, account_data, status_text
 
     except Exception as e:
-        print(f"[red]Dashboard callback error: {e}[/red]")
+        console.print(f"[red]Dashboard callback error: {e}[/red]")
         return [], [], [], [], "Dashboard error — check console"
 
 
@@ -313,5 +316,5 @@ def run_dashboard(trading_bot: TradingBot, port: int = 8050):
     """Start the dashboard."""
     global bot
     bot = trading_bot
-    print(f"[bold green]✅ Dashboard running at http://127.0.0.1:{port}[/bold green]")
+    console.print(f"[bold green]✅ Dashboard running at http://127.0.0.1:{port}[/bold green]")
     app.run(debug=False, use_reloader=False, port=port)

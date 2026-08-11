@@ -18,7 +18,7 @@ class SymbolConfig(BaseModel):
 
     # Trailing parameters
     trail_activation_price: float = Field(gt=0)
-    trail_offset_pct: float = Field(default=3.0, ge=0, le=50.0)
+    trail_offset_pct: float = Field(default=0.1, ge=0.1, le=50.0)
 
     @model_validator(mode="after")
     def validate_price_relationships(self):
