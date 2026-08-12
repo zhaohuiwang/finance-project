@@ -301,10 +301,13 @@ class TradingBot:
             ],
         }
         try:
-            self.client.place_order(self.account_hash, order)
-            console.print(f"[green]✓ BUY submitted for {symbol} x {qty}[/green]")
-            self.invalidate_open_orders_cache()
-            return True
+            response = self.client.place_order(self.account_hash, order)
+            location = response.headers.get("Location")
+            order_id = location.split("/")[-1] if location else None
+            if response.status_code == 201 and order_id is not None:
+                console.print(f"[green]✓ BUY submitted for {symbol} x {qty}[/green]")
+                self.invalidate_open_orders_cache()
+                return True
         except Exception as e:
             console.print(f"[red]Buy failed: {e}[/red]")
             return False
@@ -342,12 +345,15 @@ class TradingBot:
                 duration="DAY",
             )
             try:
-                self.client.place_order(self.account_hash, oco)
-                console.print(
-                    f"[green]✓ Trailing+Limit OCO placed for {symbol} "
-                    f"(Trail {cfg.trail_offset_pct}% | Limit ${cfg.limit_sell_price})[/green]"
-                )
-                self.invalidate_open_orders_cache()
+                response = self.client.place_order(self.account_hash, oco)
+                location = response.headers.get("Location")
+                order_id = location.split("/")[-1] if location else None
+                if response.status_code == 201 and order_id is not None:
+                    console.print(
+                        f"[green]✓ Trailing+Limit OCO placed for {symbol} "
+                        f"(Trail {cfg.trail_offset_pct}% | Limit ${cfg.limit_sell_price})[/green]"
+                    )
+                    self.invalidate_open_orders_cache()
             except Exception as e:
                 console.print(f"[red]Trailing OCO failed for {symbol}: {e}[/red]")
             return
@@ -382,12 +388,15 @@ class TradingBot:
             duration="DAY",
         )
         try:
-            self.client.place_order(self.account_hash, oco)
-            console.print(
-                f"[green]✓ Classic OCO placed for {symbol} "
-                f"(Stop ${stop_price} [{stop_source}] | Limit ${cfg.limit_sell_price})[/green]"
-            )
-            self.invalidate_open_orders_cache()
+            response = self.client.place_order(self.account_hash, oco)
+            location = response.headers.get("Location")
+            order_id = location.split("/")[-1] if location else None
+            if response.status_code == 201 and order_id is not None:
+                console.print(
+                    f"[green]✓ Classic OCO placed for {symbol} "
+                    f"(Stop ${stop_price} [{stop_source}] | Limit ${cfg.limit_sell_price})[/green]"
+                )
+                self.invalidate_open_orders_cache()
         except Exception as e:
             console.print(f"[red]OCO failed for {symbol}: {e}[/red]")
 
@@ -410,11 +419,14 @@ class TradingBot:
             ],
         }
         try:
-            self.client.place_order(self.account_hash, order)
-            console.print(
-                f"[bold green]Immediate SELL executed for {symbol}[/bold green]"
-            )
-            self.invalidate_open_orders_cache()
+            response = self.client.place_order(self.account_hash, order)
+            location = response.headers.get("Location")
+            order_id = location.split("/")[-1] if location else None
+            if response.status_code == 201 and order_id is not None:
+                console.print(
+                    f"[bold green]Immediate SELL executed for {symbol}[/bold green]"
+                )
+                self.invalidate_open_orders_cache()
         except Exception as e:
             console.print(f"[red]Immediate sell failed: {e}[/red]")
 

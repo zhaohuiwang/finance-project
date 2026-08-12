@@ -1,11 +1,13 @@
+import time
 from datetime import datetime, timedelta, timezone
 from collections.abc import Callable, Iterator, Iterable
 from dotenv import load_dotenv
 
 
-from typing import Any
+from typing import Any, get_args
 
 from schwab_trader.accounts.schwab import client
+from schwab_trader.accounts.type_literal import OrderRequest
 
 
 def get_hashvalue(client, accountNumber: str = "29308909") -> str:
@@ -28,8 +30,8 @@ def place_order(client, accountHash: str, order: dict) -> tuple[int, str, str]:
         order: dict, payload for the order
 
     Returns:
-    tuple[int, str, str]: (status_code, date, order_id)
-        - status_code: HTTP status code, 201 >>> success!
+    tuple[int, str, str]: (status, date, order_id)
+        - status: order status
         - date: Server Date header
         - order_id: Extracted from Location header
 
@@ -43,15 +45,56 @@ def place_order(client, accountHash: str, order: dict) -> tuple[int, str, str]:
     """
 
     response = client.place_order(accountHash=accountHash, order=order)
-
-    status_code = response.status_code
-
+    # if <Response [201]>, request (POST /orders) processed successfully and a resource (order) created
     date = response.headers.get("Date")
-
     location = response.headers.get("Location")
     order_id = location.split("/")[-1] if location else None
 
-    return status_code, date, order_id
+    for i in range(10):
+        response = client.order_details(accountHash=accountHash, orderId=order_id)
+        # if <Response [200]>, request (GET /orders/{orderId}) processed successfully (no resource created, as compared to 201. It just retrive the infromation. simialrly for cancel_order())
+
+        status = response.status_code
+        status = getattr(response, "status_code")
+        if response.content:
+            try:
+                data = response.json()
+                status = data.get("status")
+            except ValueError:
+                pass
+        else:
+            pass
+
+        if status in get_args(OrderRequest):
+            break
+
+        time.sleep(0.5)
+
+    return status, date, order_id
+    """
+    An HTTP request contains: Request line, Headers, a blank line and Body (optional)
+    An HTTP response contains: Status line, Headers, a blank line and Body (optional)
+
+    To check: 
+    response = client.place_order(hashValue, order)
+    response = client.order_details(hashValue, order_id)
+
+    print("===== REQUEST =====")
+    print(response.request.method)
+    print(response.request.url)
+    print(response.request.headers)
+    print(response.request.body)
+
+    print("\n===== RESPONSE =====")
+    print(response.status_code)
+    print(response.headers)
+    print(response.text)
+
+    # Depending on whether there is Body (optional)
+    response.content        # return b'' or b'dictionary-like content'
+    response.text           # returns '' or 'dictionary-like content'
+    response.json()         # requests.exceptions.JSONDecodeError or json object
+    """
 
 
 def cancel_order(client, accountHash: str, order_id: int) -> tuple[int, str]:

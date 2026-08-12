@@ -22,8 +22,30 @@ from schwab_trader.orders.equity import (
     sell_limit_sell_stoplimit_oco_dict,
     buy_limit_trigger_sell_limit_sell_stop_oco_dict,
     sell_trailing_stop_dict,
+    buy_trailing_stop_dict,
+    sell_trailing_stop_dict,
     buy_trailingstop_trigger_sell_trailingstop_dict,
     sell_trailingstop_trigger_buy_trailingstop_dict,
+
+)
+from schwab_trader.accounts.schwab import client, SchwabAccount
+
+
+from schwab_trader.accounts.type_literal import Duration
+from schwab_trader.orders.equity import (
+    buy_market_dict,
+    sell_market_dict,
+    buy_limit_dict,
+    sell_limit_dict,
+    buy_limit_trigger_sell_limit_dict,
+    sell_limit_sell_stoplimit_oco_dict,
+    buy_limit_trigger_sell_limit_sell_stop_oco_dict,
+    sell_trailing_stop_dict,
+    buy_trailing_stop_dict,
+    sell_trailing_stop_dict,
+    buy_trailingstop_trigger_sell_trailingstop_dict,
+    sell_trailingstop_trigger_buy_trailingstop_dict,
+
 )
 from schwab_trader.orders.option import (
     buy_limit_single_option_dict,
@@ -121,6 +143,15 @@ order_b7 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
     sell_duration="DAY",
 )
 
+order_b9 = buy_trailing_stop_dict(
+    symbol="",
+    quantity=1,
+    stop_price_link_basis="BID",
+    stop_price_link_type="PERCENT",  # "VALUE" or "PERCENT" or "TICK"
+    stop_price_offset=2.0,
+    session="NORMAL",
+    duration="DAY",
+) 
 # Sell order configurations
 order_s2 = sell_market_dict(
     symbol="THISISADEMO",
@@ -188,6 +219,15 @@ order_s8 = sell_limit_sell_stoplimit_oco_dict(
     duration="GOOD_TILL_CANCEL",
 )
 
+order_s10 = sell_trailing_stop_dict(
+    symbol="",
+    quantity=1,
+    stop_price_link_basis="BID",
+    stop_price_link_type="PERCENT",  # "VALUE" or "PERCENT" or "TICK"
+    stop_price_offset=2.0,
+    session="NORMAL",
+    duration="DAY",
+) 
 
 order_ts_bs = buy_trailingstop_trigger_sell_trailingstop_dict(
     symbol="JOBY",
@@ -225,8 +265,8 @@ order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
 
 order_b3 = buy_limit_dict(
     symbol="WDC",
-    quantity=200,
-    limit_price=435.2,
+    quantity=2,
+    limit_price=400.2,
     session="NORMAL",
     duration="DAY",
 )
@@ -235,7 +275,7 @@ order = order_b3
 order_s4 = sell_limit_dict(
     symbol="WDC",
     quantity=200,
-    limit_price=450.2,
+    limit_price=480.2,
     session="NORMAL",
     duration="DAY",
 )
@@ -243,9 +283,9 @@ order = order_s4
 
 
 # Place an order
-status_code, date, order_id = place_order(
+status, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
-)  # status_code 201 >>> success
+)
 
 order_id = "1007168170226"  # Limit buy
 
@@ -289,11 +329,9 @@ order_o3 = buy_limit_single_option_dict(
 order = order_o1
 
 
-status_code, date, order_id = place_order(
+status, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
 )
-
-# status_code 201 >>> success
 
 # ========================================================================
 # Check orders
