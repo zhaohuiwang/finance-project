@@ -3,6 +3,8 @@
 __pycache__/
 *.env
 .venv/
+.python-version
+
 
 dist/
 schwabdev.egg-info/
@@ -14,3 +16,6 @@ uv.lock
 /schwab-trader/logs/
 /my_IULs/
 f_canvas/my_IULs/
+
+data/
+outputs/
