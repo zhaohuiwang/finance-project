@@ -12,6 +12,7 @@ tokens.json
 /build
 /docs/examples/tests
 uv.lock
+app.log
 
 /schwab-trader/logs/
 /my_IULs/
@@ -20,3 +21,4 @@ f_canvas/my_IULs/
 data/
 outputs/
 plots/
+logs/

@@ -32,7 +32,7 @@ HEADERS: Final = {
     "Origin": "https://www.cnn.com",
 }
 
-OUTPUT_DIR: Final = Path("output/cnn_market_info")
+OUTPUT_DIR: Final = Path("outputs/cnn_market_info")
 CSV_FILENAME: Final = "fear_greed.csv"
 PLOT_FILENAME: Final = "fear_greed.png"
 
