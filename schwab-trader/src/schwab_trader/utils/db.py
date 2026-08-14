@@ -30,6 +30,7 @@ def init_db():
                     symbol TEXT,
                     qty REAL,
                     price REAL,
+                    high_price REAL,
                     order_id TEXT,
                     order_status TEXT,
                     note TEXT,
@@ -94,7 +95,6 @@ def log_transaction(
 
         traceback.print_exc()
 
-
 def save_state(
     symbol: str,
     *,
@@ -102,55 +102,60 @@ def save_state(
     last_buy_qty: float | None = None,
     last_sell_price: float | None = None,
     last_sell_qty: float | None = None,
+    high_price: float | None = None,
 ):
-    """Save or update trading state for a symbol."""
     try:
         conn = get_connection()
         ts = datetime.datetime.now().isoformat()
 
-        # Get existing state
         existing = conn.execute(
             """
             SELECT last_buy_price, last_buy_qty, last_buy_time,
-                   last_sell_price, last_sell_qty, last_sell_time
+                   last_sell_price, last_sell_qty, last_sell_time,
+                   high_price
             FROM state WHERE symbol=?
             """,
             (symbol,),
         ).fetchone()
 
         if existing:
-            buy_price, buy_qty, buy_time, sell_price, sell_qty, sell_time = existing
+            buy_price, buy_qty, buy_time, sell_price, sell_qty, sell_time, high = existing
         else:
             buy_price = buy_qty = buy_time = None
             sell_price = sell_qty = sell_time = None
+            high = None
 
-        # Update only provided fields
         if last_buy_price is not None:
             buy_price = last_buy_price
             buy_qty = last_buy_qty
             buy_time = ts
+            # On a new buy, seed the high-water mark
+            if high_price is None:
+                high = last_buy_price
         if last_sell_price is not None:
             sell_price = last_sell_price
             sell_qty = last_sell_qty
             sell_time = ts
+            high = None                     # clear on exit
+        if high_price is not None:
+            high = high_price
 
         conn.execute(
             """
             REPLACE INTO state (
                 symbol, last_buy_price, last_buy_qty, last_buy_time,
-                last_sell_price, last_sell_qty, last_sell_time
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                last_sell_price, last_sell_qty, last_sell_time,
+                high_price
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (symbol, buy_price, buy_qty, buy_time, sell_price, sell_qty, sell_time),
+            (symbol, buy_price, buy_qty, buy_time, sell_price, sell_qty, sell_time, high),
         )
         conn.commit()
         conn.close()
     except Exception as e:
         print(f"[DB ERROR] Failed to save state for {symbol}: {e}")
         import traceback
-
         traceback.print_exc()
-
 
 # ==================== GETTERS ====================
 
@@ -194,6 +199,18 @@ def get_last_sell_price(symbol: str) -> float | None:
         return None
 
 
+def get_high_price(symbol: str) -> float | None:
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT high_price FROM state WHERE symbol=?", (symbol,)
+        ).fetchone()
+        conn.close()
+        return float(row[0]) if row and row[0] is not None else None
+    except Exception as e:
+        print(f"[DB] Error getting high_price for {symbol}: {e}")
+        return None
+    
 def get_last_sell_qty(symbol: str) -> float | None:
     try:
         conn = get_connection()

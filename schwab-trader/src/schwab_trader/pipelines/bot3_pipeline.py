@@ -46,6 +46,7 @@ from schwab_trader.utils.db import (
     log_transaction,
     get_last_buy_price,
     get_last_sell_price,
+    get_high_price,
     save_state,
 )
 
@@ -77,6 +78,7 @@ class TradingBot:
         self.risk_config = cfg.risk
         self.symbols_config: dict[str, SymbolConfig] = cfg.symbols
         self.current_market_prices = {sym: None for sym in self.symbols}
+        self.high_prices: dict[str, float] = {}
         self.holdings = {}
         self.all_holdings = {}
         self.pending_buy_orders = set()
@@ -181,6 +183,11 @@ class TradingBot:
                 for sym in self.symbols:
                     if sym not in new_holdings:
                         self.auto_buy_allowed[sym] = True
+                        # Optional: clear HWM when position is gone
+                        self.high_prices.pop(sym, None)
+            # Seed/refresh in-momory HWM after holdings change
+            self._sync_high_prices()
+
         except Exception as e:
             console.print(f"[red]Holdings update failed: {e}[/red]")
 
@@ -312,14 +319,43 @@ class TradingBot:
             console.print(f"[red]Buy failed: {e}[/red]")
             return False
 
+    def _get_reference_price(self, symbol: str, holding: dict, cfg) -> tuple[float, str]:
+        """
+        Return (reference_price, source_label).
+        Preference order:
+        1. In-memory high-water mark
+        2. Persisted high-water mark (DB)
+        3. Schwab average cost
+        4. Config buy_target_price
+        """
+        # 1. Fast in-memory path
+        hwm = self.high_prices.get(symbol)
+        if hwm is not None and hwm > 0:
+            return hwm, "HWM (memory)"
+
+        # 2. DB fallback (and re-seed memory)
+        hwm = get_high_price(symbol)
+        if hwm is not None and hwm > 0:
+            with self.lock:
+                self.high_prices[symbol] = hwm
+            return hwm, "HWM (DB)"
+
+        # 3. Average cost from Schwab
+        avg = float(holding.get("buy_price") or 0)
+        if avg > 0:
+            return avg, "avg cost"
+
+        # 4. Config fallback
+        return cfg.buy_target_price, "buy_target"
+
+
     def submit_sell_bracket_oco(self, symbol: str):
         """
         Exit strategy:
-         < trail_activation_price < limit_sell_price
-        - If Price > limit_sell_price * 1.01, market sell
-        - If price >= trail_activation_price  → place Trailing Stop + Limit OCO
-        - Otherwise place classic Stop + Limit OCO (protective)
-        - If the price starts to climbing before touching the Stop value and reaches the trail activation price, then the ensure_orders() cancels the existing protective orders and replaces with a Trailing Stop _ Limit OCO order
+        - If price >= limit_sell_price * 1.01 → immediate market sell
+        - If price >= trail_activation_price → Trailing Stop + Limit OCO
+        - Otherwise → Classic protective Stop + Limit OCO
+            (stop is calculated from high-water mark when available)
         """
         if not self.can_place_order(symbol) or symbol not in self.holdings:
             return
@@ -329,12 +365,20 @@ class TradingBot:
         qty = int(holding["shares"])
         price = self.current_market_prices.get(symbol) or holding.get("buy_price", 0)
 
-        # Scenario 1 -- Immediate market sell if already past take-profit hard limit
+        if price <= 0:
+            console.print(f"[yellow]No valid price for {symbol}, skipping OCO[/yellow]")
+            return
+
+        # ------------------------------------------------------------------
+        # Scenario 1 – Already past hard take-profit → market sell
+        # ------------------------------------------------------------------
         if price >= cfg.limit_sell_price * 1.01:
             self.place_immediate_sell(symbol)
             return
 
-        # Scenario 2 -- Trailing + Limit when above the trail_activation_price  and below the take-profit hard limit
+        # ------------------------------------------------------------------
+        # Scenario 2 – Above trail activation → Trailing + Limit OCO
+        # ------------------------------------------------------------------
         if price >= cfg.trail_activation_price:
             oco = sell_trailing_sell_limit_oco_dict(
                 symbol=symbol,
@@ -358,20 +402,17 @@ class TradingBot:
                 console.print(f"[red]Trailing OCO failed for {symbol}: {e}[/red]")
             return
 
-        # Scenario 3 -- Classic protective OCO when below the trail_activation_price
-        actual_buy_price = float(holding.get("buy_price") or 0)
-        # Note: the bot uses the Schwab API's average cost (averagePrice), not from the SQLite log.
-        reference_price = (
-            actual_buy_price if actual_buy_price > 0 else cfg.buy_target_price
-        )
+        # ------------------------------------------------------------------
+        # Scenario 3 – Protective classic OCO (uses high-water mark)
+        # ------------------------------------------------------------------
+        reference_price, ref_source = self._get_reference_price(symbol, holding, cfg)
 
-        # Prefer fixed $ stop when configured; otherwise use %
         if cfg.stop_loss_dollar and cfg.stop_loss_dollar > 0:
             stop_price = round(reference_price - cfg.stop_loss_dollar, 2)
-            stop_source = f"${cfg.stop_loss_dollar} below entry"
+            stop_source = f"${cfg.stop_loss_dollar} below {ref_source}"
         else:
             stop_price = round(reference_price * (1 - cfg.stop_loss_pct / 100), 2)
-            stop_source = f"{cfg.stop_loss_pct}% below entry"
+            stop_source = f"{cfg.stop_loss_pct}% below {ref_source}"
 
         # Safety: stop must stay below current price
         if stop_price >= price:
@@ -394,7 +435,7 @@ class TradingBot:
             if response.status_code == 201 and order_id is not None:
                 console.print(
                     f"[green]✓ Classic OCO placed for {symbol} "
-                    f"(Stop ${stop_price} [{stop_source}] | Limit ${cfg.limit_sell_price})[/green]"
+                    f"(Stop ${stop_price:.2f} [{stop_source}] | Limit ${cfg.limit_sell_price})[/green]"
                 )
                 self.invalidate_open_orders_cache()
         except Exception as e:
@@ -436,12 +477,14 @@ class TradingBot:
 
     # ====================== CORE LOGIC ======================
     def ensure_orders(self, symbol: str):
-        """Ensure correct order state for a symbol."""
+        """Ensure correct order state for a symbol (with HWM-based stop ratcheting)."""
         if not getattr(self, "trading_enabled", False):
             return
+
         cfg = self.symbols_config.get(symbol)
         if not cfg:
             return
+
         price = self.current_market_prices.get(symbol)
         if not price:
             return
@@ -452,6 +495,9 @@ class TradingBot:
         has_buy = self.has_open_buy_order(symbol)
         has_sell = self.has_open_sell_order(symbol)
 
+        # ------------------------------------------------------------------
+        # No position → look for buy opportunity
+        # ------------------------------------------------------------------
         if not has_position and not has_buy:
             last_buy = get_last_buy_price(symbol)
             trigger = price <= cfg.buy_target_price or (
@@ -460,22 +506,135 @@ class TradingBot:
             if trigger and self.risk_checks_pass(symbol):
                 console.print(f"[yellow]Ensuring BUY order for {symbol}[/yellow]")
                 self.place_buy_order(symbol, cfg.fixed_shares)
+
+        # ------------------------------------------------------------------
+        # Have position but no sell order → place protective / trailing OCO
+        # ------------------------------------------------------------------
         elif has_position and not has_sell:
             console.print(f"[yellow]Ensuring SELL bracket for {symbol}[/yellow]")
             self.submit_sell_bracket_oco(symbol)
 
-        elif has_position and has_sell and price >= cfg.trail_activation_price:
-            # Check if we already have a trailing order; if not, replace
-            orders = self.get_open_orders()
-            has_trailing = any(
-                o["symbol"] == symbol and o.get("type") == "TRAILING_STOP"
-                for o in orders
-            )
-            if not has_trailing:
-                console.print(f"[cyan]Upgrading {symbol} to Trailing+Limit OCO[/cyan]")
+        # ------------------------------------------------------------------
+        # Have position + sell order already working
+        # ------------------------------------------------------------------
+        elif has_position and has_sell:
+            # 1. Upgrade to trailing once price reaches activation
+            if price >= cfg.trail_activation_price:
+                orders = self.get_open_orders()
+                has_trailing = any(
+                    o["symbol"] == symbol and o.get("type") == "TRAILING_STOP"
+                    for o in orders
+                )
+                if not has_trailing:
+                    console.print(f"[cyan]Upgrading {symbol} to Trailing+Limit OCO[/cyan]")
+                    self.cancel_all_orders_for_symbol(symbol)
+                    time.sleep(0.8)
+                    self.submit_sell_bracket_oco(symbol)
+                return  # already handled
+
+            # 2. Still in protective phase → ratchet stop higher if HWM moved
+            ideal_stop = self._compute_ideal_stop(symbol)
+            if ideal_stop is None:
+                return
+
+            current_stop = self._get_current_stop_price(symbol)
+            if current_stop is None:
+                # Safety: place a stop if somehow missing
                 self.cancel_all_orders_for_symbol(symbol)
                 time.sleep(0.8)
                 self.submit_sell_bracket_oco(symbol)
+                return
+
+            # Minimum move required before ratcheting (0.10% of current price)
+            min_move = price * 0.0010
+
+            if ideal_stop > current_stop + min_move:
+                console.print(
+                    f"[cyan]Ratcheting protective stop for {symbol} "
+                    f"from ${current_stop:.2f} → ${ideal_stop:.2f}[/cyan]"
+                )
+                self.cancel_all_orders_for_symbol(symbol)
+                time.sleep(0.8)
+                self.submit_sell_bracket_oco(symbol)
+
+    # Small helper methods
+    def _compute_ideal_stop(self, symbol: str) -> float | None:
+        """
+        Compute the stop price that *should* be active right now
+        based on the current high-water mark (or fallbacks).
+        Returns None if we cannot compute a sensible stop.
+        """
+        if symbol not in self.holdings:
+            return None
+
+        cfg = self.symbols_config.get(symbol)
+        if not cfg:
+            return None
+
+        holding = self.holdings[symbol]
+        price = self.current_market_prices.get(symbol) or holding.get("buy_price") or 0
+        if price <= 0:
+            return None
+
+        reference_price, _ = self._get_reference_price(symbol, holding, cfg)
+
+        # Prefer fixed $ stop when configured; otherwise use %
+        if cfg.stop_loss_dollar and cfg.stop_loss_dollar > 0:
+            stop_price = round(reference_price - cfg.stop_loss_dollar, 2)
+        else:
+            stop_price = round(reference_price * (1 - cfg.stop_loss_pct / 100), 2)
+
+        # Safety: stop must stay below current market price
+        if stop_price >= price:
+            stop_price = round(price * 0.99, 2)
+
+        return stop_price
+
+    
+    def _get_current_stop_price(self, symbol: str) -> float | None:
+        """
+        Best-effort extraction of the working stop price for a symbol.
+        Looks at open orders and returns the first usable stop/limit price.
+        """
+        for o in self.get_open_orders():
+            if o.get("symbol") != symbol:
+                continue
+            if o.get("instruction") not in ("SELL", "SELL_SHORT"):
+                continue
+
+            # Prefer explicit stop fields, then generic price
+            for key in ("stopPrice", "stopLimitPrice", "stopPriceOffset", "price"):
+                val = o.get(key)
+                if val not in (None, "", 0):
+                    try:
+                        return float(val)
+                    except (TypeError, ValueError):
+                        continue
+        return None
+    
+
+    def _sync_high_prices(self):
+        """
+        Populate / refresh self.high_prices from DB (persisted HWM)
+        and current holdings. Call after holdings update, config reload,
+        or on startup.
+        """
+        with self.lock:
+            for sym in list(self.symbols):
+                # Prefer DB value (survives restarts)
+                hwm = get_high_price(sym)
+                if hwm is not None and hwm > 0:
+                    self.high_prices[sym] = hwm
+                # Fallback: use current average cost if we hold the position
+                elif sym in self.holdings and self.holdings[sym].get("buy_price"):
+                    bp = float(self.holdings[sym]["buy_price"])
+                    if bp > 0:
+                        self.high_prices[sym] = bp
+                        # Persist the seed so next restart is correct
+                        save_state(symbol=sym, high_price=bp)
+                # Clean up symbols we no longer care about
+                if sym not in self.symbols_config and sym in self.high_prices:
+                    self.high_prices.pop(sym, None)
 
     def reload_config(self):
         """Hot-reload configuration."""
@@ -492,6 +651,8 @@ class TradingBot:
                     if sym not in self.symbols_config:
                         self.current_market_prices.pop(sym, None)
                         self.auto_buy_allowed.pop(sym, None)
+            # Refresh HWM cache for (possibly) new symbol set
+            self._sync_high_prices()
 
             console.print("[bold cyan]Config reloaded successfully[/bold cyan]")
 
@@ -524,18 +685,30 @@ class TradingBot:
             elif service in ("ACCT_ACTIVITY", "USER_ACTIVITY"):
                 self._handle_fill(item)
 
+
     def _handle_price(self, item):
-        """Process price updates."""
+        """Process price updates and maintain high-water mark."""
         for content in item.get("content", []):
             sym = content.get("key")
-            if sym in self.current_market_prices:
-                try:
-                    price = float(content.get("3") or 0) # 3 - Last Price (Last trade)
-                    if price > 0:
-                        with self.lock:
-                            self.current_market_prices[sym] = price
-                except:
-                    pass
+            if sym not in self.current_market_prices:
+                continue
+            try:
+                price = float(content.get("3") or 0)
+                if price <= 0:
+                    continue
+
+                with self.lock:
+                    self.current_market_prices[sym] = price
+
+                    # Only track HWM while we actually hold the position
+                    if sym in self.holdings and self.holdings[sym].get("shares", 0) > 0:
+                        current_hwm = self.high_prices.get(sym)
+                        if current_hwm is None or price > current_hwm:
+                            self.high_prices[sym] = price
+                            # Persist only when it actually moves (avoids DB spam)
+                            save_state(symbol=sym, high_price=price)
+            except (TypeError, ValueError):
+                pass
 
     def _handle_fill(self, item):
         """
@@ -571,6 +744,10 @@ class TradingBot:
                     self.holdings.pop(symbol, None)
                     self.auto_buy_allowed[symbol] = True
 
+                    # Clear HWM from memory
+                    with self.lock:
+                        self.high_prices.pop(symbol, None)
+
                     # Log the transaction
                     log_transaction(
                         action="SELL_FILLED",
@@ -589,6 +766,7 @@ class TradingBot:
                         last_sell_qty=qty,
                         last_buy_price=None,  # Position closed
                         last_buy_qty=None,
+                        high_price=price,
                     )
 
                     time.sleep(2)
@@ -609,10 +787,14 @@ class TradingBot:
                     )
 
                     # Update state: record buy
+                    # Seed both memory and DB
+                    with self.lock:
+                        self.high_prices[symbol] = price
                     save_state(
                         symbol=symbol,
                         last_buy_price=price,
                         last_buy_qty=qty,
+                        high_price=price,
                     )
 
                     time.sleep(1.5)
@@ -698,6 +880,7 @@ class TradingBot:
 
         self.update_holdings_from_api()
         time.sleep(2)
+        self._sync_high_prices()
         for sym in self.symbols:
             self.ensure_orders(sym)
 
