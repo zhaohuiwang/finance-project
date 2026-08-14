@@ -7,18 +7,19 @@
 # stemd service           ExecStart=... --port 8051
 # New permanent default   default=8051 in bot3.py
 
+# Stop loss orders with loss dollar/pct parameters is based on actual buy price from Schwab if exist otherwise buy_target_price. stop_loss_dollar preceeds stop_loss_pct. Stop loss order is set as duration: "GOOD_TILL_CANCEL", all other orders are duration: "DAY"
 symbols:
     WDC:
       fixed_shares: 200
       
-      buy_target_price: 441.1
+      buy_target_price: 401.1
 
       trail_activation_price: 454   # threshold to trigger trailing sell order
       trail_offset_pct: 0.1       # minimal 0.1, trail sell by % from high
       limit_sell_price: 464.5     # hard take-profit limit
 
       stop_loss_dollar: 0
-      stop_loss_pct: 2.0            # ignored while dollar > 0
+      stop_loss_pct: 5.0            # ignored while dollar > 0
       
       buy_drop_pct: 5.0              
 
@@ -26,13 +27,13 @@ symbols:
     MU:
       fixed_shares: 49
       
-      buy_target_price: 890.1
+      buy_target_price: 946.1
 
-      trail_activation_price: 940   # threshold to trigger trailing sell order
+      trail_activation_price: 995   # threshold to trigger trailing sell order
       trail_offset_pct: 0.1           # trail sell by % from high
-      limit_sell_price: 990         # hard take-profit limit
+      limit_sell_price: 1200         # hard take-profit limit
 
-      stop_loss_dollar: 0
+      stop_loss_dollar: 50
       stop_loss_pct: 8.0            # ignored while dollar > 0
       
       buy_drop_pct: 5.0 

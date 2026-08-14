@@ -385,7 +385,7 @@ class TradingBot:
             sell_stoplimit_price=str(round(stop_price * 0.99, 2)),
             session_sell_limit="NORMAL",
             session_sell_stoplimit="NORMAL",
-            duration="DAY",
+            duration="GOOD_TILL_CANCEL",
         )
         try:
             response = self.client.place_order(self.account_hash, oco)
@@ -407,7 +407,7 @@ class TradingBot:
         holding = self.holdings[symbol]
         order = {
             "orderType": "MARKET",
-            "session": "NORMAL",
+            "session": "SEAMLESS",
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [

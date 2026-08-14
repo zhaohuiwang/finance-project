@@ -17,6 +17,22 @@ Duration = Literal[
     "UNKNOWN",
 ]
 
+"""
+The four combinations
+session	    duration	        Effective execution hours	Order remains
+NORMAL	    DAY	                9:30 AM-4:00 PM ET	        Today only
+NORMAL	    GOOD_TILL_CANCEL	9:30 AM-4:00 PM ET	        Up to 180 days
+SEAMLESS	DAY	                7:00 AM-8:00 PM ET	        Today only
+SEAMLESS	GOOD_TILL_CANCEL	7:00 AM-8:00 PM ET	        Up to 180 days
+
+The Schwab API documentation describes NORMAL as the regular session, 9:30 AM-4:00 PM ET, and SEAMLESS as the combination of the pre-market, normal, and after-market sessions.
+
+Schwab's current extended-hours documentation specifies the practical windows as 7:00-9:25 AM ET, 9:30 AM-4:00 PM ET, and 4:05-8:00 PM ET, with five-minute closures around the regular session boundaries.
+
+Schwab's extended-hours rules generally restrict extended-hours equity trading to limit orders. In particular, Schwab states that market, stop, and stop-limit orders aren't eligible for extended-hours execution in the standard extended-hours sessions.
+
+"""
+
 # status
 OrderRequest = Literal[
     "AWAITING_PARENT_ORDER",
