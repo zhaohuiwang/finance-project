@@ -18,44 +18,47 @@ def get_connection():
     """Get a database connection with timeout for thread safety."""
     return sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
 
-
 def init_db():
-    """Initialize database tables."""
+    """Initialize database tables (includes high_price from the start)."""
     try:
         conn = get_connection()
         c = conn.cursor()
 
-        c.execute("""CREATE TABLE IF NOT EXISTS transactions (
-                    action TEXT NOT NULL,
-                    symbol TEXT,
-                    qty REAL,
-                    price REAL,
-                    high_price REAL,
-                    order_id TEXT,
-                    order_status TEXT,
-                    note TEXT,
-                    ts TEXT NOT NULL
-                )""")
-
+        # Transactions log
         c.execute("""
-              CREATE TABLE IF NOT EXISTS state (
-              symbol TEXT PRIMARY KEY,
-              last_buy_price REAL,
-              last_buy_qty REAL,
-              last_buy_time TEXT,
-              last_sell_price REAL,
-              last_sell_qty REAL,
-              last_sell_time TEXT
-              )
-              """)
+            CREATE TABLE IF NOT EXISTS transactions (
+                action       TEXT NOT NULL,
+                symbol       TEXT,
+                qty          REAL,
+                price        REAL,
+                order_id     TEXT,
+                order_status TEXT,
+                note         TEXT,
+                ts           TEXT NOT NULL
+            )
+        """)
+
+        # Per-symbol state (now includes high_price)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS state (
+                symbol          TEXT PRIMARY KEY,
+                last_buy_price  REAL,
+                last_buy_qty    REAL,
+                last_buy_time   TEXT,
+                last_sell_price REAL,
+                last_sell_qty   REAL,
+                last_sell_time  TEXT,
+                high_price      REAL
+            )
+        """)
 
         conn.commit()
         conn.close()
+
         print(f"[DB] ✅ Database initialized successfully at {DB_PATH}")
     except Exception as e:
         print(f"[DB ERROR] Failed to initialize database: {e}")
         import traceback
-
         traceback.print_exc()
 
 
@@ -102,7 +105,7 @@ def save_state(
     last_buy_qty: float | None = None,
     last_sell_price: float | None = None,
     last_sell_qty: float | None = None,
-    high_price: float | None = None,
+    high_price: float | None = None,          # NEW
 ):
     try:
         conn = get_connection()
@@ -156,7 +159,6 @@ def save_state(
         print(f"[DB ERROR] Failed to save state for {symbol}: {e}")
         import traceback
         traceback.print_exc()
-
 # ==================== GETTERS ====================
 
 
