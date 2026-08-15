@@ -603,3 +603,31 @@ account.refresh()
 
 # if account.buying_power > 20000:
 #     place_trade()
+
+
+
+import os
+from dotenv import load_dotenv
+import schwabdev
+load_dotenv()
+
+
+client = schwabdev.Client(
+    os.getenv("APP_KEY"),
+    os.getenv("APP_SECRET"),
+    os.getenv("CALLBACK_URL")
+    )
+
+streamer = schwabdev.Stream(client) 
+streamer.start(receiver=print) 
+# receiver=print show everything including response, data, notify categories. simply prints every message Schwab server sends to your receiver.
+# 1. response — result of your request. "I received your subscription request, and it succeeded."
+# 2. data — actual streaming data. "Here is new data for your subscription."
+# 3. notify — connection/system notification. "The streaming connection is still alive."
+
+
+streamer.send(streamer.level_one_equities("INTC,MU", "0,1,2,3,8,10,11,18,19,20,21"))
+
+streamer.send(streamer.account_activity("Account Activity", "0,1,2,3"))
+
+streamer.stop()

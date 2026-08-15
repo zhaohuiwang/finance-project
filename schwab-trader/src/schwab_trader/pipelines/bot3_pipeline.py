@@ -677,12 +677,13 @@ class TradingBot:
                 return
         if not isinstance(message, dict):
             return
-
+        # Three messages that Schwab's streaming server sends to your receiver: 'response', 'data' and 'notify'. We only focus on 'data'.
         for item in message.get("data", []):
             service = item.get("service")
             if service == "LEVELONE_EQUITIES":
                 self._handle_price(item)
-            elif service in ("ACCT_ACTIVITY", "USER_ACTIVITY"):
+            # elif service in ("ACCT_ACTIVITY", "USER_ACTIVITY"):
+            elif service == "ACCT_ACTIVITY":
                 self._handle_fill(item)
 
 
@@ -817,7 +818,7 @@ class TradingBot:
 
         symbols_str = ",".join(self.symbols)
         if symbols_str:
-            self.streamer.send(self.streamer.level_one_equities(symbols_str, "0,1,2,3"))
+            self.streamer.send(self.streamer.level_one_equities(symbols_str, "0,1,2,3,8,10,11,18,19,20,21")) # 0: Symbol, 1: BidPrice, 2: AskPrice, 3: Last tradePrice, 8:TotalVolumeTradedToday, 10: Today'sHighPrice, 11: Today'sLowPrice, 12: PreviousClosePrice,18: NetChange, 19: 52-week-high, 20: 52-week-low, 21: P/E 
 
             self.streamer.send(
                 self.streamer.account_activity("Account Activity", "0,1,2,3")
@@ -982,7 +983,7 @@ streamer = schwabdev.Stream(client) - create objects that know how to authentica
 streamer.start(receiver=print) - the streaming class manager.
 Conceptually, schwabdev eventually does something equivalent to: websocket.connect("wss://....") where wss means WebSocket Secure. 
 
-streamer.send(streamer.level_one_equities("AAPL", 0,1,2,3")) - subscription message
+streamer.send(streamer.level_one_equities("AAPL", "0,1,2,3")) - subscription message
 
 start_stream() only connects and subscribes. The useful work happens in the receiver callbacks, which update in-memory state that the rest of the pipeline reads.
 
