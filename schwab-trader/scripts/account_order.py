@@ -492,7 +492,7 @@ symbol_quantity = [
 ]
 
 
-from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=0, hours=2, minutes=1)
+from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2, hours=2, minutes=1)
 to_time = dt.datetime.now(dt.timezone.utc)
 
 
@@ -547,11 +547,17 @@ response = client.quotes(
 
 response = client.transactions(
     accountHash=hashValue,
-    startDate="",
-    endDate="",
-    types="",
+    startDate=from_time,
+    endDate=to_time,
+    types="TRADE",
     symbol=None,  # str | None = None
 )  # All transactions for a specific account.
+
+data = response.json()
+import json
+acctivity_list = json.dumps(data, indent=4)
+print(acctivity_list )
+
 
 response = client.transaction_details(
     accountHash=hashValue, transactionId=""  # str | int
@@ -631,3 +637,20 @@ streamer.send(streamer.level_one_equities("INTC,MU", "0,1,2,3,8,10,11,18,19,20,2
 streamer.send(streamer.account_activity("Account Activity", "0,1,2,3"))
 
 streamer.stop()
+
+
+# Compare the steaming data to historical account acctivity data
+from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2, hours=2, minutes=1)
+to_time = dt.datetime.now(dt.timezone.utc)
+response = client.transactions(
+    accountHash=hashValue,
+    startDate=from_time,
+    endDate=to_time,
+    types="TRADE",
+    symbol=None,  # str | None = None
+)  # All transactions for a specific account.
+
+data = response.json()
+import json
+acctivity_list = json.dumps(data, indent=4)
+print(acctivity_list )

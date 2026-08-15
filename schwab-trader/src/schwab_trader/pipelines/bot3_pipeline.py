@@ -718,6 +718,16 @@ class TradingBot:
         sell executions before re-evaluating the trading strategy.
         """
         for content in item.get("content", []):
+            message_type = content.get("2")
+            message_data = content.get("3")
+            if not message_data:
+                continue
+
+            try:
+                details = json.loads(message_data)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
             if content.get("messageType", "").upper() not in (
                 "FILL",
                 "EXECUTION",
