@@ -1,3 +1,11 @@
+
+
+"""
+Schema section
+https://developer.schwab.com/products/trader-api--individual/details/specifications/Retail%20Trader%20API%20Production
+
+"""
+
 from typing import Literal  # TypedDict
 
 Session = Literal["NORMAL", "AM", "PM", "SEAMLESS"]

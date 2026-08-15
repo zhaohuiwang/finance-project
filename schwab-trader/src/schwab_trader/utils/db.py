@@ -159,9 +159,9 @@ def save_state(
         print(f"[DB ERROR] Failed to save state for {symbol}: {e}")
         import traceback
         traceback.print_exc()
+
+
 # ==================== GETTERS ====================
-
-
 def get_last_buy_price(symbol: str) -> float | None:
     try:
         conn = get_connection()
@@ -212,6 +212,7 @@ def get_high_price(symbol: str) -> float | None:
     except Exception as e:
         print(f"[DB] Error getting high_price for {symbol}: {e}")
         return None
+
     
 def get_last_sell_qty(symbol: str) -> float | None:
     try:
