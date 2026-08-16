@@ -832,7 +832,7 @@ class TradingBot:
 
             self.streamer.send(
                 self.streamer.account_activity("Account Activity", "0,1,2,3")
-            )
+            ) # 0: SubscriptionKey,Symbol, 1: Account, 2: MessageType, 3: MessageData.
 
         self.update_holdings_from_api()
         time.sleep(2)
