@@ -673,16 +673,15 @@ class TradingBot:
         if isinstance(message, str):
             try:
                 message = json.loads(message)
-            except:
+            except (json.JSONDecodeError, TypeError):
                 return
         if not isinstance(message, dict):
             return
-        # Three messages that Schwab's streaming server sends to your receiver: 'response', 'data' and 'notify'. We only focus on 'data'.
+        # Three messages that Schwab's streaming server sends to your receiver: 'response', 'data' and 'notify'. They are all organized as (nested) lists of dictionaries. We only focus on 'data'.
         for item in message.get("data", []):
             service = item.get("service")
             if service == "LEVELONE_EQUITIES":
                 self._handle_price(item)
-            # elif service in ("ACCT_ACTIVITY", "USER_ACTIVITY"):
             elif service == "ACCT_ACTIVITY":
                 self._handle_fill(item)
 
@@ -718,37 +717,64 @@ class TradingBot:
         sell executions before re-evaluating the trading strategy.
         """
         for content in item.get("content", []):
-            message_type = content.get("2")
-            message_data = content.get("3")
-            if not message_data:
+            msg_type = content.get("2") # Sting
+            msg_data = content.get("3") # String containing JSON
+            if not msg_data:
                 continue
+            if msg_type.get("messageType", "").upper() not in (
+                            #'OrderAccepted',
+                            'OrderFillCompleted',
+                        ): 
+                            # Schwab does not have clear documentation, only based on https://tylerebowers.github.io/Schwabdev/?source=pages%2Fstream.html
+                            continue
 
             try:
-                details = json.loads(message_data)
+                activity = json.loads(msg_data)
             except (json.JSONDecodeError, TypeError):
                 continue
+            # Note: json.load() doesn't necessarily give you a dictionary. 
+            # 1. json.loads('{"a": 1}')             # → dict 
+            # 2. json.loads('[{"a": 1},{"a": 2}]')  # → list 
+            # 3. json.loads('"hello"')              # → str
+            # In the example from the above reference, it's a dict
 
-            if content.get("messageType", "").upper() not in (
-                "FILL",
-                "EXECUTION",
-                "ORDER_FILL",
-            ):
+            base_event = activity.get("BaseEvent", {})
+
+            if base_event.get("EventType") != "OrderFillCompleted":
                 continue
 
-            symbol = content.get("symbol")
-            if not symbol or symbol not in self.symbols_config:
-                continue
+            fill = base_event.get(
+                "OrderFillCompletedEventOrderLegQuantityInfo",
+                {}
+            )
 
-            side = content.get("instruction", "").upper()
+            execution = fill.get("ExecutionInfo", {})
+            order = fill.get("OrderInfoForTransactionPosting", {})
+
+            from decimal import Decimal
+            def decode_value(x):
+                """Decode Schwab's {lo, signScale} decimal format. e.g. {"lo":"213500000","signScale":12} lower 64 bits of the decimal's integer/mantissa"""
+                lo = Decimal(x["lo"])
+                sign_scale = int(x["signScale"])
+
+                value = lo / (Decimal(10) ** (sign_scale // 2))
+
+                if sign_scale % 2:
+                    value = -value
+
+                return value
 
             try:
-                qty = float(content.get("quantity") or 0)
-                price = float(content.get("price") or 0)
-                order_id = content.get("orderId") or content.get("order_id")
+                symbol = order.get("Symbol", '').uppor()
+                side = order.get("BuySellCode", '').uppor()
+                qty = decode_value(order.get("Quantity", 0))
+                price = decode_value(execution.get("ExecutionPrice", 0))
+                order_id = execution.get("ExecutionID", '')
             except:
                 continue
 
-            console.print(f"[bold]{side} FILL: {symbol} @ ${price:.2f} x {qty}[/bold]")
+
+            console.print(f"[bold]{side} FILL: {symbol} @ ${price:.2f} x {qty}[/bold] (orde_id:{order_id})")
 
             with self.lock:
                 if side in ("SELL", "SELL_SHORT"):
@@ -865,6 +891,8 @@ class TradingBot:
                 time.sleep(15)
 
     # ====================== Market hours ======================
+    # schwabdev has start_auto() alternative
+    # https://tylerebowers.github.io/Schwabdev/?source=pages%2Fstream.html
     def now_et(self) -> datetime:
         return datetime.now(self.ET)
 
