@@ -850,8 +850,18 @@ class TradingBot:
                 pass
 
         self.streamer = schwabdev.Stream(self.client)
-        self.streamer.start(receiver=self.unified_receiver)
+        # self.streamer.start(receiver=self.unified_receiver)
+        # Use start_auto instead of start
+        self.streamer.start_auto(
+            receiver=self.unified_receiver,
+            start_time=dt_time(9, 29, 0),      # slightly before open
+            stop_time=dt_time(16, 0, 0),
+            on_days=(0, 1, 2, 3, 4),           # Mon–Fri
+            now_timezone=self.ET,
+            daemon=True,
+        )
 
+        # Subscriptions are remembered by start_auto and re-sent every day
         symbols_str = ",".join(self.symbols)
         if symbols_str:
             self.streamer.send(self.streamer.level_one_equities(symbols_str, "0,1,2,3,8,10,11,18,19,20,21")) # 0: Symbol, 1: BidPrice, 2: AskPrice, 3: Last tradePrice, 8:TotalVolumeTradedToday, 10: Today'sHighPrice, 11: Today'sLowPrice, 12: PreviousClosePrice,18: NetChange, 19: 52-week-high, 20: 52-week-low, 21: P/E 
@@ -893,6 +903,7 @@ class TradingBot:
     # ====================== Market hours ======================
     # schwabdev has start_auto() alternative
     # https://tylerebowers.github.io/Schwabdev/?source=pages%2Fstream.html
+    # streamer.start_auto() only manages WebSocket connection (connect at open, disconnect at close). You still need the Market hours section if you want the bot to: 1. Avoid placing new orders outside the 9:30-16:00 ET. 2. Pause the monitor_logic loop overnight / on weekends. 3. Rest daily equity / risk counteres. 4. Keep trading_enabled = False when the market is close.
     def now_et(self) -> datetime:
         return datetime.now(self.ET)
 
