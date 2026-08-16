@@ -833,6 +833,7 @@ class TradingBot:
             self.streamer.send(
                 self.streamer.account_activity("Account Activity", "0,1,2,3")
             ) # 0: SubscriptionKey,Symbol, 1: Account, 2: MessageType, 3: MessageData.
+            # MessageType ['SUBSCRIBED','ORDER_ENTRY','ORDER_CANCEL','ORDER_FILL','ORDER_PARTIAL_FILL']
 
         self.update_holdings_from_api()
         time.sleep(2)
