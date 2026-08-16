@@ -717,11 +717,15 @@ class TradingBot:
         sell executions before re-evaluating the trading strategy.
         """
         for content in item.get("content", []):
-            msg_type = content.get("2") # Sting
-            msg_data = content.get("3") # String containing JSON
-            if not msg_data:
-                continue
-            if msg_type.get("messageType", "").upper() not in (
+            # Schwabdev account activity fields (common mapping):
+            # "0" = SubscriptionKey / Symbol-ish
+            # "1" = Account
+            # "2" = MessageType (string)
+            # "3" = MessageData (JSON string)
+            msg_type = content.get('2', '').upper()
+            msg_data = content.get('3')
+
+            if not msg_data or msg_type not in (
                             #'OrderAccepted',
                             'OrderFillCompleted',
                         ): 
@@ -729,7 +733,7 @@ class TradingBot:
                             continue
 
             try:
-                activity = json.loads(msg_data)
+                activity = json.loads(msg_data) if isinstance(msg_data, str) else msg_data
             except (json.JSONDecodeError, TypeError):
                 continue
             # Note: json.load() doesn't necessarily give you a dictionary. 
@@ -743,34 +747,42 @@ class TradingBot:
             if base_event.get("EventType") != "OrderFillCompleted":
                 continue
 
-            fill = base_event.get(
+            fill_info = base_event.get(
                 "OrderFillCompletedEventOrderLegQuantityInfo",
                 {}
             )
 
-            execution = fill.get("ExecutionInfo", {})
-            order = fill.get("OrderInfoForTransactionPosting", {})
+            execution = fill_info.get("ExecutionInfo", {})
+            order_info = fill_info.get("OrderInfoForTransactionPosting", {})
 
+            # ---------- Schwab decimal decoder ----------
             from decimal import Decimal
-            def decode_value(x):
+            def decode_schwab_decimal(obj) -> float:
                 """Decode Schwab's {lo, signScale} decimal format. e.g. {"lo":"213500000","signScale":12} lower 64 bits of the decimal's integer/mantissa"""
-                lo = Decimal(x["lo"])
-                sign_scale = int(x["signScale"])
-
-                value = lo / (Decimal(10) ** (sign_scale // 2))
-
-                if sign_scale % 2:
-                    value = -value
-
-                return value
+                if obj is None:
+                    return 0.0
+                if isinstance(obj, (int, float)):
+                    return float(obj)
+                if isinstance(obj, dict) and "lo" in obj:
+                    from decimal import Decimal
+                    try:
+                        lo = Decimal(str(obj["lo"]))
+                        sign_scale = int(obj.get("signScale", 0))
+                        value = lo / (Decimal(10) ** (sign_scale // 2))
+                        if sign_scale % 2:
+                            value = -value
+                        return float(value)
+                    except Exception:
+                        return 0.0
+                return 0.0
 
             try:
-                symbol = order.get("Symbol", '').uppor()
-                side = order.get("BuySellCode", '').uppor()
-                qty = decode_value(order.get("Quantity", 0))
-                price = decode_value(execution.get("ExecutionPrice", 0))
+                symbol = order_info.get("Symbol", '').upper()
+                side = order_info.get("BuySellCode", '').upper()
+                qty = decode_schwab_decimal(order_info.get("Quantity", 0))
+                price = decode_schwab_decimal(execution.get("ExecutionPrice", 0))
                 order_id = execution.get("ExecutionID", '')
-            except:
+            except Exception:
                 continue
 
 
@@ -780,53 +792,43 @@ class TradingBot:
                 if side in ("SELL", "SELL_SHORT"):
                     self.holdings.pop(symbol, None)
                     self.auto_buy_allowed[symbol] = True
+                    self.high_prices.pop(symbol, None)
 
-                    # Clear HWM from memory
-                    with self.lock:
-                        self.high_prices.pop(symbol, None)
-
-                    # Log the transaction
+                    # Log the transaction and update the state
                     log_transaction(
                         action="SELL_FILLED",
                         symbol=symbol,
                         qty=qty,
                         price=price,
-                        order_id=order_id,
+                        order_id=str(order_id) if order_id else None,
                         order_status="FILLED",
                         note="OCO or manual sell",
                     )
 
-                    # Update state: record sell + reset buy fields
                     save_state(
                         symbol=symbol,
                         last_sell_price=price,
                         last_sell_qty=qty,
                         last_buy_price=None,  # Position closed
                         last_buy_qty=None,
-                        high_price=price,
+                        high_price=None,
                     )
-
-                    time.sleep(2)
-                    self.ensure_orders(symbol)
 
                 elif side in ("BUY", "BUY_TO_COVER"):
                     self.holdings[symbol] = {"shares": qty, "buy_price": price}
+                    self.high_prices[symbol] = price
 
-                    # Log the transaction
+                    # Log the transaction and update the state
                     log_transaction(
                         action="BUY_FILLED",
                         symbol=symbol,
                         qty=qty,
                         price=price,
-                        order_id=order_id,
+                        order_id=str(order_id) if order_id else None,
                         order_status="FILLED",
                         note="Auto buy",
                     )
 
-                    # Update state: record buy
-                    # Seed both memory and DB
-                    with self.lock:
-                        self.high_prices[symbol] = price
                     save_state(
                         symbol=symbol,
                         last_buy_price=price,
@@ -834,10 +836,9 @@ class TradingBot:
                         high_price=price,
                     )
 
-                    time.sleep(1.5)
-                    self.ensure_orders(symbol)
-
             # Refresh data after any fill
+            time.sleep(1.5)
+            self.ensure_orders(symbol)
             self.update_holdings_from_api()
             self.invalidate_open_orders_cache()
 
