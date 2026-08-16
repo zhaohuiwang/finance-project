@@ -290,14 +290,16 @@ class TradingBot:
             console.print(f"[red]Error cancelling orders for {symbol}: {e}[/red]")
 
     # ====================== ORDER PLACEMENT ======================
-    def place_buy_order(self, symbol: str, qty: int) -> bool:
+    def place_limit_buy(self, symbol: str, limit_price: str, qty: int) -> bool:
         """Submit a market buy order."""
         if not self.risk_checks_pass(symbol) or not self.can_place_order(symbol):
             return False
+        cfg = self.symbols_config[symbol]
         order = {
-            "orderType": "MARKET",
-            "session": "NORMAL",
-            "duration": "DAY",
+            "orderType": "LIMIT",
+            "session": cfg.session,
+            "duration": cfg.duration,
+            "price": str(limit_price),
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
                 {
@@ -373,7 +375,7 @@ class TradingBot:
         # Scenario 1 – Already past hard take-profit → market sell
         # ------------------------------------------------------------------
         if price >= cfg.limit_sell_price * 1.01:
-            self.place_immediate_sell(symbol)
+            self.place_limit_sell(symbol, cfg.limit_sell_price)
             return
 
         # ------------------------------------------------------------------
@@ -385,8 +387,8 @@ class TradingBot:
                 quantity=qty,
                 sell_limit_price=str(cfg.limit_sell_price),
                 stop_price_offset=cfg.trail_offset_pct,
-                session="NORMAL",
-                duration="DAY",
+                session=cfg.session,
+                duration=cfg.duration,
             )
             try:
                 response = self.client.place_order(self.account_hash, oco)
@@ -424,9 +426,9 @@ class TradingBot:
             sell_limit_price=str(cfg.limit_sell_price),
             sell_stop_price=str(stop_price),
             sell_stoplimit_price=str(round(stop_price * 0.99, 2)),
-            session_sell_limit="NORMAL",
-            session_sell_stoplimit="NORMAL",
-            duration="GOOD_TILL_CANCEL",
+            session_sell_limit=cfg.session,
+            session_sell_stoplimit=cfg.session,
+            duration=cfg.stop_loss_order_duration,
         )
         try:
             response = self.client.place_order(self.account_hash, oco)
@@ -441,15 +443,17 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]OCO failed for {symbol}: {e}[/red]")
 
-    def place_immediate_sell(self, symbol: str):
+    def place_limit_sell(self, symbol: str, limit_price):
         """Immediately liquidate position."""
         if not self.can_place_order(symbol) or symbol not in self.holdings:
             return
         holding = self.holdings[symbol]
+        cfg = self.symbols_config[symbol]
         order = {
-            "orderType": "MARKET",
-            "session": "SEAMLESS",
-            "duration": "DAY",
+            "orderType": "LIMIT",
+            "session": cfg.session,
+            "duration": cfg.duration,
+            "price": str(limit_price),
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
                 {
@@ -505,7 +509,7 @@ class TradingBot:
             )
             if trigger and self.risk_checks_pass(symbol):
                 console.print(f"[yellow]Ensuring BUY order for {symbol}[/yellow]")
-                self.place_buy_order(symbol, cfg.fixed_shares)
+                self.place_limit_buy(symbol, price, cfg.fixed_shares)
 
         # ------------------------------------------------------------------
         # Have position but no sell order → place protective / trailing OCO

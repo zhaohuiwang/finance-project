@@ -15,6 +15,9 @@ class SymbolConfig(BaseModel):
     buy_drop_pct: float = Field(ge=0)
     stop_loss_pct: float = Field(ge=0)
     stop_loss_dollar: float = Field(default=0.0, ge=0)
+    session: str = Field(default="NORMAL")
+    duration: str = Field(default="DAY")
+    stop_loss_order_duration: str = Field(default="GOOD_TILL_CANCEL")
 
     # Trailing parameters
     trail_activation_price: float = Field(gt=0)
