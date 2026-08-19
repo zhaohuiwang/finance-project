@@ -48,7 +48,8 @@ def init_db():
                 last_sell_price REAL,
                 last_sell_qty   REAL,
                 last_sell_time  TEXT,
-                high_price      REAL
+                high_price      REAL,
+                ts              TEXT NOT NULL
             )
         """)
 
@@ -70,6 +71,7 @@ def log_transaction(
     order_id: str = None,
     order_status: str = None,
     note: str = None,
+    ts: str = None
 ):
     """Log a transaction with optional fields."""
     try:
@@ -105,11 +107,14 @@ def save_state(
     last_buy_qty: float | None = None,
     last_sell_price: float | None = None,
     last_sell_qty: float | None = None,
-    high_price: float | None = None,          # NEW
+    high_price: float | None = None,
+    ts: str | None = None
 ):
+
     try:
         conn = get_connection()
-        ts = datetime.datetime.now().isoformat()
+        if ts is None:
+            ts = datetime.datetime.now().isoformat()
 
         existing = conn.execute(
             """
@@ -148,10 +153,10 @@ def save_state(
             REPLACE INTO state (
                 symbol, last_buy_price, last_buy_qty, last_buy_time,
                 last_sell_price, last_sell_qty, last_sell_time,
-                high_price
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                high_price, ts
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (symbol, buy_price, buy_qty, buy_time, sell_price, sell_qty, sell_time, high),
+            (symbol, buy_price, buy_qty, buy_time, sell_price, sell_qty, sell_time, high, ts),
         )
         conn.commit()
         conn.close()

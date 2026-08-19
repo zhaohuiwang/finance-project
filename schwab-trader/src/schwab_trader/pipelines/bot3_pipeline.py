@@ -95,7 +95,7 @@ class TradingBot:
         # Caches
         self._open_orders_cache = None
         self._open_orders_cache_time = 0
-        self.open_orders_cache_ttl = 30
+        self.open_orders_cache_ttl = 45
 
         self.daily_start_equity = self.get_account_snapshot()["equity"]
         self.today = date.today()
@@ -201,24 +201,25 @@ class TradingBot:
             return self._open_orders_cache
 
         to_time = datetime.now(timezone.utc)
-        from_time = to_time - timedelta(days=30)
-        try:
-            resp = self.client.account_orders(
-                self.account_hash,
-                fromEnteredTime=from_time,
-                toEnteredTime=to_time,
-                status="WORKING",
-            )
-            orders = resp.json() or []
-            flat = []
-            for root in orders:
-                flat.extend(self._flatten_order(root))
-            self._open_orders_cache = flat
-            self._open_orders_cache_time = now
-            return flat
-        except Exception as e:
-            console.print(f"[red]Open orders error: {e}[/red]")
-            return self._open_orders_cache or []
+        from_time = to_time - timedelta(days=7)
+        for attempt in range(2):
+            try:
+                resp = self.client.account_orders(
+                    self.account_hash,
+                    fromEnteredTime=from_time,
+                    toEnteredTime=to_time,
+                    status="WORKING",
+                )
+                orders = resp.json() or []
+                flat = []
+                for root in orders:
+                    flat.extend(self._flatten_order(root))
+                self._open_orders_cache = flat
+                self._open_orders_cache_time = now
+                return flat
+            except Exception as e:
+                console.print(f"[red]Open orders error: {e}[/red]")
+                return self._open_orders_cache or []
 
     def _flatten_order(self, order):
         results = []
@@ -714,6 +715,7 @@ class TradingBot:
             except (TypeError, ValueError):
                 pass
 
+
     def _handle_fill(self, item):
         """
         Process order execution events.
@@ -729,6 +731,26 @@ class TradingBot:
             msg_type = content.get('2', '').upper()
             msg_data = content.get('3')
 
+    ###################################################
+            from pathlib import Path
+
+            # Near the top of your file
+            PROJECT_ROOT = Path(__file__).resolve().parents[2]   # adjust the number if needed
+            STATE_DIR = PROJECT_ROOT / "data"                    # or "logs", "state", etc.
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+            # Then use it like this:
+            LOG_FILE = STATE_DIR / "updates.log"
+                    
+            entry = {
+                "timestamp": datetime.now().isoformat(),
+                "value": content
+                }
+                    
+            with open(LOG_FILE, "a") as f:          # "a" = append mode
+                f.write(json.dumps(entry) + "\n")   # one JSON object per line
+    ###################################################
+
             if not msg_data or msg_type not in (
                             #'OrderAccepted',
                             'OrderFillCompleted',
@@ -737,7 +759,7 @@ class TradingBot:
                             continue
 
             try:
-                activity = json.loads(msg_data) if isinstance(msg_data, str) else msg_data
+                msg_data_parsed = json.loads(msg_data) if isinstance(msg_data, str) else msg_data
             except (json.JSONDecodeError, TypeError):
                 continue
             # Note: json.load() doesn't necessarily give you a dictionary. 
@@ -746,7 +768,8 @@ class TradingBot:
             # 3. json.loads('"hello"')              # → str
             # In the example from the above reference, it's a dict
 
-            base_event = activity.get("BaseEvent", {})
+            order_id = msg_data_parsed.get("SchwabOrderID", '')
+            base_event = msg_data_parsed.get("BaseEvent", {})
 
             if base_event.get("EventType") != "OrderFillCompleted":
                 continue
@@ -755,12 +778,12 @@ class TradingBot:
                 "OrderFillCompletedEventOrderLegQuantityInfo",
                 {}
             )
-
-            execution = fill_info.get("ExecutionInfo", {})
+            # streamer.account_activity("Account Activity", "0,1,2,3")
+            # In the message data (a list[dict-like]) returned, "data": [...]> when "service": "ACCT_ACTIVITY" and "content":{..., "2": "OrderFillCompleted", ...}, "content":{..., "3":{...,"BaseEvent": <there are three sections including "QuantityInfo", "ExecutionInfo", and "OrderInfoForTransactionPosting". All may contain quantity, price infomation.>, ...} 
+            execution_info = fill_info.get("ExecutionInfo", {})
             order_info = fill_info.get("OrderInfoForTransactionPosting", {})
 
             # ---------- Schwab decimal decoder ----------
-            from decimal import Decimal
             def decode_schwab_decimal(obj) -> float:
                 """Decode Schwab's {lo, signScale} decimal format. e.g. {"lo":"213500000","signScale":12} lower 64 bits of the decimal's integer/mantissa"""
                 if obj is None:
@@ -783,9 +806,9 @@ class TradingBot:
             try:
                 symbol = order_info.get("Symbol", '').upper()
                 side = order_info.get("BuySellCode", '').upper()
-                qty = decode_schwab_decimal(order_info.get("Quantity", 0))
-                price = decode_schwab_decimal(execution.get("ExecutionPrice", 0))
-                order_id = execution.get("ExecutionID", '')
+                qty = decode_schwab_decimal(execution_info.get("ExecutionQuantity", 0))
+                price = decode_schwab_decimal(execution_info.get("ExecutionPrice", 0))
+                timestamp = execution_info.get("ExecutionTimeStamp", "")
             except Exception:
                 continue
 
@@ -807,6 +830,7 @@ class TradingBot:
                         order_id=str(order_id) if order_id else None,
                         order_status="FILLED",
                         note="OCO or manual sell",
+                        ts=timestamp,
                     )
 
                     save_state(
@@ -816,6 +840,7 @@ class TradingBot:
                         last_buy_price=None,  # Position closed
                         last_buy_qty=None,
                         high_price=None,
+                        ts=timestamp,
                     )
 
                 elif side in ("BUY", "BUY_TO_COVER"):
@@ -831,6 +856,7 @@ class TradingBot:
                         order_id=str(order_id) if order_id else None,
                         order_status="FILLED",
                         note="Auto buy",
+                        ts=timestamp,
                     )
 
                     save_state(
@@ -838,6 +864,7 @@ class TradingBot:
                         last_buy_price=price,
                         last_buy_qty=qty,
                         high_price=price,
+                        ts=timestamp,
                     )
 
             # Refresh data after any fill
@@ -855,16 +882,6 @@ class TradingBot:
                 pass
 
         self.streamer = schwabdev.Stream(self.client)
-        # self.streamer.start(receiver=self.unified_receiver)
-        # Use start_auto instead of start
-        self.streamer.start_auto(
-            receiver=self.unified_receiver,
-            start_time=dt_time(9, 29, 0),      # slightly before open
-            stop_time=dt_time(16, 0, 0),
-            on_days=(0, 1, 2, 3, 4),           # Mon–Fri
-            now_timezone=self.ET,
-            daemon=True,
-        )
 
         # Subscriptions are remembered by start_auto and re-sent every day
         symbols_str = ",".join(self.symbols)
@@ -875,6 +892,17 @@ class TradingBot:
                 self.streamer.account_activity("Account Activity", "0,1,2,3")
             ) # 0: SubscriptionKey,Symbol, 1: Account, 2: MessageType, 3: MessageData.
             # MessageType ['SUBSCRIBED','ORDER_ENTRY','ORDER_CANCEL','ORDER_FILL','ORDER_PARTIAL_FILL']
+        
+        # self.streamer.start(receiver=self.unified_receiver)
+        # Use start_auto instead of start
+        self.streamer.start_auto(
+            receiver=self.unified_receiver,
+            start_time=dt_time(9, 29, 0),      # slightly before open
+            stop_time=dt_time(16, 0, 0),
+            on_days=(0, 1, 2, 3, 4),           # Mon–Fri
+            now_timezone=self.ET,
+            daemon=True,
+        )
 
         self.update_holdings_from_api()
         time.sleep(2)
