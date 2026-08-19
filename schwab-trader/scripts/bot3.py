@@ -169,7 +169,7 @@ sudo systemctl is-enabled schwab-bot3.service   # Check if auto-start is enabled
 
 ### To apply an update
 # Command                                        # Change type  
-systemctl reload schwab-bot3.service             # Only YAML configsudo 
+systemctl reload schwab-bot3.service             # Only YAML config 
 sudo systemctl restart schwab-bot3.service       # Python code changes
 sudo systemctl daemon-reload && sudo systemctl restart schwab-bot3.service                                          # Service file changes
 

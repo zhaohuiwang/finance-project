@@ -32,7 +32,6 @@ def init_db():
                 qty          REAL,
                 price        REAL,
                 order_id     TEXT,
-                order_status TEXT,
                 note         TEXT,
                 ts           TEXT NOT NULL
             )
@@ -69,7 +68,6 @@ def log_transaction(
     qty: float,
     price: float,
     order_id: str = None,
-    order_status: str = None,
     note: str = None,
     ts: str = None
 ):
@@ -81,10 +79,10 @@ def log_transaction(
         conn.execute(
             """
             INSERT INTO transactions
-            (action, symbol, qty, price, order_id, order_status, note, ts)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (action, symbol, qty, price, order_id, note, ts)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (action, symbol, qty, price, order_id, order_status, note, ts),
+            (action, symbol, qty, price, order_id, note, ts),
         )
         conn.commit()
         conn.close()

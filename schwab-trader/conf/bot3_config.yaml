@@ -12,9 +12,9 @@ symbols:
     WDC:
       fixed_shares: 100
       
-      buy_target_price: 400.1
+      buy_target_price: 482.1
 
-      trail_activation_price: 540  # threshold to trigger trailing sell order
+      trail_activation_price: 502  # threshold to trigger trailing sell order
       trail_offset_pct: 0.2       # minimal 0.1, trail sell by % from high
       limit_sell_price: 595.5     # hard take-profit limit
 
@@ -32,7 +32,7 @@ symbols:
     MU:
       fixed_shares: 50
       
-      buy_target_price: 945.2
+      buy_target_price: 905.2
 
       trail_activation_price: 985   # threshold to trigger trailing sell order
       trail_offset_pct: 0.2           # trail sell by % from high

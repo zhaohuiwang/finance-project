@@ -240,8 +240,8 @@ class TradingBot:
                     "quantity": leg.get("quantity"),
                     "price": price,
                     "orderStrategyType": order.get("orderStrategyType"),
-                    "type": order.get("orderType", "N/A"),
-                    "duration": order.get("duration", "N/A"),
+                    "type": order.get("orderType", ""),
+                    "duration": order.get("duration", ""),
                 }
             )
         for child in order.get("childOrderStrategies", []):
@@ -728,10 +728,10 @@ class TradingBot:
             # "1" = Account
             # "2" = MessageType (string)
             # "3" = MessageData (JSON string)
-            msg_type = content.get('2', '').upper()
-            msg_data = content.get('3')
+            msg_type = content.get('2', '')
+            msg_data = content.get('3', '')
 
-    ###################################################
+            ###################################################
             from pathlib import Path
 
             # Near the top of your file
@@ -751,7 +751,7 @@ class TradingBot:
                     
             with open(LOG_FILE, "a") as f:          # "a" = append mode
                 f.write(json.dumps(entry) + "\n\n")   # one JSON object per line
-    ###################################################
+            ###################################################
 
             if not msg_data or msg_type not in (
                             #'OrderAccepted',
@@ -780,6 +780,16 @@ class TradingBot:
                 "OrderFillCompletedEventOrderLegQuantityInfo",
                 {}
             )
+
+            # Partial fill or complete fill
+            leg_status = fill_info.get("LegSubStatus", "")
+            if leg_status == "LegSubStatusFilled":
+                action_status = "Filled"
+            elif leg_status == "LegSubStatusPartiallyFilled":
+                action_status = "PartiallyFilled"
+            else:
+                action_status = None
+
             # streamer.account_activity("Account Activity", "0,1,2,3")
             # In the message data (a list[dict-like]) returned, "data": [...]> when "service": "ACCT_ACTIVITY" and "content":{..., "2": "OrderFillCompleted", ...}, "content":{..., "3":{...,"BaseEvent": <there are three sections including "QuantityInfo", "ExecutionInfo", and "OrderInfoForTransactionPosting". All may contain quantity, price infomation.>, ...} 
             execution_info = fill_info.get("ExecutionInfo", {})
@@ -795,8 +805,9 @@ class TradingBot:
                 if isinstance(obj, dict) and "lo" in obj:
                     from decimal import Decimal
                     try:
-                        lo = Decimal(str(obj["lo"]))
+                        lo = Decimal(str(obj.get("lo"))) if obj.get("lo") is not None else Decimal("0.00")
                         sign_scale = int(obj.get("signScale", 0))
+                        # 'lo' may not exist, but 'signScale' always in the streamed data
                         value = lo / (Decimal(10) ** (sign_scale // 2))
                         if sign_scale % 2:
                             value = -value
@@ -808,9 +819,11 @@ class TradingBot:
             try:
                 symbol = order_info.get("Symbol", '').upper()
                 side = order_info.get("BuySellCode", '').upper()
-                qty = decode_schwab_decimal(execution_info.get("ExecutionQuantity", 0))
-                price = decode_schwab_decimal(execution_info.get("ExecutionPrice", 0))
-                timestamp = execution_info.get("ExecutionTimeStamp", "")
+
+                qty = decode_schwab_decimal(execution_info.get("ExecutionQuantity", {}))
+                price = decode_schwab_decimal(execution_info.get("ExecutionPrice", {}))
+                timestamp = execution_info.get("ExecutionTimeStamp", {}).get("DateTimeString")
+                # All the above three are {}s
             except Exception:
                 continue
 
@@ -825,12 +838,11 @@ class TradingBot:
 
                     # Log the transaction and update the state
                     log_transaction(
-                        action="SELL_FILLED",
+                        action=action_status,
                         symbol=symbol,
                         qty=qty,
                         price=price,
                         order_id=str(order_id) if order_id else None,
-                        order_status="FILLED",
                         note="OCO or manual sell",
                         ts=timestamp,
                     )
@@ -851,12 +863,11 @@ class TradingBot:
 
                     # Log the transaction and update the state
                     log_transaction(
-                        action="BUY_FILLED",
+                        action=action_status,
                         symbol=symbol,
                         qty=qty,
                         price=price,
                         order_id=str(order_id) if order_id else None,
-                        order_status="FILLED",
                         note="Auto buy",
                         ts=timestamp,
                     )
@@ -884,6 +895,17 @@ class TradingBot:
                 pass
 
         self.streamer = schwabdev.Stream(self.client)
+        self.streamer.start(receiver=self.unified_receiver)
+        # Use start_auto instead of start
+        # self.streamer.start_auto(
+        #     receiver=self.unified_receiver,
+        #     start_time=dt_time(9, 29, 0),      # slightly before open
+        #     stop_time=dt_time(16, 0, 0),
+        #     on_days=(0, 1, 2, 3, 4),           # Mon–Fri
+        #     now_timezone=self.ET,
+        #     daemon=True,
+        # )
+        # # It keep print "No subscriptions, starting stream anyways." in the terminal.
 
         # Subscriptions are remembered by start_auto and re-sent every day
         symbols_str = ",".join(self.symbols)
@@ -894,17 +916,6 @@ class TradingBot:
                 self.streamer.account_activity("Account Activity", "0,1,2,3")
             ) # 0: SubscriptionKey,Symbol, 1: Account, 2: MessageType, 3: MessageData.
             # MessageType ['SUBSCRIBED','ORDER_ENTRY','ORDER_CANCEL','ORDER_FILL','ORDER_PARTIAL_FILL']
-        
-        # self.streamer.start(receiver=self.unified_receiver)
-        # Use start_auto instead of start
-        self.streamer.start_auto(
-            receiver=self.unified_receiver,
-            start_time=dt_time(9, 29, 0),      # slightly before open
-            stop_time=dt_time(16, 0, 0),
-            on_days=(0, 1, 2, 3, 4),           # Mon–Fri
-            now_timezone=self.ET,
-            daemon=True,
-        )
 
         self.update_holdings_from_api()
         time.sleep(2)
