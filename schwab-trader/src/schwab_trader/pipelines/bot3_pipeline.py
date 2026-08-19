@@ -735,20 +735,22 @@ class TradingBot:
             from pathlib import Path
 
             # Near the top of your file
-            PROJECT_ROOT = Path(__file__).resolve().parents[2]   # adjust the number if needed
-            STATE_DIR = PROJECT_ROOT / "data"                    # or "logs", "state", etc.
+            PROJECT_ROOT = Path(__file__).resolve().parents[3]
+            STATE_DIR = PROJECT_ROOT / "logs"
             STATE_DIR.mkdir(parents=True, exist_ok=True)
 
+            # /schwab-trader/logs/updates.log
+
             # Then use it like this:
-            LOG_FILE = STATE_DIR / "updates.log"
+            LOG_FILE = STATE_DIR / "fill_updates.log"
                     
             entry = {
                 "timestamp": datetime.now().isoformat(),
-                "value": content
+                "streamed_content": content
                 }
                     
             with open(LOG_FILE, "a") as f:          # "a" = append mode
-                f.write(json.dumps(entry) + "\n")   # one JSON object per line
+                f.write(json.dumps(entry) + "\n\n")   # one JSON object per line
     ###################################################
 
             if not msg_data or msg_type not in (

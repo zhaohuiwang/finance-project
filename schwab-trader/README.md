@@ -263,3 +263,38 @@ sudo systemctl reset-failed
   lsof ~/.schwabdev/tokens.db   # find the PID
   kill <pid>
   ```
+
+## Every Sunday at 12:00 PM → delete schwabdev credential file (need refresh tokens every 7 days) ~/.schwabdev/tokens.db.
+
+```Bash
+crontab -e
+```
+select nano editor
+
+Add the cron job
+```Bash
+0 12 * * 0 /usr/bin/rm -f /home/zhaohuiwang/.schwabdev/tokens.db
+```
+Press Ctrl + O > Press Enter > Press Ctrl + X
+This means:
+
+0 → minute 0; 12 → hour 12; * → every day of the month; * → every month; 0 → Sunday
+So it runs every Sunday at exactly 12:00 PM.
+
+Verify the cron job
+```Bash
+crontab -l
+```
+
+Check that `rm` is really at `/usr/bin/rm`
+```Bash
+crontab -l
+```
+
+Make sure the cron service is running
+
+```Bash
+systemctl status cron       # 
+sudo systemctl start cron   # if it isnot running, start it
+sudo systemctl enable cron  # make sure it automatically after reboot
+```

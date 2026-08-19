@@ -32,10 +32,10 @@ symbols:
     MU:
       fixed_shares: 50
       
-      buy_target_price: 948.2
+      buy_target_price: 945.2
 
-      trail_activation_price: 965   # threshold to trigger trailing sell order
-      trail_offset_pct: 0.1           # trail sell by % from high
+      trail_activation_price: 985   # threshold to trigger trailing sell order
+      trail_offset_pct: 0.2           # trail sell by % from high
       limit_sell_price: 1200         # hard take-profit limit
 
       session: "NORMAL"
