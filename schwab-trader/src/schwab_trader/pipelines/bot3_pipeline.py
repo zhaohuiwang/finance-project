@@ -77,8 +77,8 @@ class TradingBot:
         self.streamer = None
         self.risk_config = cfg.risk
         self.symbols_config: dict[str, SymbolConfig] = cfg.symbols
-        self.current_market_prices = {sym: None for sym in self.symbols}
-        self.high_prices: dict[str, float] = {}
+        self.day_prices: dict[str, dict[str, float]] = {sym: {p: None for p in ['market', 'low', 'high', 'close', 'hwm']} for sym in self.symbols}
+        # for market, day low, day high, previous close and high water mark prices.
         self.holdings = {}
         self.all_holdings = {}
         self.pending_buy_orders = set()
@@ -183,8 +183,6 @@ class TradingBot:
                 for sym in self.symbols:
                     if sym not in new_holdings:
                         self.auto_buy_allowed[sym] = True
-                        # Optional: clear HWM when position is gone
-                        self.high_prices.pop(sym, None)
             # Seed/refresh in-momory HWM after holdings change
             self._sync_high_prices()
 
@@ -332,7 +330,7 @@ class TradingBot:
         4. Config buy_target_price
         """
         # 1. Fast in-memory path
-        hwm = self.high_prices.get(symbol)
+        hwm = self.day_prices.get(symbol).get("hwm")
         if hwm is not None and hwm > 0:
             return hwm, "HWM (memory)"
 
@@ -340,7 +338,7 @@ class TradingBot:
         hwm = get_high_price(symbol)
         if hwm is not None and hwm > 0:
             with self.lock:
-                self.high_prices[symbol] = hwm
+                self.day_prices[symbol]["hwm"] = hwm
             return hwm, "HWM (DB)"
 
         # 3. Average cost from Schwab
@@ -366,7 +364,7 @@ class TradingBot:
         holding = self.holdings[symbol]
         cfg = self.symbols_config[symbol]
         qty = int(holding["shares"])
-        price = self.current_market_prices.get(symbol) or holding.get("buy_price", 0)
+        price = self.day_prices.get(symbol, {}).get("market") or holding.get("buy_price", 0)
 
         if price <= 0:
             console.print(f"[yellow]No valid price for {symbol}, skipping OCO[/yellow]")
@@ -490,7 +488,7 @@ class TradingBot:
         if not cfg:
             return
 
-        price = self.current_market_prices.get(symbol)
+        price = self.day_prices.get(symbol, {}).get("market")
         if not price:
             return
 
@@ -577,7 +575,7 @@ class TradingBot:
             return None
 
         holding = self.holdings[symbol]
-        price = self.current_market_prices.get(symbol) or holding.get("buy_price") or 0
+        price = self.day_prices.get(symbol, {}).get("market") or holding.get("buy_price") or 0
         if price <= 0:
             return None
 
@@ -620,7 +618,7 @@ class TradingBot:
 
     def _sync_high_prices(self):
         """
-        Populate / refresh self.high_prices from DB (persisted HWM)
+        Populate / refresh self.day_prices from DB (persisted HWM)
         and current holdings. Call after holdings update, config reload,
         or on startup.
         """
@@ -629,17 +627,17 @@ class TradingBot:
                 # Prefer DB value (survives restarts)
                 hwm = get_high_price(sym)
                 if hwm is not None and hwm > 0:
-                    self.high_prices[sym] = hwm
+                    self.day_prices[sym]["hwm"] = hwm
                 # Fallback: use current average cost if we hold the position
                 elif sym in self.holdings and self.holdings[sym].get("buy_price"):
                     bp = float(self.holdings[sym]["buy_price"])
                     if bp > 0:
-                        self.high_prices[sym] = bp
+                        self.day_prices[sym]["hwm"] = bp
                         # Persist the seed so next restart is correct
                         save_state(symbol=sym, high_price=bp)
                 # Clean up symbols we no longer care about
-                if sym not in self.symbols_config and sym in self.high_prices:
-                    self.high_prices.pop(sym, None)
+                if sym not in self.symbols_config and sym in self.day_prices:
+                    self.day_prices.pop(sym, None)
 
     def reload_config(self):
         """Hot-reload configuration."""
@@ -649,12 +647,12 @@ class TradingBot:
                 self.risk_config = new_cfg.risk
                 self.symbols_config = new_cfg.symbols
                 for sym in self.symbols:
-                    if sym not in self.current_market_prices:
-                        self.current_market_prices[sym] = None
+                    if sym not in self.day_prices:
+                        self.day_prices[sym] == {p: None for p in ['market', 'low', 'high', 'close', 'hwm']}
                         self.auto_buy_allowed[sym] = True
-                for sym in list(self.current_market_prices.keys()):
+                for sym in list(self.day_prices.keys()):
                     if sym not in self.symbols_config:
-                        self.current_market_prices.pop(sym, None)
+                        self.day_prices.pop(sym, None)
                         self.auto_buy_allowed.pop(sym, None)
             # Refresh HWM cache for (possibly) new symbol set
             self._sync_high_prices()
@@ -672,7 +670,30 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Config reload failed: {e}[/red]")
 
+
     # ====================== STREAM HANDLING ======================
+    # ---------- Schwab decimal decoder ----------
+    def _decode_schwab_decimal(self, obj) -> float:
+        """Decode Schwab's {lo, signScale} decimal format. e.g. {"lo":"213500000","signScale":12} lower 64 bits of the decimal's integer/mantissa"""
+        if obj is None:
+            return 0.0
+        if isinstance(obj, (int, float)):
+            return float(obj)
+        if isinstance(obj, dict) and "lo" in obj:
+            from decimal import Decimal
+            try:
+                lo = Decimal(str(obj.get("lo"))) if obj.get("lo") is not None else Decimal("0.00")
+                sign_scale = int(obj.get("signScale", 0))
+                # 'lo' may not exist, but 'signScale' always in the streamed data
+                value = lo / (Decimal(10) ** (sign_scale // 2))
+                if sign_scale % 2:
+                    value = -value
+                return float(value)
+            except Exception:
+                return 0.0
+        return 0.0
+
+        
     def unified_receiver(self, message):
         """Dispatch streaming messages."""
         if isinstance(message, str):
@@ -695,26 +716,44 @@ class TradingBot:
         """Process price updates and maintain high-water mark."""
         for content in item.get("content", []):
             sym = content.get("key")
-            if sym not in self.current_market_prices:
+            if sym not in self.day_prices:
                 continue
             try:
-                price = float(content.get("3") or 0)
-                if price <= 0:
+                price = content.get("3") # Last price
+                day_low = content.get("11")
+                day_high = content.get("10")
+                previous_close = content.get("12")
+                # Not all fields will be returned by evey stream pulse. 
+
+                if price is None:
                     continue
 
                 with self.lock:
-                    self.current_market_prices[sym] = price
+                    if price is not None:
+                        self.day_prices[sym]["market"] = float(price)
+                    if day_low is not None:
+                        self.day_prices[sym]["low"] = float(day_low)
+                    if day_high is not None:
+                        self.day_prices[sym]["high"] = float(day_high)
+                    if previous_close is not None:
+                        self.day_prices[sym]["close"] = float(previous_close)
 
                     # Only track HWM while we actually hold the position
                     if sym in self.holdings and self.holdings[sym].get("shares", 0) > 0:
-                        current_hwm = self.high_prices.get(sym)
-                        if current_hwm is None or price > current_hwm:
-                            self.high_prices[sym] = price
+                        current_hwm = self.day_prices.get(sym).get("hwm")
+                        if current_hwm is None or current_hwm < price:
+                            self.day_prices[sym]["hwm"] = price
                             # Persist only when it actually moves (avoids DB spam)
                             save_state(symbol=sym, high_price=price)
+
             except (TypeError, ValueError):
                 pass
 
+
+            # console.print("self_price", self.day_prices)
+            # console.print(price, previous_close, day_low, day_high)
+            # console.print("content", content)
+            
 
     def _handle_fill(self, item):
         """
@@ -795,33 +834,12 @@ class TradingBot:
             execution_info = fill_info.get("ExecutionInfo", {})
             order_info = fill_info.get("OrderInfoForTransactionPosting", {})
 
-            # ---------- Schwab decimal decoder ----------
-            def decode_schwab_decimal(obj) -> float:
-                """Decode Schwab's {lo, signScale} decimal format. e.g. {"lo":"213500000","signScale":12} lower 64 bits of the decimal's integer/mantissa"""
-                if obj is None:
-                    return 0.0
-                if isinstance(obj, (int, float)):
-                    return float(obj)
-                if isinstance(obj, dict) and "lo" in obj:
-                    from decimal import Decimal
-                    try:
-                        lo = Decimal(str(obj.get("lo"))) if obj.get("lo") is not None else Decimal("0.00")
-                        sign_scale = int(obj.get("signScale", 0))
-                        # 'lo' may not exist, but 'signScale' always in the streamed data
-                        value = lo / (Decimal(10) ** (sign_scale // 2))
-                        if sign_scale % 2:
-                            value = -value
-                        return float(value)
-                    except Exception:
-                        return 0.0
-                return 0.0
-
             try:
                 symbol = order_info.get("Symbol", '').upper()
                 side = order_info.get("BuySellCode", '').upper()
 
-                qty = decode_schwab_decimal(execution_info.get("ExecutionQuantity", {}))
-                price = decode_schwab_decimal(execution_info.get("ExecutionPrice", {}))
+                qty = self._decode_schwab_decimal(execution_info.get("ExecutionQuantity", {}))
+                price = self._decode_schwab_decimal(execution_info.get("ExecutionPrice", {}))
                 timestamp = execution_info.get("ExecutionTimeStamp", {}).get("DateTimeString")
                 # All the above three are {}s
             except Exception:
@@ -834,7 +852,7 @@ class TradingBot:
                 if side in ("SELL", "SELL_SHORT"):
                     self.holdings.pop(symbol, None)
                     self.auto_buy_allowed[symbol] = True
-                    self.high_prices.pop(symbol, None)
+                    self.day_prices.pop(symbol, None)
 
                     # Log the transaction and update the state
                     log_transaction(
@@ -859,7 +877,7 @@ class TradingBot:
 
                 elif side in ("BUY", "BUY_TO_COVER"):
                     self.holdings[symbol] = {"shares": qty, "buy_price": price}
-                    self.high_prices[symbol] = price
+                    self.day_prices[symbol]["hwm"] = price
 
                     # Log the transaction and update the state
                     log_transaction(
@@ -910,7 +928,7 @@ class TradingBot:
         # Subscriptions are remembered by start_auto and re-sent every day
         symbols_str = ",".join(self.symbols)
         if symbols_str:
-            self.streamer.send(self.streamer.level_one_equities(symbols_str, "0,1,2,3,8,10,11,18,19,20,21")) # 0: Symbol, 1: BidPrice, 2: AskPrice, 3: Last tradePrice, 8:TotalVolumeTradedToday, 10: Today'sHighPrice, 11: Today'sLowPrice, 12: PreviousClosePrice,18: NetChange, 19: 52-week-high, 20: 52-week-low, 21: P/E 
+            self.streamer.send(self.streamer.level_one_equities(symbols_str, "0,3,8,10,11,12,19,20,21")) # 0: Symbol, 1: BidPrice, 2: AskPrice, 3: Last tradePrice, 8:TotalVolumeTradedToday, 10: Today'sHighPrice, 11: Today'sLowPrice, 12: PreviousClosePrice,18: NetChange, 19: 52-week-high, 20: 52-week-low, 21: P/E 
 
             self.streamer.send(
                 self.streamer.account_activity("Account Activity", "0,1,2,3")
@@ -1095,7 +1113,6 @@ start()
 _handle_price() maps the Symbol and Last Price or "3", using the following assignment, 
 sym = content.get("key")
 price = float(content.get("3") or 0)  # field 3 = Last Price
-self.current_market_prices[sym] = price
 
 # Payload Example
 streamer.send(streamer.level_one_equities("AMD,INTC", "0,1,2,3,4,5,6,7,8"))

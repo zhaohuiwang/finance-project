@@ -205,7 +205,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         managed_data = []
         with bot.lock:
             for sym, cfg in sorted(bot.symbols_config.items()):
-                price = bot.current_market_prices.get(sym)
+                price = bot.day_prices.get(sym, {}).get("market")
 
                 # Show $ stop when configured, otherwise %
                 if getattr(cfg, "stop_loss_dollar", 0) and cfg.stop_loss_dollar > 0:
@@ -263,7 +263,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         all_holdings_data = []
         with bot.lock:
             for sym, h in bot.all_holdings.items():
-                price = bot.current_market_prices.get(sym) or h.get("current_price")
+                price = bot.day_prices.get(sym, {}).get("market") or h.get("current_price")
                 shares = h.get("shares", 0)
                 buy_p = h.get("buy_price")
                 pl = (
