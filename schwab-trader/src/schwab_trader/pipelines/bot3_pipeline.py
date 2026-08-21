@@ -293,11 +293,11 @@ class TradingBot:
         """Submit a market buy order."""
         if not self.risk_checks_pass(symbol) or not self.can_place_order(symbol):
             return False
-        cfg = self.symbols_config[symbol]
+        _cfg = self.symbols_config[symbol]
         order = {
             "orderType": "LIMIT",
-            "session": cfg.session,
-            "duration": cfg.duration,
+            "session": _cfg.session,
+            "duration": _cfg.duration,
             "price": str(limit_price),
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
@@ -320,7 +320,7 @@ class TradingBot:
             console.print(f"[red]Buy failed: {e}[/red]")
             return False
 
-    def _get_reference_price(self, symbol: str, holding: dict, cfg) -> tuple[float, str]:
+    def _get_reference_price(self, symbol: str, holding: dict, sym_cfg) -> tuple[float, str]:
         """
         Return (reference_price, source_label).
         Preference order:
@@ -347,7 +347,7 @@ class TradingBot:
             return avg, "avg cost"
 
         # 4. Config fallback
-        return cfg.buy_target_price, "buy_target"
+        return sym_cfg.buy_target_price, "buy_target"
 
 
     def submit_sell_bracket_oco(self, symbol: str):
@@ -362,7 +362,7 @@ class TradingBot:
             return
 
         holding = self.holdings[symbol]
-        cfg = self.symbols_config[symbol]
+        _cfg = self.symbols_config[symbol]
         qty = int(holding["shares"])
         price = self.day_prices.get(symbol, {}).get("market") or holding.get("buy_price", 0)
 
@@ -373,21 +373,21 @@ class TradingBot:
         # ------------------------------------------------------------------
         # Scenario 1 – Already past hard take-profit → market sell
         # ------------------------------------------------------------------
-        if price >= cfg.limit_sell_price * 1.01:
-            self.place_limit_sell(symbol, cfg.limit_sell_price)
+        if price >= _cfg.limit_sell_price * 1.01:
+            self.place_limit_sell(symbol, _cfg.limit_sell_price)
             return
 
         # ------------------------------------------------------------------
         # Scenario 2 – Above trail activation → Trailing + Limit OCO
         # ------------------------------------------------------------------
-        if price >= cfg.trail_activation_price:
+        if price >= _cfg.trail_activation_price:
             oco = sell_trailing_sell_limit_oco_dict(
                 symbol=symbol,
                 quantity=qty,
-                sell_limit_price=str(cfg.limit_sell_price),
-                stop_price_offset=cfg.trail_offset_pct,
-                session=cfg.session,
-                duration=cfg.duration,
+                sell_limit_price=str(_cfg.limit_sell_price),
+                stop_price_offset=_cfg.trail_offset_pct,
+                session=_cfg.session,
+                duration=_cfg.duration,
             )
             try:
                 response = self.client.place_order(self.account_hash, oco)
@@ -396,7 +396,7 @@ class TradingBot:
                 if response.status_code == 201 and order_id is not None:
                     console.print(
                         f"[green]✓ Trailing+Limit OCO placed for {symbol} "
-                        f"(Trail {cfg.trail_offset_pct}% | Limit ${cfg.limit_sell_price})[/green]"
+                        f"(Trail {_cfg.trail_offset_pct}% | Limit ${_cfg.limit_sell_price})[/green]"
                     )
                     self.invalidate_open_orders_cache()
             except Exception as e:
@@ -404,16 +404,16 @@ class TradingBot:
             return
 
         # ------------------------------------------------------------------
-        # Scenario 3 – Protective classic OCO (uses high-water mark)
+        # Scenario 3 – Protective classic OCO (uses high-water mark). OCO: 1. Sell limit order on limit_cell_price to ensure the profit 2. Sell stop limit order to avoid catastrophic loss during a fast crash.
         # ------------------------------------------------------------------
-        reference_price, ref_source = self._get_reference_price(symbol, holding, cfg)
+        reference_price, ref_source = self._get_reference_price(symbol, holding, _cfg)
 
-        if cfg.stop_loss_dollar and cfg.stop_loss_dollar > 0:
-            stop_price = round(reference_price - cfg.stop_loss_dollar, 2)
-            stop_source = f"${cfg.stop_loss_dollar} below {ref_source}"
+        if _cfg.stop_loss_dollar and _cfg.stop_loss_dollar > 0:
+            stop_price = round(reference_price - _cfg.stop_loss_dollar, 2)
+            stop_source = f"${_cfg.stop_loss_dollar} below {ref_source}"
         else:
-            stop_price = round(reference_price * (1 - cfg.stop_loss_pct / 100), 2)
-            stop_source = f"{cfg.stop_loss_pct}% below {ref_source}"
+            stop_price = round(reference_price * (1 - _cfg.stop_loss_pct / 100), 2)
+            stop_source = f"{_cfg.stop_loss_pct}% below {ref_source}"
 
         # Safety: stop must stay below current price
         if stop_price >= price:
@@ -422,12 +422,12 @@ class TradingBot:
         oco = sell_limit_sell_stoplimit_oco_dict(
             symbol=symbol,
             quantity=qty,
-            sell_limit_price=str(cfg.limit_sell_price),
+            sell_limit_price=str(_cfg.limit_sell_price),
             sell_stop_price=str(stop_price),
             sell_stoplimit_price=str(round(stop_price * 0.99, 2)),
-            session_sell_limit=cfg.session,
-            session_sell_stoplimit=cfg.session,
-            duration=cfg.stop_loss_order_duration,
+            session_sell_limit=_cfg.session,
+            session_sell_stoplimit=_cfg.session,
+            duration=_cfg.stop_loss_order_duration,
         )
         try:
             response = self.client.place_order(self.account_hash, oco)
@@ -436,7 +436,7 @@ class TradingBot:
             if response.status_code == 201 and order_id is not None:
                 console.print(
                     f"[green]✓ Classic OCO placed for {symbol} "
-                    f"(Stop ${stop_price:.2f} [{stop_source}] | Limit ${cfg.limit_sell_price})[/green]"
+                    f"(Stop ${stop_price:.2f} [{stop_source}] | Limit ${_cfg.limit_sell_price})[/green]"
                 )
                 self.invalidate_open_orders_cache()
         except Exception as e:
@@ -447,11 +447,11 @@ class TradingBot:
         if not self.can_place_order(symbol) or symbol not in self.holdings:
             return
         holding = self.holdings[symbol]
-        cfg = self.symbols_config[symbol]
+        _cfg = self.symbols_config[symbol]
         order = {
             "orderType": "LIMIT",
-            "session": cfg.session,
-            "duration": cfg.duration,
+            "session": _cfg.session,
+            "duration": _cfg.duration,
             "price": str(limit_price),
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
@@ -484,8 +484,8 @@ class TradingBot:
         if not getattr(self, "trading_enabled", False):
             return
 
-        cfg = self.symbols_config.get(symbol)
-        if not cfg:
+        _cfg = self.symbols_config.get(symbol)
+        if not _cfg:
             return
 
         price = self.day_prices.get(symbol, {}).get("market")
@@ -503,12 +503,12 @@ class TradingBot:
         # ------------------------------------------------------------------
         if not has_position and not has_buy:
             last_buy = get_last_buy_price(symbol)
-            trigger = price <= cfg.buy_target_price or (
-                last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100)
+            trigger = price <= _cfg.buy_target_price or (
+                last_buy and price <= last_buy * (1 - _cfg.buy_drop_pct / 100)
             )
             if trigger and self.risk_checks_pass(symbol):
                 console.print(f"[yellow]Ensuring BUY order for {symbol}[/yellow]")
-                self.place_limit_buy(symbol, price, cfg.fixed_shares)
+                self.place_limit_buy(symbol, price, _cfg.fixed_shares)
 
         # ------------------------------------------------------------------
         # Have position but no sell order → place protective / trailing OCO
@@ -522,7 +522,7 @@ class TradingBot:
         # ------------------------------------------------------------------
         elif has_position and has_sell:
             # 1. Upgrade to trailing once price reaches activation
-            if price >= cfg.trail_activation_price:
+            if price >= _cfg.trail_activation_price:
                 orders = self.get_open_orders()
                 has_trailing = any(
                     o["symbol"] == symbol and o.get("type") == "TRAILING_STOP"
@@ -570,8 +570,8 @@ class TradingBot:
         if symbol not in self.holdings:
             return None
 
-        cfg = self.symbols_config.get(symbol)
-        if not cfg:
+        _cfg = self.symbols_config.get(symbol)
+        if not _cfg:
             return None
 
         holding = self.holdings[symbol]
@@ -579,13 +579,13 @@ class TradingBot:
         if price <= 0:
             return None
 
-        reference_price, _ = self._get_reference_price(symbol, holding, cfg)
+        reference_price, _ = self._get_reference_price(symbol, holding, _cfg)
 
         # Prefer fixed $ stop when configured; otherwise use %
-        if cfg.stop_loss_dollar and cfg.stop_loss_dollar > 0:
-            stop_price = round(reference_price - cfg.stop_loss_dollar, 2)
+        if _cfg.stop_loss_dollar and _cfg.stop_loss_dollar > 0:
+            stop_price = round(reference_price - _cfg.stop_loss_dollar, 2)
         else:
-            stop_price = round(reference_price * (1 - cfg.stop_loss_pct / 100), 2)
+            stop_price = round(reference_price * (1 - _cfg.stop_loss_pct / 100), 2)
 
         # Safety: stop must stay below current market price
         if stop_price >= price:

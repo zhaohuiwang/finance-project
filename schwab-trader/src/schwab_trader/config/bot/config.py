@@ -12,6 +12,7 @@ import yaml
 class SymbolConfig(BaseModel):
     buy_target_price: float = Field(default=float("inf"), ge=0)
     limit_sell_price: float = Field(gt=0)
+    co: int = Field(default=1)
     buy_drop_pct: float = Field(ge=0)
     limit_sell_pct: float = Field(ge=0)
     stop_loss_pct: float = Field(ge=0)

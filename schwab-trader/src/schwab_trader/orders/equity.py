@@ -226,8 +226,62 @@ def sell_trailing_sell_limit_oco_dict(
     duration: str = "DAY",
 ) -> dict:
     """
-    OCO: Trailing Stop Sell  +  Limit Sell (take profit)
+    Build a Schwab OCO sell order with a trailing-stop and limit-sell leg.
+
+    The returned order contains two SELL child orders:
+
+    1. LIMIT SELL:
+       Sells the specified quantity when the market reaches the
+       specified `sell_limit_price`.
+
+    2. TRAILING STOP SELL:
+       Sells the specified quantity when the trailing stop is triggered.
+       The trailing stop is linked to the LAST traded price and uses
+       `stop_price_offset` according to `stop_price_link_type`.
+      
+
+    For a 2% trailing stop, the basic relationship is:
+    Trailing Stop Price=Highest Reference Pricex(1-0.02) where the Highest Reference Price is the highest qualifying LAST price reached since the trailing order became active.
+
+    Because the two orders are combined as an OCO (One-Cancels-the-Other),
+    execution of one child order causes the other child order to be
+    canceled.
+
+    Args:
+        symbol: Stock ticker symbol, e.g. "AAPL".
+        quantity: Number of shares to sell.
+        sell_limit_price: Limit price for the take-profit SELL order.
+        stop_price_offset: Trailing-stop offset. Its meaning depends on
+            `stop_price_link_type`; for example, 2 with "PERCENT" means
+            a 2% trailing offset.
+        stop_price_link_type: Type of trailing-stop offset, such as
+            "PERCENT" or another value supported by Schwab.
+        session: Trading session for the child orders. Defaults to
+            "NORMAL".
+        duration: Order duration for the child orders. Defaults to "DAY".
+
+    Returns:
+        A dictionary formatted for use as a Schwab API OCO order.
+
+    Example:
+        >>> order = sell_trailing_sell_limit_oco_dict(
+        ...     symbol="AAPL",
+        ...     quantity=100,
+        ...     sell_limit_price=250.00,
+        ...     stop_price_offset=2.0,
+        ...     stop_price_link_type="PERCENT",
+        ... )
+        >>>
+        >>> response = client.place_order(hash_value, order)
+
+    The example creates an OCO order that attempts to:
+        - Sell 100 AAPL shares at a $250.00 limit price, OR
+        - Sell 100 AAPL shares using a 2% trailing stop.
+
+    Whichever SELL order executes first causes the other OCO leg
+    to be canceled.
     """
+
     instrument = {"symbol": symbol, "assetType": "EQUITY"}
 
     limit_leg = {
