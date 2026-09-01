@@ -204,19 +204,6 @@ def get_last_sell_price(symbol: str) -> float | None:
         return None
 
 
-def get_high_price(symbol: str) -> float | None:
-    try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT high_price FROM state WHERE symbol=?", (symbol,)
-        ).fetchone()
-        conn.close()
-        return float(row[0]) if row and row[0] is not None else None
-    except Exception as e:
-        print(f"[DB] Error getting high_price for {symbol}: {e}")
-        return None
-
-    
 def get_last_sell_qty(symbol: str) -> float | None:
     try:
         conn = get_connection()
@@ -227,6 +214,19 @@ def get_last_sell_qty(symbol: str) -> float | None:
         return float(row[0]) if row and row[0] is not None else None
     except Exception as e:
         print(f"[DB] Error getting last sell qty for {symbol}: {e}")
+        return None
+
+    
+def get_high_price(symbol: str) -> float | None:
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT high_price FROM state WHERE symbol=?", (symbol,)
+        ).fetchone()
+        conn.close()
+        return float(row[0]) if row and row[0] is not None else None
+    except Exception as e:
+        print(f"[DB] Error getting high_price for {symbol}: {e}")
         return None
 
 
