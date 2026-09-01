@@ -34,6 +34,7 @@ from schwab_trader.utils.db import (
     log_transaction,
     save_state,
     get_high_price,
+    get_last_sell_price,
 )
 
 load_dotenv()
@@ -122,9 +123,14 @@ class TradingBot:
             for p in positions:
                 sym = p["instrument"]["symbol"]
                 long_qty = float(p.get("longQuantity", 0))
+                day_pct = float(p.get("currentDayProfitLossPercentage", 0))
                 if long_qty > 0 and sym in self.symbols_config:
                     avg = float(p.get("averagePrice") or 0)
-                    new_holdings[sym] = {"shares": long_qty, "buy_price": avg}
+                    new_holdings[sym] = {
+                        "shares": long_qty,
+                        "buy_price": avg,
+                        "day_pct": day_pct,
+                        }
             with self.lock:
                 self.holdings = new_holdings
                 for sym in self.symbols:
@@ -134,6 +140,18 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Holdings update failed: {e}[/red]")
 
+
+    def _load_last_sell_prices(self):
+        """Restore last sell prices from DB so the dashboard and strategy work after restart."""
+        try:
+            for sym in self.symbols:
+                last = get_last_sell_price(sym)
+                if last is not None and last > 0:
+                    self.last_sell_prices[sym] = float(last)
+        except Exception as e:
+            console.print(f"[yellow]Could not load last sell prices: {e}[/yellow]")
+
+            
     def get_open_orders(self):
         now = time.time()
         if (
@@ -165,13 +183,23 @@ class TradingBot:
         results = []
         if "orderLegCollection" in order:
             leg = order["orderLegCollection"][0]
+            price = (
+                order.get("price")
+                or order.get("stopPrice")
+                or order.get("stopLimitPrice")
+                or order.get("limitPrice")
+                or order.get("stopPriceOffset")
+            )
             results.append(
                 {
                     "orderId": order.get("orderId"),
                     "symbol": leg["instrument"]["symbol"],
                     "instruction": leg["instruction"],
                     "quantity": leg.get("quantity"),
-                    "type": order.get("orderType"),
+                    "price": price,
+                    "orderStrategyType": order.get("orderStrategyType"),
+                    "type": order.get("orderType", ""),
+                    "duration": order.get("duration", ""),
                 }
             )
         for child in order.get("childOrderStrategies", []):
@@ -209,12 +237,15 @@ class TradingBot:
     def place_trailing_stop_sell(self, symbol: str, qty: int, trail_pct: float):
         if not self.can_place_order(symbol):
             return False
+        symbol = symbol.upper()
+        trail_pct = f"{trail_pct:.2f}"
+        qty = int(qty)
         order = {
             "orderType": "TRAILING_STOP",
             "session": "NORMAL",
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
-            "stopPriceOffset": str(trail_pct),
+            "stopPriceOffset": trail_pct,
             "stopPriceType": "PERCENT",
             "stopPriceBasis": "LAST",
             "orderLegCollection": [
@@ -239,12 +270,15 @@ class TradingBot:
     def place_trailing_buy(self, symbol: str, qty: int, trail_pct: float):
         if not self.can_place_order(symbol):
             return False
+        symbol = symbol.upper()
+        trail_pct = f"{trail_pct:.2f}"
+        qty = int(qty)
         order = {
             "orderType": "TRAILING_STOP",
             "session": "NORMAL",
             "duration": "DAY",
             "orderStrategyType": "SINGLE",
-            "stopPriceOffset": str(trail_pct),
+            "stopPriceOffset": trail_pct,
             "stopPriceType": "PERCENT",
             "stopPriceBasis": "LAST",
             "orderLegCollection": [
@@ -268,7 +302,7 @@ class TradingBot:
 
     # ====================== Bot3-style HWM / price helpers ======================
     def _sync_high_prices(self):
-        """Same as Bot3 – seed / refresh HWM from DB or average cost."""
+        """Same as Bot3 - seed / refresh HWM from DB or average cost."""
         with self.lock:
             for sym in list(self.symbols):
                 hwm = get_high_price(sym)
@@ -281,7 +315,7 @@ class TradingBot:
                         save_state(symbol=sym, high_price=bp)
 
     def load_previous_closes(self):
-        """Fallback loader – also writes into day_prices['close']."""
+        """Fallback loader - also writes into day_prices['close']."""
         try:
             for sym in self.symbols:
                 quote = self.client.quote(sym).json()
@@ -300,14 +334,14 @@ class TradingBot:
             return
 
         price = self.day_prices.get(symbol, {}).get("market")
-        if not price:
-            return
-
         prev_close = self.day_prices.get(symbol, {}).get("close")
-        if not prev_close:
+        day_low = self.day_prices.get(symbol, {}).get("low")
+
+        if price is None or (prev_close is None and day_low is None):
             return
 
-        pct_up = ((price - prev_close) / prev_close) * 100
+        base_low = min(prev_close, day_low)
+        pct_up = ((price - base_low) / base_low) * 100
         has_position = symbol in self.holdings
         has_sell = self.has_open_order_for_symbol(symbol, "SELL")
         has_buy = self.has_open_order_for_symbol(symbol, "BUY")
@@ -409,7 +443,7 @@ class TradingBot:
             msg_type = content.get("2", "")
             msg_data = content.get("3", "")
 
-            # --- logging (same as Bot3) ---
+            # --- logging ---
             PROJECT_ROOT = Path(__file__).resolve().parents[3]
             STATE_DIR = PROJECT_ROOT / "logs"
             STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -535,6 +569,7 @@ class TradingBot:
         self.update_holdings_from_api()
         self.load_previous_closes()
         self._sync_high_prices()
+        self._load_last_sell_prices()
         time.sleep(2)
         for sym in self.symbols:
             self.ensure_trailing_strategy(sym)
@@ -548,6 +583,7 @@ class TradingBot:
                 self.last_sell_prices.clear()
                 self.load_previous_closes()
                 self._sync_high_prices()
+                self._load_last_sell_prices()
             self.update_holdings_from_api()
             for sym in self.symbols:
                 self.ensure_trailing_strategy(sym)

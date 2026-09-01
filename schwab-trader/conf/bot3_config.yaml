@@ -15,9 +15,9 @@ symbols:
     WDC:
       fixed_shares: 100
       
-      buy_target_price: 464 #468.1
+      buy_target_price: 454.1
 
-      trail_activation_price: 466 #478  # threshold to trigger trailing sell order
+      trail_activation_price: 458  # threshold to trigger trailing sell order
       trail_offset_pct: 0.2       # minimal 0.1, trail sell by % from high
       limit_sell_price: 595.5     # hard take-profit limit
       co: 0                       # order cycle options
@@ -38,7 +38,7 @@ symbols:
       
       buy_target_price: 965.2
 
-      trail_activation_price: 1025   # threshold to trigger trailing sell order
+      trail_activation_price: 985   # threshold to trigger trailing sell order
       trail_offset_pct: 0.2           # trail sell by % from high
       limit_sell_price: 1200         # hard take-profit limit
       co: 0
@@ -47,7 +47,7 @@ symbols:
       duration: "DAY"
 
       stop_loss_dollar: 0
-      stop_loss_pct: 10.0            # ignored while dollar > 0
+      stop_loss_pct: 20.0            # ignored while dollar > 0
       stop_loss_order_duration: "GOOD_TILL_CANCEL"
       
       buy_drop_pct: 5.0 

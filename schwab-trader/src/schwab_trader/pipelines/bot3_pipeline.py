@@ -79,8 +79,8 @@ class TradingBot:
         self.symbols_config: dict[str, SymbolConfig] = cfg.symbols
         self.day_prices: dict[str, dict[str, float]] = {sym: {p: None for p in ['market', 'low', 'high', 'close', 'hwm']} for sym in self.symbols}
         # for market, day low, day high, previous close and high water mark prices.
-        self.holdings = {}
-        self.all_holdings = {}
+        self.holdings = {} # Only positions that are also in symbols_config
+        self.all_holdings = {} # Every long position in the Schwab account
         self.pending_buy_orders = set()
         self.auto_buy_allowed = {sym: True for sym in self.symbols}
         self.lock = threading.RLock()
