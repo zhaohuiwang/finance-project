@@ -2,7 +2,7 @@
 """
 Main entry point for the Schwab Trading Bot.
 Supports headless, CLI, and full dashboard modes.
-Based on bot2, and has trading bot and baskboard seperated and simplified.
+Based on bot2, and has trading bot and dashboard separated and simplified.
 buy/sell limit orders
 
 cd schwab-trader/scripts
@@ -11,9 +11,10 @@ python3 bot3.py
 # Open your browser → http://127.0.0.1:8050
 
 # Change dashboard port
-python3 bot3.py --port 8080
+python3 bot3.py --port 8053
 
-# Run Bot Only (Headless Mode) — No Dashboard This is ideal for: Production / VPS / Server; Running in background; Using with screen, tmux, or systemd
+# Run Bot Only (Headless Mode) — No Dashboard
+# This is ideal for: Production / VPS / Server; Running in background; Using with screen, tmux, or systemd
 python3 bot3.py --mode headless
 
 # Run Bot with CLI Only (No Dashboard)
@@ -21,22 +22,23 @@ python3 bot3.py --mode cli
 
 # Show help
 python3 bot3.py --help
-
 """
 
 import argparse
 import sys
 import threading
 import time
-
 from pathlib import Path
+
 from rich.console import Console
 
 from schwab_trader.config.bot.bot3_config import TradingConfig
 from schwab_trader.pipelines.bot3_pipeline import TradingBot
 from schwab_trader.dashboard.bot3_dashboard import run_dashboard
 
+
 console = Console()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Schwab Trading Bot")
@@ -50,6 +52,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config_path = Path(__file__).parent / "../conf/bot3_config.yaml"
+
+    if not config_path.exists():
+        console.print(f"[red]Config not found: {config_path}[/red]")
+        sys.exit(1)
+
     cfg = TradingConfig.load_from_file(config_path)
     bot = TradingBot(cfg, mode=args.mode, config_path=config_path)
 
@@ -60,7 +67,9 @@ if __name__ == "__main__":
     if args.mode in ("full", "cli") and sys.stdin.isatty():
 
         def cli_loop():
-            console.print("[cyan]CLI ready — commands: stop | reload | status[/cyan]")
+            console.print(
+                "[cyan]CLI ready — commands: stop | reload | status | positions[/cyan]"
+            )
             while bot.running:
                 try:
                     cmd = input("> ").strip().lower()
@@ -74,18 +83,30 @@ if __name__ == "__main__":
                         print(
                             f"Equity: ${snap['equity']:,.2f} | Positions: {len(bot.holdings)}"
                         )
+                    elif cmd == "positions":
+                        bot.update_holdings_from_api()
+                        if not bot.holdings:
+                            print("No open positions")
+                        else:
+                            for sym, h in bot.holdings.items():
+                                print(
+                                    f"{sym}: {h['shares']} shares @ ${h.get('buy_price', 0):.2f}"
+                                )
                     else:
-                        print("Commands: stop | reload | status")
-                except:
+                        print("Commands: stop | reload | status | positions")
+                except Exception:
                     break
 
         threading.Thread(target=cli_loop, daemon=True).start()
 
     # Dashboard
     if args.mode == "full":
-        run_dashboard(bot, port=args.port)
+        try:
+            run_dashboard(bot, port=args.port)
+        except Exception as e:
+            console.print(f"[yellow]Dashboard error: {e}[/yellow]")
     else:
-        console.print("[yellow]Running in headless mode (no dashboard)[/yellow]")
+        console.print("[yellow]Running in headless / CLI mode (no dashboard)[/yellow]")
         try:
             while bot.running:
                 time.sleep(10)

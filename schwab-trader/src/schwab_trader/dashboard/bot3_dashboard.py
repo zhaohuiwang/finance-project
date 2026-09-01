@@ -10,7 +10,7 @@ import dash_bootstrap_components as dbc
 from dash import Dash, dcc, html, dash_table, Input, Output
 from rich.console import Console
 
-from schwab_trader.pipelines.bot2_pipeline import TradingBot
+from schwab_trader.pipelines.bot3_pipeline import TradingBot
 from rich.console import Console
 # Suppress logs
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
@@ -81,7 +81,7 @@ app.layout = dbc.Container(
                 },
             ],
         ),
-        html.H4("Managed Positions (config only)", className="mt-4 mb-2"),
+        html.H4("Managed Positions (config)", className="mt-4 mb-2"),
         dash_table.DataTable(
             id="managed-positions-table",
             columns=[
@@ -93,6 +93,7 @@ app.layout = dbc.Container(
                 {"name": "Trail Offset %", "id": "trail_offset_pct"},
                 {"name": "Stop Loss", "id": "stop_loss"},  # $ or %
                 {"name": "Fixed Shares", "id": "fixed_shares"},
+                {"name": "HWM", "id": "hwm"},
             ],
             style_table={"overflowX": "auto", "width": "100%"},
             style_cell={"textAlign": "right", "minWidth": "90px"},
@@ -206,6 +207,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         with bot.lock:
             for sym, cfg in sorted(bot.symbols_config.items()):
                 price = bot.day_prices.get(sym, {}).get("market")
+                hwm = bot.day_prices.get(sym, {}).get("hwm")
 
                 # Show $ stop when configured, otherwise %
                 if getattr(cfg, "stop_loss_dollar", 0) and cfg.stop_loss_dollar > 0:
@@ -223,6 +225,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                         "trail_offset_pct": f"{getattr(cfg, 'trail_offset_pct', 0):.1f}%",
                         "stop_loss": stop_display,
                         "fixed_shares": cfg.fixed_shares,
+                        "hwm": f"{hwm:.2f}",
                     }
                 )
 
