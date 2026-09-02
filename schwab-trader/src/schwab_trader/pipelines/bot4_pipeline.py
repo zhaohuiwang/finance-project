@@ -303,7 +303,7 @@ class TradingBot:
             return False
 
     # ====================== helpers ======================
-    def _conditional_truncate(x: float) -> float:
+    def _conditional_truncate(self, x: float) -> float:
         """Achwab API: Orders above $1 can be endtered in no more than two decimals; orders below $1, no more than four decimals"""
         import math
         decimals = 2 if x > 1 else 4

@@ -300,7 +300,7 @@ class TradingBot:
             "orderType": "LIMIT",
             "session": _cfg.session,
             "duration": _cfg.duration,
-            "price": str(limit_price),
+            "price": str(self._conditional_truncate(limit_price)),
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
                 {
@@ -387,6 +387,7 @@ class TradingBot:
                 symbol=symbol,
                 quantity=qty,
                 sell_limit_price=str(_cfg.limit_sell_price),
+                
                 stop_price_offset=_cfg.trail_offset_pct,
                 session=_cfg.session,
                 duration=_cfg.duration,
@@ -454,7 +455,7 @@ class TradingBot:
             "orderType": "LIMIT",
             "session": _cfg.session,
             "duration": _cfg.duration,
-            "price": str(limit_price),
+            "price": str(self._conditional_truncate(limit_price)),
             "orderStrategyType": "SINGLE",
             "orderLegCollection": [
                 {
@@ -564,7 +565,7 @@ class TradingBot:
                 self.submit_sell_bracket_oco(symbol)
 
     # Small helper methods
-    def _conditional_truncate(x: float) -> float:
+    def _conditional_truncate(self, x: float) -> float:
         """Achwab API: Orders above $1 can be endtered in no more than two decimals; orders below $1, no more than four decimals"""
         import math
         decimals = 2 if x > 1 else 4
