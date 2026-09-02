@@ -248,17 +248,13 @@ class TradingBot:
             results.extend(self._flatten_order(child))
         return results
 
-    def has_open_sell_order(self, symbol: str) -> bool:
-        return any(
-            o["symbol"] == symbol and o["instruction"] in ("SELL", "SELL_SHORT")
-            for o in self.get_open_orders()
-        )
-
-    def has_open_buy_order(self, symbol: str) -> bool:
-        return any(
-            o["symbol"] == symbol and o["instruction"] == "BUY"
-            for o in self.get_open_orders()
-        )
+    def has_open_order_for_symbol(self, symbol: str, instruction=None) -> bool:
+            for o in self.get_open_orders():
+                if o["symbol"] == symbol and (
+                    not instruction or o["instruction"] == instruction
+                ):
+                    return True
+            return False
 
     def can_place_order(self, symbol: str) -> bool:
         """Anti-duplicate protection."""
@@ -498,8 +494,9 @@ class TradingBot:
         has_position = (
             symbol in self.holdings and self.holdings[symbol].get("shares", 0) > 0
         )
-        has_buy = self.has_open_buy_order(symbol)
-        has_sell = self.has_open_sell_order(symbol)
+
+        has_sell = self.has_open_order_for_symbol(symbol, "SELL")
+        has_buy = self.has_open_order_for_symbol(symbol, "BUY")
 
         # ------------------------------------------------------------------
         # No position → look for buy opportunity

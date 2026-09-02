@@ -19,7 +19,7 @@ symbols:
 
       trail_activation_price: 458  # threshold to trigger trailing sell order
       trail_offset_pct: 0.2       # minimal 0.1, trail sell by % from high
-      limit_sell_price: 595.5     # hard take-profit limit
+      limit_sell_price: 520.5     # hard take-profit limit
       co: 0                       # order cycle options
 
 
@@ -30,7 +30,7 @@ symbols:
       stop_loss_pct: 10.0            # ignored while dollar > 0
       stop_loss_order_duration: "GOOD_TILL_CANCEL"
       
-      buy_drop_pct: 5.0              
+      buy_drop_pct: 5.0            
 
     
     MU:
@@ -40,7 +40,7 @@ symbols:
 
       trail_activation_price: 965   # threshold to trigger trailing sell order
       trail_offset_pct: 0.2           # trail sell by % from high
-      limit_sell_price: 1200         # hard take-profit limit
+      limit_sell_price: 1100         # hard take-profit limit
       co: 0
 
       session: "NORMAL"

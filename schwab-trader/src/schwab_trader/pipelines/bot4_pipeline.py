@@ -217,25 +217,37 @@ class TradingBot:
         return False
 
     def can_place_order(self, symbol: str) -> bool:
+        """Anti-duplicate protection."""
         now = time.time()
-        if now - self.last_order_placement.get(symbol, 0) < 25:
+        last = self.last_order_placement.get(symbol, 0)
+        if now - last < 25:
             return False
         self.last_order_placement[symbol] = now
         return True
+    
 
     def cancel_all_orders_for_symbol(self, symbol: str):
-        try:
-            for o in self.get_open_orders():
-                if o.get("symbol") == symbol:
-                    oid = o.get("orderId")
-                    if oid:
-                        self.client.cancel_order(self.account_hash, oid)
-                        console.print(f"[yellow]Cancelled {oid} for {symbol}[/yellow]")
-            self.invalidate_open_orders_cache()
-        except Exception as e:
-            console.print(f"[red]Cancel error: {e}[/red]")
-
-    # ====================== ORDER PLACEMENT (Bot4 original) ======================
+            """Cancel every working order for a symbol."""
+            try:
+                orders = self.get_open_orders()
+                for o in orders:
+                    if o.get("symbol") == symbol:
+                        order_id = o.get("orderId")
+                        if order_id:
+                            try:
+                                self.client.cancel_order(self.account_hash, order_id)
+                                console.print(
+                                    f"[yellow]Cancelled order {order_id} for {symbol}[/yellow]"
+                                )
+                            except Exception as e:
+                                console.print(
+                                    f"[red]Failed to cancel order {order_id}: {e}[/red]"
+                                )
+                self.invalidate_open_orders_cache()
+            except Exception as e:
+                console.print(f"[red]Error cancelling orders for {symbol}: {e}[/red]")
+    
+    # ====================== ORDER PLACEMENT ======================
     def place_trailing_stop_sell(self, symbol: str, qty: int, trail_pct: float):
         if not self.can_place_order(symbol):
             return False
