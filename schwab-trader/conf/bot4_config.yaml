@@ -10,20 +10,23 @@ shutdown_buffer_minutes: 2
 
 symbols:
   MU:
-    fixed_shares: 50        # Position size.
-
-    momentum_up_pct: 5.0    # How much the stock must rise from the previous day’s close or day low to trigger a sell setup.
-    trailing_sell_pct: 2.0  # Trailing stop distance for the sell order.
-
-    pullback_buy_pct: 3.0   # How far price must drop from the last sell price to trigger a buy setup.
-    trailing_buy_pct: 1.5   # Trailing stop distance for the buy order.
+    # Position size.
+    fixed_shares: 50        
+    # How much the stock must rise from the previous day’s close or day low to trigger a sell setup.
+    momentum_up_pct: 5.0    
+    # Trailing stop distance for the sell order.
+    trailing_sell_pct: 1.0  
+    # How far price must drop from the last sell price to trigger a buy setup
+    pullback_buy_pct: 3.0   
+    # Trailing stop distance for the buy order.
+    trailing_buy_pct: 1.5   
 
   WDC:
     fixed_shares: 100
-    momentum_up_pct: 6.0
-    trailing_sell_pct: 0.5
-    pullback_buy_pct: 3.5
-    trailing_buy_pct: 1.0
+    momentum_up_pct: 5.0
+    trailing_sell_pct: 1.0
+    pullback_buy_pct: 3.0
+    trailing_buy_pct: 1.5
 
 
 # On every price tick the bot evaluates:

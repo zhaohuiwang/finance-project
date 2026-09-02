@@ -336,9 +336,13 @@ class TradingBot:
         price = self.day_prices.get(symbol, {}).get("market")
         prev_close = self.day_prices.get(symbol, {}).get("close")
         day_low = self.day_prices.get(symbol, {}).get("low")
-
-        if price is None or (prev_close is None and day_low is None):
+         
+        # some of day_prices maybe None or 0.0, so this falsy check is valid, 
+        # if price is None or prev_close is None or day_low is None: is not appropriate here
+        if not price or not prev_close or not day_low:
             return
+
+        console.print(f"day_prices: {self.day_prices}, price: {price}, prev_close: {prev_close}, day_low: {day_low}")
 
         base_low = min(prev_close, day_low)
         pct_up = ((price - base_low) / base_low) * 100

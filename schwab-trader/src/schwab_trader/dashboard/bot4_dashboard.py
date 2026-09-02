@@ -35,7 +35,7 @@ bot: TradingBot = None
 app.layout = dbc.Container(
     [
         dbc.Row(
-            [dbc.Col(html.H2("Schwab Trailing Momentum Bot (Bot4)"), width=12)],
+            [dbc.Col(html.H2("Schwab Trailing Momentum Bot"), width=12)],
             className="mb-4",
         ),
         dbc.Row(
@@ -71,7 +71,6 @@ app.layout = dbc.Container(
                 {"name": "Avg Buy", "id": "Avg Buy"},
                 {"name": "P/L %", "id": "P/L %"},
                 {"name": "Market Value", "id": "Market Value"},
-                {"name": "HWM", "id": "HWM"},
             ],
             style_table={"overflowX": "auto", "width": "100%"},
             style_cell={"textAlign": "left", "minWidth": "80px"},
@@ -104,7 +103,6 @@ app.layout = dbc.Container(
                 {"name": "Trail Buy %", "id": "trailing_buy_pct"},
                 {"name": "Fixed Shares", "id": "fixed_shares"},
                 {"name": "Last Sell", "id": "last_sell"},
-                {"name": "HWM", "id": "hwm"},
             ],
             style_table={"overflowX": "auto", "width": "100%"},
             style_cell={"textAlign": "right", "minWidth": "90px"},
@@ -263,7 +261,6 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                         "Today's % Chg": (f"{day_chg:+.2f}%" if abs(day_chg) > 0.001 else "—"),
                         "P/L %": f"{pl:+.1f}%",
                         "Market Value": f"${market_val:,.2f}",
-                        "HWM": f"${hwm:,.2f}" if hwm else "—",
                     }
                 )
 
