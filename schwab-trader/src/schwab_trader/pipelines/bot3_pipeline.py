@@ -502,9 +502,9 @@ class TradingBot:
         # No position → look for buy opportunity
         # ------------------------------------------------------------------
         if not has_position and not has_buy:
-            last_buy = get_last_buy_price(symbol)
+            last_sell = get_last_sell_price(symbol)
             trigger = price <= _cfg.buy_target_price or (
-                last_buy and price <= last_buy * (1 - _cfg.buy_drop_pct / 100)
+                last_sell and price <= last_sell * (1 - _cfg.buy_drop_pct / 100)
             )
             if trigger and self.risk_checks_pass(symbol):
                 console.print(f"[yellow]Ensuring BUY order for {symbol}[/yellow]")

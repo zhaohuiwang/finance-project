@@ -29,22 +29,26 @@ symbols:
     trailing_buy_pct: 1.5
 
 
-# On every price tick the bot evaluates:
+# Bot4 Strategy (Trailing Momentum / Pullback)
+# This is a momentum breakout + pullback re-entry system that relies almost entirely on trailing-stop orders for both sides.
+#   a. Core evaluation (on every price tick via ensure_trailing_strategy):
 
-# Momentum Sell Setup
-# No current position
-# No open SELL order
-# Current price ≥ previous close (or day low) × (1 + momentum_up_pct/100)
-# → Place a trailing-stop SELL order for fixed_shares with offset = trailing_sell_pct (percent of last price).
+#       <>  Computes base = min(previous close, day low).
+#       <>  % up = (current price - base) / base x 100.
+#       <>  Tracks last sell price (restored from DB on restart).
 
-# Pullback Buy Setup (after a sell)
-# Have a recorded last sell price
-# No current position
-# No open BUY order
-# Price has dropped ≥ pullback_buy_pct from the last sell price
-# → Place a trailing-stop BUY order for fixed_shares with offset = trailing_buy_pct.
+#   b. Three mutually exclusive actions:
 
-# Protect Existing Position
-# Currently holding shares
-# No open SELL order
-# → Immediately place a trailing-stop SELL on the full position.
+#       1. Momentum Sell setup (no position, no open sell):
+#           If % up ≥ momentum_up_pct → place trailing-stop sell for fixed_shares with offset = trailing_sell_pct (percent of last price, basis LAST).
+
+#       2. Pullback Buy setup (has recorded last sell, no position, no open buy):
+#           If price has dropped ≥ pullback_buy_pct from last sell → place trailing-stop buy for fixed_shares with offset = trailing_buy_pct.
+
+#       3. Protect existing position:
+#           If holding shares and no open sell → place trailing-stop sell on the full position size (using trailing_sell_pct).
+
+
+#   c.  Supporting features
+
+#   d.  Config style: purely percentage-driven (momentum_up_pct, trailing_sell_pct, pullback_buy_pct, trailing_buy_pct) + fixed share size. No hard price targets or classic stop-loss percentages.

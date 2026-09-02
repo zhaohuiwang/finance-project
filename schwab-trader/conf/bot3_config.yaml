@@ -7,10 +7,6 @@
 # stemd service           ExecStart=... --port 8051
 # New permanent default   default=8051 in bot3.py
 
-# Stop loss orders with loss dollar/pct parameters is based on (in the order) 1. the day high (memory or SQLite DB). 2. actual buy price from Schwab. 3. buy_target_price. stop_loss_dollar preceeds stop_loss_pct. Options: proper configuration (buy_target_price < calcualte stop loss price), to sell when market plunge and buy back at lower price point.
-
-# Stop loss order is set as duration: "GOOD_TILL_CANCEL", all other orders are duration: "DAY"
-
 symbols:
     WDC:
       fixed_shares: 100
@@ -65,3 +61,40 @@ risk:
 # auto_shutdown_after_close: False
 # shutdown_buffer_minutes: 2
 # shutdown_on_weekends: true
+
+
+# Bot3 Strategy
+# This is a configured entry-target + protective OCO exit system with high-water-mark (HWM) ratcheting and optional upgrade to trailing.
+
+# Entry (buy) logic (ensure_orders):
+#   a. No position and no open buy order.
+#   b. Triggers a limit buy (at current price, for fixed_shares) if:
+#       <>  Price ≤ configured buy_target_price, or
+#       <>  Price has dropped ≥ buy_drop_pct from the last recorded sell price.
+
+#   3. Subject to risk checks (trading window, max positions, min equity, not paused, anti-duplicate timer).
+
+# Exit logic (submit_sell_bracket_oco + monitoring):
+
+#   a. Immediately places a protective bracket when a position exists and no sell is working.
+#   b. Three scenarios based on current price:
+#       1. Price ≥ limit_sell_price x 1.01 → immediate limit sell (hard take-profit).
+#       2. Price ≥ trail_activation_price → Trailing Stop + Limit OCO (trail by trail_offset_pct from high, plus hard limit at limit_sell_price).
+#       3. Otherwise → Classic Stop-Limit + Limit OCO:
+#         <> Limit leg at limit_sell_price (take-profit).
+#         <> Stop leg calculated from reference price (priority: in-memory HWM → DB HWM → Schwab average cost → buy_target_price).
+#         <> Stop uses stop_loss_dollar if > 0, else stop_loss_pct. Stop duration is typically GOOD_TILL_CANCEL; other orders are usually DAY.
+#         <> Safety clamp keeps stop below current price.
+
+
+#   c. While a protective (non-trailing) stop is working, the bot ratchets the stop higher if the HWM has moved enough (≥ ~0.10% of price). It cancels and replaces the OCO.
+#   d. On fill: updates holdings, logs transaction, clears/resets HWM and last-buy state as appropriate, then re-evaluates orders.
+
+# Supporting features:
+
+#   <>  Tracks day high/low/close + HWM (persisted).
+#   <>  Market-hours gating (trading_enabled only 09:30 - 16:00 ET weekdays).
+#   <>  Risk: max positions, min equity, daily loss awareness, pause flag.
+#   <>  Hot-reload via SIGHUP or explicit call; cancels and re-places orders after reload.
+
+# Config style: explicit buy_target_price, trail_activation_price, trail_offset_pct, hard limit_sell_price, stop_loss_pct/dollar, buy_drop_pct, session/duration, fixed share size.
