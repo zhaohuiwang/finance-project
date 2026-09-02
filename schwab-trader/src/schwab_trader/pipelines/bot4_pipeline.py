@@ -342,8 +342,6 @@ class TradingBot:
         if not price or not prev_close or not day_low:
             return
 
-        console.print(f"day_prices: {self.day_prices}, price: {price}, prev_close: {prev_close}, day_low: {day_low}")
-
         base_low = min(prev_close, day_low)
         pct_up = ((price - base_low) / base_low) * 100
         has_position = symbol in self.holdings
