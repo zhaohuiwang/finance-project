@@ -300,7 +300,14 @@ class TradingBot:
             console.print(f"[red]Trailing buy failed: {e}[/red]")
             return False
 
-    # ====================== Bot3-style HWM / price helpers ======================
+    # ====================== helpers ======================
+    def _conditional_truncate(x: float) -> float:
+        """Achwab API: Orders above $1 can be endtered in no more than two decimals; orders below $1, no more than four decimals"""
+        import math
+        decimals = 2 if x > 1 else 4
+        factor = 10 ** decimals
+        return math.trunc(x * factor) / factor
+    
     def _sync_high_prices(self):
         """Same as Bot3 - seed / refresh HWM from DB or average cost."""
         with self.lock:

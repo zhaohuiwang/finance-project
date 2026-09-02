@@ -508,6 +508,7 @@ class TradingBot:
             )
             if trigger and self.risk_checks_pass(symbol):
                 console.print(f"[yellow]Ensuring BUY order for {symbol}[/yellow]")
+                price = round(price, 2) if price > 1 else round(price, 4)
                 self.place_limit_buy(symbol, price, _cfg.fixed_shares)
 
         # ------------------------------------------------------------------
@@ -561,6 +562,14 @@ class TradingBot:
                 self.submit_sell_bracket_oco(symbol)
 
     # Small helper methods
+    def _conditional_truncate(x: float) -> float:
+        """Achwab API: Orders above $1 can be endtered in no more than two decimals; orders below $1, no more than four decimals"""
+        import math
+        decimals = 2 if x > 1 else 4
+        factor = 10 ** decimals
+        return math.trunc(x * factor) / factor
+
+
     def _compute_ideal_stop(self, symbol: str) -> float | None:
         """
         Compute the stop price that *should* be active right now
