@@ -17,6 +17,7 @@ https://tylerebowers.github.io/Schwabdev/
 """
 
 import os
+import decimal
 import time     # stdlib: sleep, time.time()
 import threading
 import json
@@ -52,7 +53,8 @@ from schwab_trader.utils.db import (
 
 load_dotenv()
 console = Console()
-
+# Set the global context strategy to strictly round down
+decimal.getcontext().rounding = decimal.ROUND_DOWN
 
 class TradingBot:
     """

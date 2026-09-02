@@ -16,6 +16,7 @@ Features:
 """
 
 import os
+import decimal
 import time
 import threading
 import json
@@ -39,7 +40,8 @@ from schwab_trader.utils.db import (
 
 load_dotenv()
 console = Console()
-
+# Set the global context strategy to strictly round down
+decimal.getcontext().rounding = decimal.ROUND_DOWN
 
 class TradingBot:
     """
@@ -377,19 +379,20 @@ class TradingBot:
 
     # ====================== STREAM HANDLING ======================
     def unified_receiver(self, message):
+        """Dispatch streaming messages."""
         if isinstance(message, str):
             try:
                 message = json.loads(message)
-            except Exception:
+            except (json.JSONDecodeError, TypeError):
                 return
         if not isinstance(message, dict):
             return
-
+        # Three messages that Schwab's streaming server sends to your receiver: 'response', 'data' and 'notify'. They are all organized as (nested) lists of dictionaries. We only focus on 'data'.
         for item in message.get("data", []):
             service = item.get("service")
             if service == "LEVELONE_EQUITIES":
                 self._handle_price(item)
-            elif service in ("ACCT_ACTIVITY", "USER_ACTIVITY"):
+            elif service == "ACCT_ACTIVITY":
                 self._handle_fill(item)
 
     def _handle_price(self, item):
@@ -447,7 +450,11 @@ class TradingBot:
         return 0.0
 
     def _handle_fill(self, item):
-        """Exactly the same detailed ACCT_ACTIVITY handling as Bot3."""
+        """
+        Process order execution events.
+        Updates holdings, transaction history, and order state after buy or
+        sell executions before re-evaluating the trading strategy.
+        """
         for content in item.get("content", []):
             msg_type = content.get("2", "")
             msg_data = content.get("3", "")
