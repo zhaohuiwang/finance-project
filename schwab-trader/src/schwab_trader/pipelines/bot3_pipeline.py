@@ -1016,17 +1016,41 @@ class TradingBot:
             #     self.cancel_all_orders_for_symbol(sym)
 
     def risk_checks_pass(self, symbol: str) -> bool:
-        """Evaluate risk constraints."""
+        """
+        Central risk gate. Returns True only if it is safe to place a new order.
+        """
+        # 1. Market must be open
         if not getattr(self, "trading_enabled", False):
             return False
-        if self.trading_paused:
+
+        # 2. Manually or automatically paused
+        if getattr(self, "trading_paused", False):
             return False
-        snap = self.get_account_snapshot()
-        if snap["equity"] < getattr(self.risk_config, "min_account_equity", 5000):
-            self.trading_paused = True
+
+        # 3. Minimum account equity
+        try:
+            snap = self.get_account_snapshot()
+            min_equity = getattr(self.risk_config, "min_account_equity", 5000.0)
+            if snap["equity"] < min_equity:
+                if not self.trading_paused:
+                    console.print(
+                        f"[bold red]Equity ${snap['equity']:.2f} below minimum "
+                        f"${min_equity:.2f} → trading paused[/bold red]"
+                    )
+                self.trading_paused = True
+                return False
+        except Exception as e:
+            console.print(f"[red]Risk check snapshot failed: {e}[/red]")
             return False
-        if len(self.holdings) >= getattr(self.risk_config, "max_positions", 4):
+
+        # 4. Maximum number of positions
+        max_pos = getattr(self.risk_config, "max_positions", 4)
+        if len(self.holdings) >= max_pos:
             return False
+
+        # 5. Optional: symbol already has a working order of the same side
+        # (you can keep this in can_place_order or move it here)
+
         return True
 
     def start(self):

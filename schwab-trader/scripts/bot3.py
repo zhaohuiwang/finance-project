@@ -145,7 +145,7 @@ Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/home/zhaohuiwang/Projects/finance-project/.env
 
 # Restart policy
-Restart=always
+Restart=on-failure
 RestartSec=5
 
 # Logging

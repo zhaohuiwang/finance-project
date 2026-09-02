@@ -20,10 +20,13 @@ import decimal
 import time
 import threading
 import json
+import signal
+
 from pathlib import Path
 from datetime import datetime, timedelta, timezone, date, time as dt_time
 from zoneinfo import ZoneInfo
 from decimal import Decimal
+
 
 import schwabdev
 from dotenv import load_dotenv
@@ -73,6 +76,8 @@ class TradingBot:
 
         self.lock = threading.RLock()
         self.running = True
+        # Allow config reload via SIGHUP (used by systemd reload)
+        signal.signal(signal.SIGHUP, self._on_sighup)
         self.trading_paused = False
         self.account_hash = self._get_account_hash()
 
@@ -83,6 +88,9 @@ class TradingBot:
 
         self.daily_start_equity = self.get_account_snapshot()["equity"]
         self.today = date.today()
+
+        self.trading_enabled = False
+        self.trading_paused = False
 
         self.auto_shutdown_after_close = getattr(cfg, "auto_shutdown_after_close", True)
         self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
@@ -114,6 +122,17 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Snapshot error: {e}[/red]")
             return {"equity": 0.0, "cashBalance": 0.0, "buyingPower": 0.0}
+
+
+    def _on_sighup(self, signum, frame):
+        """Handle SIGHUP → hot-reload config without stopping the bot."""
+        console.print("[bold cyan]SIGHUP received → reloading config...[/bold cyan]")
+        try:
+            self.reload_config()
+            console.print("[bold green]Config reload complete[/bold green]")
+        except Exception as e:
+            console.print(f"[red]Config reload via SIGHUP failed: {e}[/red]")
+
 
     def update_holdings_from_api(self):
         try:
@@ -249,6 +268,9 @@ class TradingBot:
     
     # ====================== ORDER PLACEMENT ======================
     def place_trailing_stop_sell(self, symbol: str, qty: int, trail_pct: float):
+        if not self.risk_checks_pass(symbol) or not self.can_place_order(symbol):
+            return False
+
         if not self.can_place_order(symbol):
             return False
         symbol = symbol.upper()
@@ -282,6 +304,9 @@ class TradingBot:
             return False
 
     def place_trailing_buy(self, symbol: str, qty: int, trail_pct: float):
+        if not self.risk_checks_pass(symbol) or not self.can_place_order(symbol):
+            return False
+    
         if not self.can_place_order(symbol):
             return False
         symbol = symbol.upper()
@@ -443,6 +468,53 @@ class TradingBot:
             except (TypeError, ValueError):
                 pass
 
+
+    def reload_config(self):
+        """Hot-reload configuration from disk."""
+        try:
+            new_cfg = TradingConfig.load_from_file(self.config_path)
+
+            with self.lock:
+                self.risk_config = new_cfg.risk
+                self.symbols_config = new_cfg.symbols
+
+                # Keep day_prices & auto_buy_allowed in sync with new symbol list
+                for sym in self.symbols:
+                    if sym not in self.day_prices:
+                        self.day_prices[sym] = {
+                            p: None for p in ["market", "low", "high", "close", "hwm"]
+                        }
+                        self.auto_buy_allowed[sym] = True
+
+                for sym in list(self.day_prices.keys()):
+                    if sym not in self.symbols_config:
+                        self.day_prices.pop(sym, None)
+                        self.auto_buy_allowed.pop(sym, None)
+                        self.last_sell_prices.pop(sym, None)
+
+                # Update auto-shutdown settings if present
+                self.auto_shutdown_after_close = getattr(new_cfg, "auto_shutdown_after_close", True)
+                self.shutdown_buffer_minutes = getattr(new_cfg, "shutdown_buffer_minutes", 2)
+
+            # Refresh derived state
+            self._sync_high_prices()
+            self._load_last_sell_prices()
+
+            console.print("[bold cyan]Config reloaded successfully[/bold cyan]")
+
+            # Cancel existing orders and re-evaluate strategy with new parameters
+            for sym in list(self.symbols):
+                self.cancel_all_orders_for_symbol(sym)
+                time.sleep(0.4)
+
+            # Optionally restart the stream if the symbol list changed significantly. (safe but not always necessary)
+            self.start_stream()
+
+        except Exception as e:
+            console.print(f"[red]Config reload failed: {e}[/red]")
+            raise   # re-raise so the SIGHUP handler can log it
+
+
     def _decode_schwab_decimal(self, obj) -> float:
         """Exactly the same decoder as Bot3."""
         if obj is None:
@@ -602,60 +674,156 @@ class TradingBot:
         for sym in self.symbols:
             self.ensure_trailing_strategy(sym)
 
+
     def monitor_logic(self):
+        """
+        Background monitoring thread for Bot4 (Trailing Momentum).
+        - Respects market hours via trading_enabled
+        - Handles day change (equity reset, state reload)
+        - Optionally auto-shuts down after market close + buffer
+        - Idles efficiently when market is closed
+        """
         while self.running:
-            time.sleep(30)
-            if date.today() != self.today:
-                self.daily_start_equity = self.get_account_snapshot()["equity"]
-                self.today = date.today()
-                self.last_sell_prices.clear()
-                self.load_previous_closes()
-                self._sync_high_prices()
-                self._load_last_sell_prices()
-            self.update_holdings_from_api()
-            for sym in self.symbols:
-                self.ensure_trailing_strategy(sym)
+            try:
+                # 1. Update trading window (sets self.trading_enabled)
+                self.refresh_trading_window()
 
-    def reload_config(self):
-        try:
-            new_cfg = TradingConfig.load_from_file(self.config_path)
-            with self.lock:
-                self.risk_config = new_cfg.risk
-                self.symbols_config = new_cfg.symbols
+                # 2. Day-change handling (use ET date for correctness)
+                today_et = self.now_et().date()
+                if today_et != self.today:
+                    self.today = today_et
+                    self.daily_start_equity = self.get_account_snapshot()["equity"]
+                    self.trading_paused = False
+                    self.last_sell_prices.clear()
+                    self.load_previous_closes()
+                    self._sync_high_prices()
+                    self._load_last_sell_prices()
+                    console.print("[cyan]New trading day → state reset[/cyan]")
 
-                # keep day_prices in sync with new symbol list
+                # 3. Auto-shutdown after close (if configured)
+                if (
+                    getattr(self, "auto_shutdown_after_close", False)
+                    and not self.trading_enabled
+                ):
+                    # Check if we are past close + buffer
+                    now = self.now_et()
+                    close_time = dt_time(16, 0)
+                    buffer = timedelta(minutes=getattr(self, "shutdown_buffer_minutes", 2))
+                    if now.time() > (datetime.combine(now.date(), close_time) + buffer).time():
+                        console.print(
+                            "[bold yellow]Market closed + buffer reached → shutting down[/bold yellow]"
+                        )
+                        self.stop()
+                        break
+
+                # 4. Active trading loop vs idle
+                if self.trading_enabled and not self.trading_paused:
+                    self.update_holdings_from_api()
+                    for sym in self.symbols:
+                        self.ensure_trailing_strategy(sym)
+                    time.sleep(15)          # normal cadence while market is open
+                else:
+                    time.sleep(60)          # idle overnight / weekend / paused
+
+            except Exception as e:
+                console.print(f"[red]monitor_logic error: {e}[/red]")
+                time.sleep(15)
+
+    # ====================== Market hours ======================
+    # schwabdev has start_auto() alternative
+    # https://tylerebowers.github.io/Schwabdev/?source=pages%2Fstream.html
+    # streamer.start_auto() only manages WebSocket connection (connect at open, disconnect at close). You still need the Market hours section if you want the bot to: 1. Avoid placing new orders outside the 9:30-16:00 ET. 2. Pause the monitor_logic loop overnight / on weekends. 3. Rest daily equity / risk counteres. 4. Keep trading_enabled = False when the market is close.
+    def now_et(self) -> datetime:
+        return datetime.now(self.ET)
+
+    def is_weekday(self, dt: datetime | None = None) -> bool:
+        dt = dt or self.now_et()
+        return dt.weekday() < 5  # Mon–Fri
+
+    def is_regular_session(self, dt: datetime | None = None) -> bool:
+        """True only 09:30 - 16:00 America/New_York on trading weekdays."""
+        dt = dt or self.now_et()
+        if not self.is_weekday(dt):
+            return False
+        t = dt.time()
+        return dt_time(9, 30) <= t <= dt_time(16, 0)
+
+    def refresh_trading_window(self) -> None:
+        """
+        Flip trading_enabled from the clock.
+        Does NOT stop the process (avoids systemd restart storms).
+        """
+        was = getattr(self, "trading_enabled", False)
+        self.trading_enabled = self.is_regular_session()
+
+        if self.trading_enabled and not was:
+            console.print("[bold green]Market open → TRADING mode[/bold green]")
+            try:
+                self.update_holdings_from_api()
                 for sym in self.symbols:
-                    if sym not in self.day_prices:
-                        self.day_prices[sym] = {
-                            p: None for p in ["market", "low", "high", "close", "hwm"]
-                        }
-                        self.auto_buy_allowed[sym] = True
-                for sym in list(self.day_prices.keys()):
-                    if sym not in self.symbols_config:
-                        self.day_prices.pop(sym, None)
-                        self.auto_buy_allowed.pop(sym, None)
+                    self.ensure_orders(sym)
+            except Exception as e:
+                console.print(f"[red]Open transition error: {e}[/red]")
 
-            self._sync_high_prices()
-            console.print("[bold cyan]Config reloaded successfully[/bold cyan]")
+        elif not self.trading_enabled and was:
+            console.print("[bold yellow]Market closed → IDLE mode[/bold yellow]")
+            # Optional: cancel working DAY orders at close
+            # for sym in list(self.symbols):
+            #     self.cancel_all_orders_for_symbol(sym)
 
-            for sym in self.symbols:
-                self.cancel_all_orders_for_symbol(sym)
-            self.start_stream()
+    def risk_checks_pass(self, symbol: str) -> bool:
+        """
+        Central risk gate. Returns True only if it is safe to place a new order.
+        """
+        # 1. Market must be open
+        if not getattr(self, "trading_enabled", False):
+            return False
+
+        # 2. Manually or automatically paused
+        if getattr(self, "trading_paused", False):
+            return False
+
+        # 3. Minimum account equity
+        try:
+            snap = self.get_account_snapshot()
+            min_equity = getattr(self.risk_config, "min_account_equity", 5000.0)
+            if snap["equity"] < min_equity:
+                if not self.trading_paused:
+                    console.print(
+                        f"[bold red]Equity ${snap['equity']:.2f} below minimum "
+                        f"${min_equity:.2f} → trading paused[/bold red]"
+                    )
+                self.trading_paused = True
+                return False
         except Exception as e:
-            console.print(f"[red]Config reload failed: {e}[/red]")
+            console.print(f"[red]Risk check snapshot failed: {e}[/red]")
+            return False
+
+        # 4. Maximum number of positions
+        max_pos = getattr(self.risk_config, "max_positions", 4)
+        if len(self.holdings) >= max_pos:
+            return False
+
+        # 5. Optional: symbol already has a working order of the same side
+        # (you can keep this in can_place_order or move it here)
+
+        return True
 
     def invalidate_open_orders_cache(self):
         self._open_orders_cache = None
         self._open_orders_cache_time = 0
 
     def start(self):
+        """Start the trading bot."""
         self.start_stream()
+        self.refresh_trading_window()  # set TRADING or IDLE immediately
         threading.Thread(
-            target=self.monitor_logic, daemon=True, name="Monitor"
+            target=self.monitor_logic, daemon=True, name="MonitorLogic"
         ).start()
-        console.print("[bold green]✅ Trailing Momentum Bot started[/bold green]")
+        console.print("[bold green]✅ Bot started[/bold green]")
 
     def stop(self):
+        """Stop the trading bot."""
         self.running = False
         if self.streamer:
             self.streamer.stop()
