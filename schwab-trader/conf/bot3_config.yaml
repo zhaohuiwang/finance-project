@@ -11,7 +11,7 @@ symbols:
     WDC:
       fixed_shares: 100
       
-      buy_target_price: 441.1
+      buy_target_price: 448.1
 
       trail_activation_price: 458  # threshold to trigger trailing sell order
       trail_offset_pct: 0.2       # minimal 0.1, trail sell by % from high
@@ -32,7 +32,7 @@ symbols:
     MU:
       fixed_shares: 50
       
-      buy_target_price: 940.2
+      buy_target_price: 945.2
 
       trail_activation_price: 965   # threshold to trigger trailing sell order
       trail_offset_pct: 0.2           # trail sell by % from high
@@ -58,7 +58,7 @@ risk:
   default_shares: 1
 
 # Auto-shutdown configuration
-auto_shutdown_after_close: false
+auto_shutdown_after_close: true
 shutdown_buffer_minutes: 2
 
 

@@ -685,7 +685,6 @@ class TradingBot:
 
             # Refresh derived state
             self._sync_high_prices()
-            self._load_last_sell_prices()
 
             console.print("[bold cyan]Config reloaded successfully[/bold cyan]")
             console.print(f"[cyan]Symbols now: {', '.join(self.symbols) or 'None'}[/cyan]")
