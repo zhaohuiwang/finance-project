@@ -674,60 +674,80 @@ class TradingBot:
         for sym in self.symbols:
             self.ensure_trailing_strategy(sym)
 
-
     def monitor_logic(self):
         """
-        Background monitoring thread for Bot4 (Trailing Momentum).
-        - Respects market hours via trading_enabled
-        - Handles day change (equity reset, state reload)
-        - Optionally auto-shuts down after market close + buffer
-        - Idles efficiently when market is closed
+        Background monitoring thread for Bot4.
+        - Market hours gating
+        - Strong day-change handling
+        - Auto-shutdown after close
+        - Efficient idle when market is closed
         """
         while self.running:
             try:
-                # 1. Update trading window (sets self.trading_enabled)
+                # 1. Update session status
                 self.refresh_trading_window()
 
-                # 2. Day-change handling (use ET date for correctness)
+                # 2. Handle new trading day (ET)
                 today_et = self.now_et().date()
                 if today_et != self.today:
-                    self.today = today_et
-                    self.daily_start_equity = self.get_account_snapshot()["equity"]
-                    self.trading_paused = False
-                    self.last_sell_prices.clear()
-                    self.load_previous_closes()
-                    self._sync_high_prices()
-                    self._load_last_sell_prices()
-                    console.print("[cyan]New trading day → state reset[/cyan]")
+                    self._handle_new_trading_day(today_et)
 
-                # 3. Auto-shutdown after close (if configured)
-                if (
-                    getattr(self, "auto_shutdown_after_close", False)
-                    and not self.trading_enabled
-                ):
-                    # Check if we are past close + buffer
-                    now = self.now_et()
-                    close_time = dt_time(16, 0)
-                    buffer = timedelta(minutes=getattr(self, "shutdown_buffer_minutes", 2))
-                    if now.time() > (datetime.combine(now.date(), close_time) + buffer).time():
-                        console.print(
-                            "[bold yellow]Market closed + buffer reached → shutting down[/bold yellow]"
-                        )
-                        self.stop()
-                        break
+                # 3. Auto-shutdown check
+                if self._should_auto_shutdown():
+                    console.print(
+                        "[bold yellow]Market closed + buffer reached → clean shutdown[/bold yellow]"
+                    )
+                    self.stop()
+                    break
 
-                # 4. Active trading loop vs idle
+                # 4. Active trading vs idle
                 if self.trading_enabled and not self.trading_paused:
                     self.update_holdings_from_api()
                     for sym in self.symbols:
                         self.ensure_trailing_strategy(sym)
-                    time.sleep(15)          # normal cadence while market is open
+                    time.sleep(15)
                 else:
-                    time.sleep(60)          # idle overnight / weekend / paused
+                    time.sleep(60)
 
             except Exception as e:
                 console.print(f"[red]monitor_logic error: {e}[/red]")
                 time.sleep(15)
+
+    def _handle_new_trading_day(self, today_et: date):
+        """Reset daily state when the ET date changes."""
+        console.print(f"[bold cyan]New trading day ({today_et}) → resetting state[/bold cyan]")
+
+        self.today = today_et
+        self.trading_paused = False
+
+        try:
+            snap = self.get_account_snapshot()
+            self.daily_start_equity = snap.get("equity", 0.0)
+            console.print(f"[cyan]Daily start equity: ${self.daily_start_equity:,.2f}[/cyan]")
+        except Exception as e:
+            console.print(f"[red]Equity snapshot failed on day change: {e}[/red]")
+            self.daily_start_equity = 0.0
+
+        self.last_sell_prices.clear()
+        self.load_previous_closes()
+        self._sync_high_prices()
+        self._load_last_sell_prices()
+
+
+    def _should_auto_shutdown(self) -> bool:
+        """Return True if auto-shutdown conditions are met."""
+        if not getattr(self, "auto_shutdown_after_close", False):
+            return False
+        if self.trading_enabled:
+            return False
+
+        now = self.now_et()
+        buffer = timedelta(minutes=getattr(self, "shutdown_buffer_minutes", 2))
+        shutdown_after = datetime.combine(
+            now.date(), dt_time(16, 0), tzinfo=self.ET
+        ) + buffer
+
+        return now >= shutdown_after
 
     # ====================== Market hours ======================
     # schwabdev has start_auto() alternative
@@ -823,7 +843,11 @@ class TradingBot:
         console.print("[bold green]✅ Bot started[/bold green]")
 
     def stop(self):
-        """Stop the trading bot."""
+        """Stop the trading bot cleanly."""
         self.running = False
         if self.streamer:
-            self.streamer.stop()
+            try:
+                self.streamer.stop()
+            except Exception:
+                pass
+        console.print("[bold yellow]Bot stopped[/bold yellow]")

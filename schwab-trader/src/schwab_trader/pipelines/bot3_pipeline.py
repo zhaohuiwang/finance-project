@@ -1063,10 +1063,14 @@ class TradingBot:
         console.print("[bold green]✅ Bot started[/bold green]")
 
     def stop(self):
-        """Stop the trading bot."""
+        """Stop the trading bot cleanly."""
         self.running = False
         if self.streamer:
-            self.streamer.stop()
+            try:
+                self.streamer.stop()
+            except Exception:
+                pass
+        console.print("[bold yellow]Bot stopped[/bold yellow]")
 
 
 """

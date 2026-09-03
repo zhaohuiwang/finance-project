@@ -65,6 +65,7 @@ risk:
 
 # Bot3 Strategy
 # This is a configured entry-target + protective OCO exit system with high-water-mark (HWM) ratcheting and optional upgrade to trailing.
+# Bot3 is desinged to stay alive 24/7 and only trade during regular market hours. It keeps the WebSocket connection alive (handle pre-market / after-hours data) and instant readiness at market open.
 
 # Entry (buy) logic (ensure_orders):
 #   a. No position and no open buy order.

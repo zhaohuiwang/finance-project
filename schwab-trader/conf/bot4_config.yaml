@@ -31,6 +31,8 @@ symbols:
 
 # Bot4 Strategy (Trailing Momentum / Pullback)
 # This is a momentum breakout + pullback re-entry system that relies almost entirely on trailing-stop orders for both sides.
+# Bot4 be default switches to idle after 16:00 and then auto-shutdown at 16:02. On weekends or holidays the bot will also shut down shortly after it detects that it is outside regular session. You need something external to start the bot again: systemd timer, cron job or manual start.
+
 #   a. Core evaluation (on every price tick via ensure_trailing_strategy):
 
 #       <>  Computes base = min(previous close, day low).
