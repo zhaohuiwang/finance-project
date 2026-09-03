@@ -58,9 +58,9 @@ risk:
   default_shares: 1
 
 # Auto-shutdown configuration
-# auto_shutdown_after_close: False
-# shutdown_buffer_minutes: 2
-# shutdown_on_weekends: true
+auto_shutdown_after_close: false
+shutdown_buffer_minutes: 2
+
 
 
 # Bot3 Strategy

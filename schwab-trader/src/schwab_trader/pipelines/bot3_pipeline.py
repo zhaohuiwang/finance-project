@@ -104,6 +104,8 @@ class TradingBot:
 
         # Shutdown config
         self.trading_enabled = False   # flipped by monitor based on clock
+        self.auto_shutdown_after_close = getattr(cfg,"auto_shutdown_after_close", False)
+        self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
         
         console.print("[bold green]TradingBot initialized[/bold green]")
 
@@ -648,36 +650,57 @@ class TradingBot:
                 if sym not in self.symbols_config and sym in self.day_prices:
                     self.day_prices.pop(sym, None)
 
+
     def reload_config(self):
-        """Hot-reload configuration."""
+        """
+        Hot-reload configuration from disk without stopping the bot.
+        Safe to call via SIGHUP or manually.
+        """
         try:
             new_cfg = TradingConfig.load_from_file(self.config_path)
+
             with self.lock:
+                # Update core config
                 self.risk_config = new_cfg.risk
                 self.symbols_config = new_cfg.symbols
+
+                # Auto-shutdown settings
+                self.auto_shutdown_after_close = getattr(new_cfg, "auto_shutdown_after_close", True)
+                self.shutdown_buffer_minutes = getattr(new_cfg, "shutdown_buffer_minutes", 2)
+
+                # Synchronize day_prices and related state with new symbol list
                 for sym in self.symbols:
                     if sym not in self.day_prices:
-                        self.day_prices[sym] == {p: None for p in ['market', 'low', 'high', 'close', 'hwm']}
+                        self.day_prices[sym] = {
+                            p: None for p in ["market", "low", "high", "close", "hwm"]
+                        }
                         self.auto_buy_allowed[sym] = True
+
+                # Remove symbols that are no longer in config
                 for sym in list(self.day_prices.keys()):
                     if sym not in self.symbols_config:
                         self.day_prices.pop(sym, None)
                         self.auto_buy_allowed.pop(sym, None)
-            # Refresh HWM cache for (possibly) new symbol set
+                        self.last_sell_prices.pop(sym, None)
+
+            # Refresh derived state
             self._sync_high_prices()
+            self._load_last_sell_prices()
 
             console.print("[bold cyan]Config reloaded successfully[/bold cyan]")
+            console.print(f"[cyan]Symbols now: {', '.join(self.symbols) or 'None'}[/cyan]")
 
-            if self.streamer:
-                self.start_stream()
-
-            for sym in self.symbols:
+            # Cancel all existing orders (old parameters may no longer be valid)
+            for sym in list(self.symbols):
                 self.cancel_all_orders_for_symbol(sym)
-                time.sleep(0.5)
-                self.ensure_orders(sym)
+                time.sleep(0.4)
+
+            # Re-subscribe stream and re-evaluate strategy with new config
+            self.start_stream()
 
         except Exception as e:
             console.print(f"[red]Config reload failed: {e}[/red]")
+            raise
 
 
     # ====================== STREAM HANDLING ======================
@@ -950,18 +973,30 @@ class TradingBot:
         for sym in self.symbols:
             self.ensure_orders(sym)
 
+
     def monitor_logic(self):
         """Background monitoring thread."""
         while self.running:
             try:
                 self.refresh_trading_window()
 
+                # Day-change handling
                 today_et = self.now_et().date()
                 if today_et != self.today:
                     self.today = today_et
                     self.daily_start_equity = self.get_account_snapshot()["equity"]
                     self.trading_paused = False
+                    console.print(f"[cyan]New trading day ({today_et}) → state reset[/cyan]")
 
+                # ----- Optional auto-shutdown -----
+                if self._should_auto_shutdown():
+                    console.print(
+                        "[bold yellow]Market closed + buffer reached → clean shutdown[/bold yellow]"
+                    )
+                    self.stop()
+                    break
+
+                # Active trading vs idle
                 if self.trading_enabled:
                     self.update_holdings_from_api()
                     for sym in self.symbols:
@@ -969,9 +1004,26 @@ class TradingBot:
                     time.sleep(15)
                 else:
                     time.sleep(60)  # idle overnight / weekend
+
             except Exception as e:
                 console.print(f"[red]monitor_logic error: {e}[/red]")
                 time.sleep(15)
+
+    
+    def _should_auto_shutdown(self) -> bool:
+        """Return True if auto-shutdown conditions are met."""
+        if not getattr(self, "auto_shutdown_after_close", False):
+            return False
+        if self.trading_enabled:
+            return False
+
+        now = self.now_et()
+        buffer = timedelta(minutes=getattr(self, "shutdown_buffer_minutes", 2))
+        shutdown_after = datetime.combine(
+            now.date(), dt_time(16, 0), tzinfo=self.ET
+        ) + buffer
+
+        return now >= shutdown_after
 
     # ====================== Market hours ======================
     # schwabdev has start_auto() alternative
