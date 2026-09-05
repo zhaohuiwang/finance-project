@@ -93,6 +93,7 @@ app.layout = dbc.Container(
                 {"name": "Trail Offset %", "id": "trail_offset_pct"},
                 {"name": "Stop Loss", "id": "stop_loss"},  # $ or %
                 {"name": "Fixed Shares", "id": "fixed_shares"},
+                {"name": "HWM", "id": "hwm"},
             ],
             style_table={"overflowX": "auto", "width": "100%"},
             style_cell={"textAlign": "right", "minWidth": "90px"},
@@ -206,6 +207,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         with bot.lock:
             for sym, cfg in sorted(bot.symbols_config.items()):
                 price = bot.day_prices.get(sym, {}).get("market")
+                hwm = bot.day_prices.get(sym, {}).get("hwm")
 
                 # Show $ stop when configured, otherwise %
                 if getattr(cfg, "stop_loss_dollar", 0) and cfg.stop_loss_dollar > 0:
@@ -223,6 +225,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                         "trail_offset_pct": f"{getattr(cfg, 'trail_offset_pct', 0):.1f}%",
                         "stop_loss": stop_display,
                         "fixed_shares": cfg.fixed_shares,
+                        "hwm": f"${hwm:,.2f}" if hwm else "—",
                     }
                 )
 
@@ -266,6 +269,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                 price = bot.day_prices.get(sym, {}).get("market") or h.get("current_price")
                 shares = h.get("shares", 0)
                 buy_p = h.get("buy_price")
+                hwm = bot.day_prices.get(sym, {}).get("hwm")
                 pl = (
                     round((price - buy_p) / buy_p * 100, 1)
                     if buy_p and buy_p > 0

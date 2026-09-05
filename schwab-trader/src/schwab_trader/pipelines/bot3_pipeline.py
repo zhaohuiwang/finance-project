@@ -40,7 +40,7 @@ import schwabdev
 from schwab_trader.config.bot.bot3_config import TradingConfig, SymbolConfig
 from schwab_trader.orders.equity import (
     sell_limit_sell_stoplimit_oco_dict,
-    sell_trailing_sell_limit_oco_dict,
+    sell_trailingstop_sell_limit_oco_dict,
 )
 from schwab_trader.utils.db import (
     init_db,
@@ -381,7 +381,7 @@ class TradingBot:
         # Scenario 2 – Above trail activation → Trailing + Limit OCO
         # ------------------------------------------------------------------
         if price >= _cfg.trail_activation_price:
-            oco = sell_trailing_sell_limit_oco_dict(
+            oco = sell_trailingstop_sell_limit_oco_dict(
                 symbol=symbol,
                 quantity=qty,
                 sell_limit_price=str(_cfg.limit_sell_price),
@@ -411,10 +411,10 @@ class TradingBot:
 
         if _cfg.stop_loss_dollar and _cfg.stop_loss_dollar > 0:
             stop_price = round(reference_price - _cfg.stop_loss_dollar, 2)
-            stop_source = f"${_cfg.stop_loss_dollar} below {ref_source}"
+            stop_source = f"${_cfg.stop_loss_dollar} below {ref_source}@{reference_price}"
         else:
             stop_price = round(reference_price * (1 - _cfg.stop_loss_pct / 100), 2)
-            stop_source = f"{_cfg.stop_loss_pct}% below {ref_source}"
+            stop_source = f"{_cfg.stop_loss_pct}% below {ref_source}@{reference_price}"
 
         # Safety: stop must stay below current price
         if stop_price >= price:

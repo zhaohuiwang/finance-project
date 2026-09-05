@@ -216,14 +216,14 @@ def sell_limit_sell_stoplimit_oco_dict(
     }
 
 
-def sell_trailing_sell_limit_oco_dict(
+def sell_trailingstop_sell_limit_oco_dict(
     symbol: str,
     quantity: int,
     sell_limit_price: float,
     stop_price_offset: float,
     stop_price_link_type: stopPriceLinkType = "PERCENT",
-    session: str = "NORMAL",
-    duration: str = "DAY",
+    session: Session = "NORMAL",
+    duration: Duration = "DAY",
 ) -> dict:
     """
     Build a Schwab OCO sell order with a trailing-stop and limit-sell leg.
@@ -291,7 +291,10 @@ def sell_trailing_sell_limit_oco_dict(
         "price": str(sell_limit_price),
         "orderStrategyType": "SINGLE",
         "orderLegCollection": [
-            {"instruction": "SELL", "quantity": quantity, "instrument": instrument}
+            {
+                "instruction": "SELL",
+                "quantity": quantity,
+                "instrument": instrument}
         ],
     }
 
@@ -311,6 +314,60 @@ def sell_trailing_sell_limit_oco_dict(
     return {
         "orderStrategyType": "OCO",
         "childOrderStrategies": [limit_leg, trailing_leg],
+    }
+
+
+def sell_trailingstop_sell_stoplimit_oco_dict(
+    symbol: str,
+    quantity: int,
+    sell_stop_price: float,
+    sell_stoplimit_price: float,
+    stop_price_offset: float,
+    session: Session = "NORMAL",
+    duration: Duration = "DAY",
+    stop_price_link_type: stopPriceLinkType = "PERCENT",
+) -> dict:
+    """
+    Conditional Order: One Cancels Another
+    Sell 2 shares of XYZ at a TRAILING STOP price of $45.97 and Sell 2 shares of XYZ with a Stop Limit order where the stop price is $37.03 and limit is $37.00. Both orders are sent at the same time. If one order fills, the other order is immediately cancelled. Both orders are good for the Day. Also known as an OCO order.
+    """
+    instrument = {"symbol": symbol.upper(), "assetType": "EQUITY"}
+
+    trailing_leg = {
+        "orderType": "TRAILING_STOP",
+        "session": session,
+        "duration": duration,
+        "stopPriceLinkBasis": "LAST",
+        "stopPriceLinkType": stop_price_link_type,
+        "stopPriceOffset": stop_price_offset,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [
+            {
+                "instruction": "SELL",
+                "quantity": quantity,
+                "instrument": instrument
+                }
+        ],
+    }
+    stop_limit_leg = {
+        "orderType": "STOP_LIMIT",
+        "session": session,
+        "price": str(sell_stoplimit_price),  # "37.00"
+        "stopPrice": str(sell_stop_price),  # "37.03"
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [
+            {
+                "instruction": "SELL",
+                "quantity": quantity,
+                "instrument": instrument,
+            }
+        ],
+    }
+
+    return {
+        "orderStrategyType": "OCO",
+        "childOrderStrategies": [trailing_leg, stop_limit_leg],
     }
 
 

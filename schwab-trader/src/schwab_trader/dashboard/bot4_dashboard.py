@@ -103,6 +103,7 @@ app.layout = dbc.Container(
                 {"name": "Trail Buy %", "id": "trailing_buy_pct"},
                 {"name": "Fixed Shares", "id": "fixed_shares"},
                 {"name": "Last Sell", "id": "last_sell"},
+                {"name": "HWM", "id": "hwm"},
             ],
             style_table={"overflowX": "auto", "width": "100%"},
             style_cell={"textAlign": "right", "minWidth": "90px"},

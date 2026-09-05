@@ -11,9 +11,9 @@ symbols:
     WDC:
       fixed_shares: 100
       
-      buy_target_price: 448.1
+      buy_target_price: 464.1
 
-      trail_activation_price: 458  # threshold to trigger trailing sell order
+      trail_activation_price: 468  # threshold to trigger trailing sell order
       trail_offset_pct: 0.2       # minimal 0.1, trail sell by % from high
       limit_sell_price: 520.5     # hard take-profit limit
       co: 0                       # order cycle options
@@ -23,18 +23,19 @@ symbols:
       duration: "DAY"
 
       stop_loss_dollar: 0
-      stop_loss_pct: 10.0            # ignored while dollar > 0
+      stop_loss_pct: 20.0            # ignored while dollar > 0
       stop_loss_order_duration: "GOOD_TILL_CANCEL"
       
-      buy_drop_pct: 5.0            
+      buy_drop_pct: 5.0
+      # Always check the Dashboard > Open Orders > Price / Offset or terminal message, for example, "✓ Classic OCO placed for WDC (Stop $365.29 [20.0% below HWM (memory)@456.61] | Limit $520.5)"
 
     
     MU:
       fixed_shares: 50
       
-      buy_target_price: 945.2
+      buy_target_price: 985.2
 
-      trail_activation_price: 965   # threshold to trigger trailing sell order
+      trail_activation_price: 1050   # threshold to trigger trailing sell order
       trail_offset_pct: 0.2           # trail sell by % from high
       limit_sell_price: 1100         # hard take-profit limit
       co: 0
