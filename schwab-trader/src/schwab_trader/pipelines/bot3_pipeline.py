@@ -883,7 +883,6 @@ class TradingBot:
                 if side in ("SELL", "SELL_SHORT"):
                     self.holdings.pop(symbol, None)
                     self.auto_buy_allowed[symbol] = True
-                    self.day_prices.pop(symbol, None)
 
                     # Log the transaction and update the state
                     log_transaction(
