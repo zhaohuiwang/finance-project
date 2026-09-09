@@ -87,8 +87,6 @@ class TradingBot:
         self.auto_buy_allowed = {sym: True for sym in self.symbols}
         self.lock = threading.RLock()
         self.running = True
-        # Allow config reload via SIGHUP (used by systemd reload)
-        signal.signal(signal.SIGHUP, self._on_sighup)
         self.trading_paused = False
         self.account_hash = self._get_account_hash()
 
@@ -106,6 +104,11 @@ class TradingBot:
         self.trading_enabled = False   # flipped by monitor based on clock
         self.auto_shutdown_after_close = getattr(cfg,"auto_shutdown_after_close", False)
         self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
+
+        # Signal handlers
+        signal.signal(signal.SIGHUP, self._on_sighup)      # Reload config
+        signal.signal(signal.SIGUSR1, self._on_sigusr1)    # Pause
+        signal.signal(signal.SIGUSR2, self._on_sigusr2)    # Resume
         
         console.print("[bold green]TradingBot initialized[/bold green]")
 
@@ -1023,6 +1026,86 @@ class TradingBot:
 
         return now >= shutdown_after
 
+
+    def start_control_interface(self):
+        """Start a background thread that accepts terminal commands."""
+        def control_loop():
+            console.print("\n[bold cyan]Control interface ready. Type 'help' for commands.[/bold cyan]")
+            while self.running:
+                try:
+                    cmd = input().strip().lower()
+                    if not cmd:
+                        continue
+
+                    if cmd in ("pause", "p"):
+                        self.trading_paused = True
+                        console.print("[bold yellow]Trading PAUSED[/bold yellow]")
+
+                    elif cmd in ("resume", "r"):
+                        self.trading_paused = False
+                        console.print("[bold green]Trading RESUMED[/bold green]")
+
+                    elif cmd in ("stop", "quit", "exit", "q"):
+                        console.print("[bold red]Stopping bot...[/bold red]")
+                        self.stop()
+                        break
+
+                    elif cmd in ("cancel", "cancel all", "c"):
+                        console.print("[yellow]Cancelling all open orders...[/yellow]")
+                        for sym in list(self.symbols):
+                            self.cancel_all_orders_for_symbol(sym)
+                        console.print("[green]All orders cancelled[/green]")
+
+                    elif cmd == "status":
+                        self._print_status()
+
+                    elif cmd == "reload":
+                        console.print("[cyan]Reloading config...[/cyan]")
+                        try:
+                            self.reload_config()
+                        except Exception as e:
+                            console.print(f"[red]Reload failed: {e}[/red]")
+
+                    elif cmd in ("help", "h", "?"):
+                        console.print("""
+    [bold]Available commands:[/bold]
+    pause / p      - Pause trading (no new orders)
+    resume / r     - Resume trading
+    stop / q       - Clean shutdown
+    cancel / c     - Cancel all open orders
+    status         - Show current bot state
+    reload         - Hot-reload config
+    help           - Show this help
+    """)
+                    else:
+                        console.print(f"[red]Unknown command: {cmd}. Type 'help'[/red]")
+
+                except (EOFError, KeyboardInterrupt):
+                    console.print("\n[yellow]Control interface stopped[/yellow]")
+                    break
+                except Exception as e:
+                    console.print(f"[red]Control error: {e}[/red]")
+
+        t = threading.Thread(target=control_loop, daemon=True, name="ControlInterface")
+        t.start()
+
+
+    def _print_status(self):
+        snap = self.get_account_snapshot()
+        console.print("\n[bold]=== Bot Status ===[/bold]")
+        console.print(f"Running          : {self.running}")
+        console.print(f"Trading enabled  : {getattr(self, 'trading_enabled', False)}")
+        console.print(f"Trading paused   : {getattr(self, 'trading_paused', False)}")
+        console.print(f"Symbols          : {', '.join(self.symbols) or 'None'}")
+        console.print(f"Open positions   : {len(self.holdings)}")
+        console.print(f"Account equity   : ${snap.get('equity', 0):,.2f}")
+        console.print(f"Daily start eq.  : ${getattr(self, 'daily_start_equity', 0):,.2f}")
+        if self.holdings:
+            console.print("Holdings:")
+            for sym, h in self.holdings.items():
+                console.print(f"  {sym}: {h.get('shares')} shares @ ${h.get('buy_price', 0):.2f}")
+        console.print("")
+
     # ====================== Market hours ======================
     # schwabdev has start_auto() alternative
     # https://tylerebowers.github.io/Schwabdev/?source=pages%2Fstream.html
@@ -1107,9 +1190,15 @@ class TradingBot:
         """Start the trading bot."""
         self.start_stream()
         self.refresh_trading_window()  # set TRADING or IDLE immediately
+
+        # Start monitor thread
         threading.Thread(
             target=self.monitor_logic, daemon=True, name="MonitorLogic"
         ).start()
+
+        # Start terminal control interface
+        self.start_control_interface()
+
         console.print("[bold green]✅ Bot started[/bold green]")
 
     def stop(self):
@@ -1121,6 +1210,48 @@ class TradingBot:
             except Exception:
                 pass
         console.print("[bold yellow]Bot stopped[/bold yellow]")
+
+
+    def _on_sighup(self, signum, frame):
+        """SIGHUP → hot-reload config"""
+        console.print("[bold cyan]SIGHUP received → reloading config...[/bold cyan]")
+        try:
+            self.reload_config()
+            console.print("[bold green]Config reload complete[/bold green]")
+        except Exception as e:
+            console.print(f"[red]Config reload via SIGHUP failed: {e}[/red]")
+
+
+    def _on_sigusr1(self, signum, frame):
+        """SIGUSR1 → Pause trading"""
+        self.trading_paused = True
+        console.print("[bold yellow]SIGUSR1 received → Trading PAUSED[/bold yellow]")
+
+
+    def _on_sigusr2(self, signum, frame):
+        """SIGUSR2 → Resume trading"""
+        self.trading_paused = False
+        console.print("[bold green]SIGUSR2 received → Trading RESUMED[/bold green]")
+
+
+'''
+How to use from another terminal
+# Find the PID
+ps aux | grep bot4   # or bot3
+
+# Pause
+kill -USR1 <pid>
+
+# Resume
+kill -USR2 <pid>
+
+# Reload config
+kill -HUP <pid>
+
+# Stop cleanly
+kill <pid>           # or systemctl stop schwab-bot4
+
+'''
 
 
 """
