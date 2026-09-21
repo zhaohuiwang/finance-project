@@ -13,7 +13,7 @@ python3 src/schwab_trader/accounts/init_client.py \
 
 python3 src/schwab_trader/accounts/init_client.py --help
 
---tokens-path allows you to specify a custom location for the tokens.db file. By default, it uses ~/.schwabdev/tokens.db.
+--tokens-path allows you to specify a custom location for the tokens.db file. By default, it uses ~/.schwabdev/tokens.db. This is the default token database location by schwabdev. It is generally not recommended to put tokens.db inside the Git repository or project directory as by doing so poses risk of accidental explosure if private credentials to the public or unintentional sharing among the collaborators.
 
 """
 
