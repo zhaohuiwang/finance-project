@@ -112,20 +112,28 @@ class TradingBot:
         accounts = self.client.linked_accounts().json()
         return accounts[0]["hashValue"]
 
+        
     def get_account_snapshot(self):
-        try:
-            acc = self.client.account_details(self.account_hash).json()
-            bal = acc.get("securitiesAccount", {}).get("currentBalances", {})
-            return {
-                "equity": float(
-                    bal.get("liquidationValue") or bal.get("equity") or 0.0
-                ),
-                "cashBalance": float(bal.get("cashBalance") or 0.0),
-                "buyingPower": float(bal.get("buyingPower") or 0.0),
-            }
-        except Exception as e:
-            console.print(f"[red]Snapshot error: {e}[/red]")
-            return {"equity": 0.0, "cashBalance": 0.0, "buyingPower": 0.0}
+            """Retrieve a snapshot of the current account balances."""
+            try:
+                acc = self.client.account_details(self.account_hash).json()
+                bal = acc.get("securitiesAccount", {}).get("currentBalances", {})
+                return {
+                    "equity": float(
+                        bal.get("liquidationValue") or bal.get("equity") or 0.0
+                    ),
+                    "cashBalance": float(bal.get("cashBalance") or 0.0),
+                    "buyingPower": float(bal.get("buyingPower") or 0.0),
+                    "intradayBPA": float(bal.get("intradayBuyingPowerAmount") or 0.0),
+                }
+            except Exception as e:
+                console.print(f"[red]Snapshot error: {e}[/red]")
+                return {
+                    "equity": 0.0,
+                    "cashBalance": 0.0,
+                    "buyingPower": 0.0,
+                    "intradayBPA": 0.0,
+                }
 
 
     def _on_sighup(self, signum, frame):

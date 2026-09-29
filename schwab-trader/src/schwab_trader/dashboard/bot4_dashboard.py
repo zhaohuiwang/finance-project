@@ -319,9 +319,10 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         # ---------- Account Summary ----------
         snapshot = bot.get_account_snapshot()
         account_data = [
-            {"Metric": "Equity (Net Liq)", "Value": f"${snapshot.get('equity', 0):,.2f}"},
-            {"Metric": "Cash", "Value": f"${snapshot.get('cashBalance', 0):,.2f}"},
-            {"Metric": "Buying Power", "Value": f"${snapshot.get('buyingPower', 0):,.2f}"},
+            {"Metric": "Equity(Net Liq)", "Value": f"${snapshot['equity']:,.2f}"},
+            {"Metric": "CashBalance", "Value": f"${snapshot['cashBalance']:,.2f}"},
+            {"Metric": "BuyingPower", "Value": f"${snapshot['buyingPower']:,.2f}"},
+            {"Metric": "IntradayBuingPowerAmount", "Value": f"${snapshot['intradayBPA']:,.2f}"},
         ]
 
         # ---------- Status footer ----------

@@ -253,14 +253,11 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
         snapshot = bot.get_account_snapshot()
         account_data = [
             {"Metric": "Equity(Net Liq)", "Value": f"${snapshot['equity']:,.2f}"},
-            {"Metric": "Cash & Sweep", "Value": f"${snapshot['cashBalance']:,.2f}"},
-            {"Metric": "Buying Power", "Value": f"${snapshot['buyingPower']:,.2f}"},
-            {"Metric": "Day Trading BP", "Value": f"${snapshot['dayTradingBP']:,.2f}"},
-            {
-                "Metric": "Non-Marginable BP",
-                "Value": f"${snapshot['nonMarginableBP']:,.2f}",
-            },
+            {"Metric": "CashBalance", "Value": f"${snapshot['cashBalance']:,.2f}"},
+            {"Metric": "BuyingPower", "Value": f"${snapshot['buyingPower']:,.2f}"},
+            {"Metric": "IntradayBuingPowerAmount", "Value": f"${snapshot['intradayBPA']:,.2f}"},
         ]
+
 
         # All Holdings
         all_holdings_data = []
