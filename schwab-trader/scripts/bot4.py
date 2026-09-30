@@ -11,18 +11,18 @@ Usage examples:
 cd schwab-trader/scripts
 
 # Default mode (Bot + Dashboard)
-python3 bot4.py
+systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot4.py
 # Open your browser → http://127.0.0.1:8050
 
 # Change dashboard port
-python3 bot4.py --port 8054
+systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot4.py --port 8054
 
 # Run Bot Only (Headless Mode) — No Dashboard
 # Ideal for: Production / VPS / Server; Running in background; Using with screen, tmux, or systemd
-python3 bot4.py --mode headless
+systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot4.py --mode headless
 
 # Run Bot with CLI Only (No Dashboard)
-python3 bot4.py --mode cli
+systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot4.py --mode cli
 
 # Show help
 python3 bot4.py --help

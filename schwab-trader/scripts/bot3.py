@@ -7,18 +7,18 @@ buy/sell limit orders
 
 cd schwab-trader/scripts
 # Default mode (Bot + Dashboard)
-python3 bot3.py
+systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot3.py
 # Open your browser → http://127.0.0.1:8050
 
 # Change dashboard port
-python3 bot3.py --port 8053
+systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot3.py --port 8053
 
 # Run Bot Only (Headless Mode) — No Dashboard
 # This is ideal for: Production / VPS / Server; Running in background; Using with screen, tmux, or systemd
 python3 bot3.py --mode headless
 
 # Run Bot with CLI Only (No Dashboard)
-python3 bot3.py --mode cli
+systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot3.py --mode cli
 
 # Show help
 python3 bot3.py --help
