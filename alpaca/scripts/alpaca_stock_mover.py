@@ -127,8 +127,8 @@ for bar in data["bars"]:
 url = "https://paper-api.alpaca.markets/v2/assets"
 headers = {
     "accept": "application/json",
-    "APCA-API-KEY-ID": os.getenv("ALPACA_API_KEY"),
-    "APCA-API-SECRET-KEY": os.environ["ALPACA_API_SECRET_KEY"],
+    "APCA-API-KEY-ID": os.getenv("PAPER_ALPACA_API_KEY"),
+    "APCA-API-SECRET-KEY": os.environ["PAPER_ALPACA_API_SECRET_KEY"],
 }
 params = {
     "status": "active",
@@ -162,8 +162,8 @@ from alpaca.trading.requests import GetAssetsRequest
 from alpaca.trading.enums import AssetClass
 
 trading_client = TradingClient(
-    os.environ["APCA_API_KEY_ID"],
-    os.environ["APCA_API_SECRET_KEY"]
+    os.environ["PAPER_ALPACA_API_KEY"],
+    os.environ["PAPER_ALPACA_API_SECRET_KEY"]
 )
 
 search_params = GetAssetsRequest(
