@@ -1,0 +1,23 @@
+
+
+# config.yaml – non-secret settings only
+# Credentials stay in .env
+
+universes:
+  - EQUITY_ALL
+  # - NASDAQ
+  # - NYSE
+
+frequency: 5
+display_count: 15
+
+min_price: 2.0
+min_volume: 100000
+min_percent_change: 2.0
+
+w_momentum: 35.0
+w_rvol: 40.0
+w_liquidity: 15.0
+w_breadth: 10.0
+
+refresh_hz: 2.0
