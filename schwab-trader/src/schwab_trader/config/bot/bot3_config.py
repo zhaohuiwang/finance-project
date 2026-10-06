@@ -1,4 +1,5 @@
 # schwab-trader/src/schwab_trader/config/bot/bot3_config.py
+from dataclasses import dataclass
 from typing import Dict
 from pathlib import Path
 from pydantic import BaseModel, Field, model_validator
@@ -107,3 +108,18 @@ class TradingConfig(BaseModel):
         with open(path, "r") as f:
             data = yaml.safe_load(f)
         return cls(**data)
+
+@dataclass
+class OrderInfo:
+    price: float
+    qty: float
+    time: str
+
+
+@dataclass
+class SymbolState:
+    last_buy: OrderInfo | None = None
+    last_sell: OrderInfo | None = None
+
+
+state: dict[str, SymbolState] = {}

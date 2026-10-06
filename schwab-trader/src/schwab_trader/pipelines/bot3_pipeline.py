@@ -37,7 +37,7 @@ from zoneinfo import ZoneInfo
 
 import schwabdev
 
-from schwab_trader.config.bot.bot3_config import TradingConfig, SymbolConfig
+from schwab_trader.config.bot.bot3_config import TradingConfig, SymbolConfig, SymbolState, state
 from schwab_trader.orders.equity import (
     sell_limit_sell_stoplimit_oco_dict,
     sell_trailingstop_sell_limit_oco_dict,
@@ -45,8 +45,8 @@ from schwab_trader.orders.equity import (
 from schwab_trader.utils.db import (
     init_db,
     log_transaction,
-    get_last_buy_price,
-    get_last_sell_price,
+    get_last_buy_info,
+    get_last_sell_info,
     get_high_price,
     save_state,
 )
@@ -79,6 +79,8 @@ class TradingBot:
         self.streamer = None
         self.risk_config = cfg.risk
         self.symbols_config: dict[str, SymbolConfig] = cfg.symbols
+        # log the last buy/sell
+        self.state = {sym: SymbolState() for sym in self.symbols}
         self.day_prices: dict[str, dict[str, float]] = {sym: {p: None for p in ['market', 'low', 'high', 'close', 'hwm']} for sym in self.symbols}
         # for market, day low, day high, previous close and high water mark prices.
         self.holdings = {} # Only positions that are also in symbols_config
@@ -503,9 +505,11 @@ class TradingBot:
         # No position → look for buy opportunity
         # ------------------------------------------------------------------
         if not has_position and not has_buy:
-            last_sell = get_last_sell_price(symbol)
+            s = self.state.get(symbol)
+            #last_sell_price, last_sell_qty, last_sell_time = get_last_sell_info(symbol)
+            last_sell_price = s.last_sell.price if s.last_sell else None
             trigger = price <= _cfg.buy_target_price or (
-                last_sell and price <= last_sell * (1 - _cfg.buy_drop_pct / 100)
+                last_sell_price is not None and price <= last_sell_price * (1 - _cfg.buy_drop_pct / 100)
             )
             if trigger and self.risk_checks_pass(symbol):
                 console.print(f"[yellow]Ensuring BUY order for {symbol}[/yellow]")
@@ -680,7 +684,7 @@ class TradingBot:
                     if sym not in self.symbols_config:
                         self.day_prices.pop(sym, None)
                         self.auto_buy_allowed.pop(sym, None)
-                        self.last_sell_prices.pop(sym, None)
+                        #self.last_sell_prices.pop(sym, None)
 
             # Refresh derived state
             self._sync_high_prices()
@@ -876,7 +880,7 @@ class TradingBot:
                 continue
 
 
-            console.print(f"[bold]{side} FILL: {symbol} @ ${price:.2f} x {qty}[/bold] (orde_id:{order_id})")
+            console.print(f"[bold]{side} FILLED: {symbol} @ ${price:.2f} x {qty}[/bold] (orde_id:{order_id})")
 
             with self.lock:
                 if side in ("SELL", "SELL_SHORT"):
