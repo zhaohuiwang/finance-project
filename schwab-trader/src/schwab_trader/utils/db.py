@@ -165,56 +165,48 @@ def save_state(
 
 
 # ==================== GETTERS ====================
-def get_last_buy_price(symbol: str) -> float | None:
+def get_last_buy_info(symbol: str) -> float | None:
     try:
         conn = get_connection()
         row = conn.execute(
-            "SELECT last_buy_price FROM state WHERE symbol=?", (symbol,)
+            "SELECT last_buy_price, last_buy_qty, last_buy_time FROM state WHERE symbol=?", (symbol,)
         ).fetchone()
         conn.close()
-        return float(row[0]) if row and row[0] is not None else None
+
+        if row:
+            return (
+                float(row["last_buy_price"]) if row["last_buy_price"] is not None else None,
+                float(row["last_buy_qty"]) if row["last_buy_qty"] is not None else None,
+                row["last_buy_time"],
+            )
+
+        return None, None, None
+
     except Exception as e:
-        print(f"[DB] Error getting last buy price for {symbol}: {e}")
-        return None
+        print(f"[DB] Error getting last buy info for {symbol}: {e}")
+        return None, None, None
 
 
-def get_last_buy_qty(symbol: str) -> float | None:
+def get_last_sell_info(symbol: str) -> float | None:
     try:
         conn = get_connection()
         row = conn.execute(
-            "SELECT last_buy_qty FROM state WHERE symbol=?", (symbol,)
+            "SELECT last_sell_price, last_sell_qty, last_sell_time FROM state WHERE symbol=?", (symbol,)
         ).fetchone()
         conn.close()
-        return float(row[0]) if row and row[0] is not None else None
+        
+        if row:
+            return (
+                float(row["last_sell_price"]) if row["last_sell_price"] is not None else None,
+                float(row["last_sell_qty"]) if row["last_sell_qty"] is not None else None,
+                row["last_sell_time"],
+            )
+
+        return None, None, None
+
     except Exception as e:
-        print(f"[DB] Error getting last buy qty for {symbol}: {e}")
-        return None
-
-
-def get_last_sell_price(symbol: str) -> float | None:
-    try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT last_sell_price FROM state WHERE symbol=?", (symbol,)
-        ).fetchone()
-        conn.close()
-        return float(row[0]) if row and row[0] is not None else None
-    except Exception as e:
-        print(f"[DB] Error getting last sell price for {symbol}: {e}")
-        return None
-
-
-def get_last_sell_qty(symbol: str) -> float | None:
-    try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT last_sell_qty FROM state WHERE symbol=?", (symbol,)
-        ).fetchone()
-        conn.close()
-        return float(row[0]) if row and row[0] is not None else None
-    except Exception as e:
-        print(f"[DB] Error getting last sell qty for {symbol}: {e}")
-        return None
+        print(f"[DB] Error getting last sell info for {symbol}: {e}")
+        return None, None, None
 
     
 def get_high_price(symbol: str) -> float | None:
@@ -276,6 +268,8 @@ sqlite> select * from state;
 sqlite> select * from transactions;
 .schema transactions;
 .schema state;
+
+# SQLite's default wont display the column names, to enable it.
 .headers on
 .mode column
 SELECT * FROM transactions;

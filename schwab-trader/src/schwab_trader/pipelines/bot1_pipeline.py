@@ -24,7 +24,7 @@ from schwab_trader.utils.db import (
     init_db,
     log_transaction,
     save_state,
-    get_last_buy_price,
+    get_last_buy_info,
     load_state,
 )
 from schwab_trader.orders.utils import get_orders
@@ -1079,7 +1079,7 @@ class TradingBot:
                 if not cfg:
                     continue
 
-                last_buy = get_last_buy_price(sym)
+                last_buy, _, _ = get_last_buy_info(sym)
                 trigger = price <= cfg.buy_target_price or (
                     last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100)
                 )

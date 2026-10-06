@@ -15,7 +15,7 @@ from rich.panel import Panel
 from rich.columns import Columns
 
 from config import SYMBOLS, CONFIG, RISK_CONFIG
-from db import init_db, log_transaction, save_state, get_last_buy_price, load_state
+from db import init_db, log_transaction, save_state, get_last_buy_info, load_state
 
 load_dotenv()
 console = Console()
@@ -712,7 +712,7 @@ class TradingBot:
                         if not price:
                             continue
                         cfg = CONFIG[sym]
-                        last_buy = get_last_buy_price(sym)
+                        last_buy, _, _ = get_last_buy_info(sym)
                         trigger = (
                             price <= cfg.get("buy_target_price", float("inf"))
                         ) or (

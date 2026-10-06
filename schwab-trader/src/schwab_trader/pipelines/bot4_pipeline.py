@@ -38,7 +38,7 @@ from schwab_trader.utils.db import (
     log_transaction,
     save_state,
     get_high_price,
-    get_last_sell_price,
+    get_last_sell_info,
 )
 
 load_dotenv()
@@ -178,9 +178,9 @@ class TradingBot:
         """Restore last sell prices from DB so the dashboard and strategy work after restart."""
         try:
             for sym in self.symbols:
-                last = get_last_sell_price(sym)
-                if last is not None and last > 0:
-                    self.last_sell_prices[sym] = float(last)
+                last_sell_price, last_sell_qty, last_sell_time = get_last_sell_info(sym)
+                if last_sell_price is not None and last_sell_price > 0:
+                    self.last_sell_prices[sym] = float(last_sell_price)
         except Exception as e:
             console.print(f"[yellow]Could not load last sell prices: {e}[/yellow]")
 

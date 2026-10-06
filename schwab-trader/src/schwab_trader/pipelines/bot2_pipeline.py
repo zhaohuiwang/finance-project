@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from schwab_trader.config.bot.config import TradingConfig, SymbolConfig
-from schwab_trader.utils.db import init_db, log_transaction, get_last_buy_price
+from schwab_trader.utils.db import init_db, log_transaction, get_last_buy_info
 from schwab_trader.orders.equity import sell_limit_sell_stoplimit_oco_dict
 
 load_dotenv()
@@ -505,7 +505,7 @@ class TradingBot:
         has_sell = self.has_open_sell_order(symbol)
 
         if not has_position and not has_buy:
-            last_buy = get_last_buy_price(symbol)
+            last_buy, _, _ = get_last_buy_info(symbol)
             trigger = price <= cfg.buy_target_price or (
                 last_buy and price <= last_buy * (1 - cfg.buy_drop_pct / 100)
             )
