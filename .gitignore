@@ -1,24 +1,62 @@
 
-.idea/
-__pycache__/
-*.env
-.venv/
+# logs/  --Ignore all logs directories anywhere in the project
+# **/logs/ -- (Explicit version of logs/)
+# /logs/  -- Only a logs/ folder in your top-level project directory
+
 .python-version
+*.csv
+*.duckdb
+*.env
+*.pyc
 
 
+# === Build & Distribution Outputs ===
+# Ignores build folders anywhere in the project (recommended over /build)
+build/
 dist/
-schwabdev.egg-info/
-tokens.json
-/build
-/docs/examples/tests
+eggs/
+*.egg-info/
+.eggs/
+
+
+# === Virtual Environments (Crucial) ===
+# Note: uv.lock at the project root dir should not be ignored (vs .venv/.loc) 
+.venv/
+venv/
+ENV/
+env/
 uv.lock
-app.log
+# If you are building an Application / Service: ALWAYS commit uv.lock. If you are building an Open-Source Library, you can technically ignore it. 
 
-/schwab-trader/logs/
-/my_IULs/
-f_canvas/my_IULs/
 
+# === Python Cache & Compiled Files ===
+# Byte-compiled files (speeds up execution, but shouldn't be tracked)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+
+# === Sensitive Data & Configurations ===
+# Your tokens file from earlier, plus environment variables
+my_IULs/
+.env
+tokens.json
+secret_config.json
+
+
+# === Data Files (Optional but common) ===
+# Your rule to ignore all project CSV files
 data/
+logs/
 outputs/
 plots/
-logs/
+*.csv
+*.duckdb
+*.log
+
+# logs/  --Ignore all logs directories anywhere in the project
+# **/logs/ -- (Explicit version of logs/)
+# /logs/  -- Only a logs/ folder in your top-level project directory
+
+
