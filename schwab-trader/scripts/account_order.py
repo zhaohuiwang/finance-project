@@ -62,6 +62,7 @@ from schwab_trader.orders.utils import (
     get_orders,
 )
 
+
 # Specified an accout number, instiate a client, the client will fetch the matching account hashValue for later identification
 # From account number (accountNumber) to account hash (hashValue)
 accountNumber = "29308909"
@@ -265,8 +266,8 @@ order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
 
 order_b3 = buy_limit_dict(
     symbol="WDC",
-    quantity=2,
-    limit_price=400.2,
+    quantity=100,
+    limit_price=392.2,
     session="NORMAL",
     duration="DAY",
 )
@@ -274,8 +275,8 @@ order = order_b3
 
 order_s4 = sell_limit_dict(
     symbol="WDC",
-    quantity=200,
-    limit_price=480.2,
+    quantity=100,
+    limit_price=395.4,
     session="NORMAL",
     duration="DAY",
 )
@@ -287,10 +288,8 @@ status, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
 )
 
-order_id = "1007168170226"  # Limit buy
+order_id = "1007168170226"
 
-order_id = "1007168170617"  # Limit sell
-order_id = "1007490828759"
 # Cancel an order
 status_code, date = cancel_order(
     client=client,
@@ -352,7 +351,7 @@ orders = client.account_orders(
     hashValue,
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
-    # status='WORKING',
+    status='WORKING',
     # status="FILLED",
 ).json()
 

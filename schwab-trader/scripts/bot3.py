@@ -11,7 +11,10 @@ systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot
 # Open your browser → http://127.0.0.1:8050
 
 # Change dashboard port
+# When the veenv is activated
 systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot3.py --port 8053
+# Or directly run this in the project root (skip `source .venv/bin/activate`)
+systemd-inhibit --what=idle:sleep --why="Long running Python script" uv run python scripts/bot3.py --port 8053
 
 # Run Bot Only (Headless Mode) — No Dashboard
 # This is ideal for: Production / VPS / Server; Running in background; Using with screen, tmux, or systemd

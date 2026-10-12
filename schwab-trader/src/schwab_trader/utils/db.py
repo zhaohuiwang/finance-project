@@ -8,7 +8,7 @@ from pathlib import Path
 # Use absolute path relative to the project root
 X_level = 3
 PROJECT_ROOT = Path(__file__).resolve().parents[X_level]  # X+1 levels up
-DB_PATH = PROJECT_ROOT / "logs" / "trading.db"
+DB_PATH = PROJECT_ROOT / "logs" / "trading.sqlite" # SQLite does not care about the file extension. Most common extension are .db and .sqlite
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 print(f"[DB] Using database at: {DB_PATH}")
