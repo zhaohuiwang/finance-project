@@ -44,6 +44,7 @@ my_IULs/
 tokens.json
 secret_config.json
 
+# tokens.json  --Ignore all tokens.json files anywhere in the project
 
 # === Data Files (Optional but common) ===
 # Your rule to ignore all project CSV files
