@@ -95,6 +95,14 @@ if __name__ == "__main__":
                                 print(
                                     f"{sym}: {h['shares']} shares @ ${h.get('buy_price', 0):.2f}"
                                 )
+                    elif cmd.startswith("eval "):
+                        expr = cmd[5:].strip()
+                        try:
+                            result = eval(expr, {"self": self, "bot": self})
+                            console.print(result)
+                        except Exception as e:
+                            console.print(f"[red]eval error: {e}[/red]")
+
                     else:
                         print("Commands: stop | reload | status | positions")
                 except Exception:

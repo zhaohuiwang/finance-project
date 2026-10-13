@@ -265,9 +265,9 @@ order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
 # submit an order
 
 order_b3 = buy_limit_dict(
-    symbol="WDC",
-    quantity=100,
-    limit_price=392.2,
+    symbol="NBIS",
+    quantity=200,
+    limit_price=203.2,
     session="NORMAL",
     duration="DAY",
 )
@@ -276,7 +276,7 @@ order = order_b3
 order_s4 = sell_limit_dict(
     symbol="WDC",
     quantity=100,
-    limit_price=395.4,
+    limit_price=367.0,
     session="NORMAL",
     duration="DAY",
 )
