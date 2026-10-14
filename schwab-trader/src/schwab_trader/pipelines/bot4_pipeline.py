@@ -100,7 +100,7 @@ class TradingBot:
 
         console.print(
             "[bold green]TradingBot (Trailing Momentum Strategy) initialized "
-            "(with Bot3 price tracking + fill handling)[/bold green]"
+            "[/bold green]"
         )
 
 

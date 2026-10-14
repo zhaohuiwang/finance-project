@@ -16,7 +16,9 @@ print(f"[DB] Using database at: {DB_PATH}")
 
 def get_connection():
     """Get a database connection with timeout for thread safety."""
-    return sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
+    conn.row_factory = sqlite3.Row          #
+    return conn
 
 def init_db():
     """Initialize database tables (includes high_price from the start)."""
@@ -167,21 +169,16 @@ def save_state(
 # ==================== GETTERS ====================
 def get_last_buy_info(symbol: str) -> float | None:
     try:
-        conn = get_connection()
-        row = conn.execute(
+        with get_connection() as conn:
+            cur = conn.execute(
             "SELECT last_buy_price, last_buy_qty, last_buy_time FROM state WHERE symbol=?", (symbol,)
-        ).fetchone()
-        conn.close()
-
-        if row:
-            return (
-                float(row["last_buy_price"]) if row["last_buy_price"] is not None else None,
-                float(row["last_buy_qty"]) if row["last_buy_qty"] is not None else None,
-                row["last_buy_time"],
             )
+            row = cur.fetchone()
+            conn.close()
 
-        return None, None, None
-
+            if row and row["last_buy_price"] is not None:
+                return  float(row["last_buy_price"]), float(row["last_buy_qty"] or 0), row["last_buy_time"]
+        
     except Exception as e:
         print(f"[DB] Error getting last buy info for {symbol}: {e}")
         return None, None, None
@@ -189,20 +186,16 @@ def get_last_buy_info(symbol: str) -> float | None:
 
 def get_last_sell_info(symbol: str) -> float | None:
     try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT last_sell_price, last_sell_qty, last_sell_time FROM state WHERE symbol=?", (symbol,)
-        ).fetchone()
-        conn.close()
-        
-        if row:
-            return (
-                float(row["last_sell_price"]) if row["last_sell_price"] is not None else None,
-                float(row["last_sell_qty"]) if row["last_sell_qty"] is not None else None,
-                row["last_sell_time"],
-            )
+        with get_connection() as conn:
+            cur = conn.execute(
+            "" \
+            "SELECT last_sell_price, last_sell_qty, last_sell_time FROM state WHERE symbol=? ORDER BY last_sell_time DESC LIMIT 1" \
+            "", (symbol,)
+        )
+            row = cur.fetchone()
 
-        return None, None, None
+            if row and row["last_sell_price"] is not None:
+                return float(row["last_sell_price"]), float(row["last_sell_qty"] or 0), row["last_sell_time"]
 
     except Exception as e:
         print(f"[DB] Error getting last sell info for {symbol}: {e}")
