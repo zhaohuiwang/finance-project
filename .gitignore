@@ -1,14 +1,4 @@
 
-# logs/  --Ignore all logs directories anywhere in the project
-# **/logs/ -- (Explicit version of logs/)
-# /logs/  -- Only a logs/ folder in your top-level project directory
-
-.python-version
-*.csv
-*.duckdb
-*.env
-*.pyc
-
 
 # === Build & Distribution Outputs ===
 # Ignores build folders anywhere in the project (recommended over /build)
@@ -21,6 +11,7 @@ eggs/
 
 # === Virtual Environments (Crucial) ===
 # Note: uv.lock at the project root dir should not be ignored (vs .venv/.loc) 
+.python-version
 .venv/
 venv/
 ENV/
@@ -55,6 +46,9 @@ plots/
 *.csv
 *.duckdb
 *.log
+*.sqlite
+*.db
+*.csv
 
 # logs/  --Ignore all logs directories anywhere in the project
 # **/logs/ -- (Explicit version of logs/)
