@@ -261,28 +261,34 @@ order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
     buy_duration="GOOD_TILL_CANCEL",
 )
 
-# submit an order
-
-order_b3 = buy_limit_dict(
-    symbol="WDC",
-    quantity=2,
-    limit_price=400.2,
+#  ==============================================================
+# submit an buy order
+#  ==============================================================
+order_b = buy_limit_dict(
+    symbol="NBIS",
+    quantity=100,
+    limit_price=170.2,
     session="NORMAL",
     duration="DAY",
 )
-order = order_b3
+order = order_b
 
-order_s4 = sell_limit_dict(
-    symbol="WDC",
-    quantity=200,
-    limit_price=480.2,
+status, date, order_id = place_order(
+    client=client, accountHash=hashValue, order=order
+)
+
+#  ==============================================================
+# submit a sell order
+#  ==============================================================
+order_s = sell_limit_dict(
+    symbol="NBIS",
+    quantity=100,
+    limit_price=169.2,
     session="NORMAL",
     duration="DAY",
 )
-order = order_s4
+order = order_s
 
-
-# Place an order
 status, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
 )
@@ -291,6 +297,7 @@ order_id = "1007168170226"  # Limit buy
 
 order_id = "1007168170617"  # Limit sell
 order_id = "1007490828759"
+
 # Cancel an order
 status_code, date = cancel_order(
     client=client,
