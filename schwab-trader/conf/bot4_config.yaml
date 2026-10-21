@@ -27,30 +27,47 @@ symbols:
     trailing_sell_pct: 1.0
     pullback_buy_pct: 3.0
     trailing_buy_pct: 1.5
+  
+  NBIS:
+    fixed_shares: 100
+    momentum_up_pct: 5.0
+    trailing_sell_pct: 1.0
+    pullback_buy_pct: 3.0
+    trailing_buy_pct: 1.5
 
 
+
+#################################################################
 # Bot4 Strategy (Trailing Momentum / Pullback)
-# This is a momentum breakout + pullback re-entry system that relies almost entirely on trailing-stop orders for both sides.
-# Bot4 be default switches to idle after 16:00 and then auto-shutdown at 16:02. On weekends or holidays the bot will also shut down shortly after it detects that it is outside regular session. You need something external to start the bot again: systemd timer, cron job or manual start.
+#################################################################
 
-#   a. Core evaluation (on every price tick via ensure_trailing_strategy):
+# On every price update the bot evaluates three mutually exclusive situations:
+# 1. Momentum Sell Setup
+#     Conditions:
+#      <> No current position
+#      <> No open SELL order
+#      <> Price has risen ≥ momentum_up_pct from the base, where
+#        (base = min(previous close, day low))
 
-#       <>  Computes base = min(previous close, day low).
-#       <>  % up = (current price - base) / base x 100.
-#       <>  Tracks last sell price (restored from DB on restart).
+#     Action:
+#      ! Place a trailing-stop SELL for fixed_shares with offset = trailing_sell_pct.
+#     : This tries to catch a strong upward move and lock in profits as the price climbs.
 
-#   b. Three mutually exclusive actions:
+# 2. Pullback Buy Setup (after a sell)
+#     Conditions:
+#      <>  Has a recorded last_sell_price
+#      <> No current position
+#      <> No open BUY order
+#      <> Price has dropped ≥ pullback_buy_pct from the last sell price
 
-#       1. Momentum Sell setup (no position, no open sell):
-#           If % up ≥ momentum_up_pct → place trailing-stop sell for fixed_shares with offset = trailing_sell_pct (percent of last price, basis LAST).
+#     Action:
+#      ! Place a trailing-stop BUY for fixed_shares with offset = trailing_buy_pct.
+#     : This tries to buy the dip after a previous profitable (or any) sale.
+# 3. Protect Existing Position
+#     Conditions:
+#      <> Currently holding shares
+#      <> No open SELL order
 
-#       2. Pullback Buy setup (has recorded last sell, no position, no open buy):
-#           If price has dropped ≥ pullback_buy_pct from last sell → place trailing-stop buy for fixed_shares with offset = trailing_buy_pct.
-
-#       3. Protect existing position:
-#           If holding shares and no open sell → place trailing-stop sell on the full position size (using trailing_sell_pct).
-
-
-#   c.  Supporting features
-
-#   d.  Config style: purely percentage-driven (momentum_up_pct, trailing_sell_pct, pullback_buy_pct, trailing_buy_pct) + fixed share size. No hard price targets or classic stop-loss percentages.
+#     Action:
+#      ! Place a trailing-stop SELL on the full position size using trailing_sell_pct.
+#     : Always keeps a protective trailing stop on any open long position.

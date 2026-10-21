@@ -262,6 +262,23 @@ order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
     buy_duration="GOOD_TILL_CANCEL",
 )
 
+# ========================================================================
+# Check orders
+# ========================================================================
+from_time, to_time = get_utc_time_range(
+    offset=dt.timedelta(days=0, hours=8, minutes=5)
+)
+
+orders = client.account_orders(
+    hashValue,
+    fromEnteredTime=from_time,
+    toEnteredTime=to_time,
+    #status='WORKING',
+    status="FILLED",
+).json()
+
+print(json.dumps(orders, indent=4))
+
 #  ==============================================================
 # submit an buy order
 #  ==============================================================
@@ -284,7 +301,7 @@ status, date, order_id = place_order(
 order_s = sell_limit_dict(
     symbol="NBIS",
     quantity=100,
-    limit_price=169.2,
+    limit_price=179.2,
     session="NORMAL",
     duration="DAY",
 )
@@ -294,7 +311,9 @@ status, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
 )
 
-order_id = "1007168170226"
+
+order_id = "1008321817699"
+
 
 order_id = "1007168170617"  # Limit sell
 order_id = "1007490828759"
@@ -353,15 +372,15 @@ from_time, to_time = get_utc_time_range(
     offset=dt.timedelta(days=4, hours=1, minutes=5)
 )
 # or simply
-from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=0, hours=8, minutes=5)
+from_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=4, hours=8, minutes=5)
 to_time = dt.datetime.now(dt.timezone.utc)
 
 orders = client.account_orders(
     hashValue,
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
-    status='WORKING',
-    # status="FILLED",
+    #status='WORKING',
+    status="FILLED",
 ).json()
 
 print(json.dumps(orders, indent=4))

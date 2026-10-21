@@ -19,7 +19,7 @@ risk:
   default_shares: 1
 
 # Auto-shutdown configuration
-auto_shutdown_after_close: false
+auto_shutdown_after_close: true
 shutdown_buffer_minutes: 2
 
 
@@ -27,7 +27,7 @@ symbols:
     WDC:
       fixed_shares: 200
       
-      buy_target_price: 364.2
+      buy_target_price: 304.2
 
       trail_activation_price: 370.8 # threshold to trigger trailing sell order
       trail_offset_pct: 0.1       # minimal 0.1, trail sell by % from high
@@ -67,7 +67,7 @@ symbols:
     NBIS:
       fixed_shares: 200
       
-      buy_target_price: 205.2
+      buy_target_price: 165.2
 
       trail_activation_price: 208.2   # threshold to trigger trailing sell order
       trail_offset_pct: 0.2           # trail sell by % from high
