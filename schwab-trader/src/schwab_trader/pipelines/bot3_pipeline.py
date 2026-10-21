@@ -104,7 +104,7 @@ class TradingBot:
 
         # Shutdown config
         self.trading_enabled = False   # flipped by monitor based on clock
-        self.auto_shutdown_after_close = getattr(cfg,"auto_shutdown_after_close", False)
+        self.auto_shutdown_after_close = getattr(cfg,"auto_shutdown_after_close", True)
         self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
 
         # Signal handlers
@@ -1068,15 +1068,28 @@ class TradingBot:
 
                     elif cmd in ("help", "h", "?"):
                         console.print("""
-    [bold]Available commands:[/bold]
-    pause / p      - Pause trading (no new orders)
-    resume / r     - Resume trading
-    stop / q       - Clean shutdown
-    cancel / c     - Cancel all open orders
-    status         - Show current bot state
-    reload         - Hot-reload config
-    help           - Show this help
-    """)
+                            [bold]Available commands:[/bold]
+                            pause / p      - Pause trading (no new orders)
+                            resume / r     - Resume trading
+                            stop / q       - Clean shutdown
+                            cancel / c     - Cancel all open orders
+                            status         - Show current bot state
+                            reload         - Hot-reload config
+                            help           - Show this help
+                            """
+                            )
+                    # ---------- Power-user eval ----------
+                    elif cmd.startswith("eval "):
+                        expr = cmd[5:].strip()
+                        # Only allow expressions that start with self. or bot.
+                        if not (expr.startswith("self.") or expr.startswith("bot.")):
+                            console.print("[red]Only expressions starting with self. or bot. are allowed[/red]")
+                            continue
+                        try:
+                            result = eval(expr, {"self": self, "bot": self})
+                            console.print(result)
+                        except Exception as e:
+                            console.print(f"[red]eval error: {e}[/red]")
                     else:
                         console.print(f"[red]Unknown command: {cmd}. Type 'help'[/red]")
 

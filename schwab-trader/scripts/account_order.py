@@ -62,6 +62,7 @@ from schwab_trader.orders.utils import (
     get_orders,
 )
 
+
 # Specified an accout number, instiate a client, the client will fetch the matching account hashValue for later identification
 # From account number (accountNumber) to account hash (hashValue)
 accountNumber = "29308909"
@@ -293,7 +294,7 @@ status, date, order_id = place_order(
     client=client, accountHash=hashValue, order=order
 )
 
-order_id = "1007168170226"  # Limit buy
+order_id = "1007168170226"
 
 order_id = "1007168170617"  # Limit sell
 order_id = "1007490828759"
@@ -359,7 +360,7 @@ orders = client.account_orders(
     hashValue,
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
-    # status='WORKING',
+    status='WORKING',
     # status="FILLED",
 ).json()
 

@@ -7,33 +7,48 @@
 # stemd service           ExecStart=... --port 8051
 # New permanent default   default=8051 in bot3.py
 
+# systemd-inhibit --what=idle:sleep --why="Long running Python script" uv run python scripts/bot3.py --port 8053
+
+# check status at terminal: status
+# check object value: eval self.day_prices or eval self.auto_shutdown_after_close
+risk:
+  risk_per_trade_pct: 1.0
+  max_positions: 4
+  min_account_equity: 5000.0
+  max_daily_loss_pct: 3.0
+  default_shares: 1
+
+# Auto-shutdown configuration
+auto_shutdown_after_close: false
+shutdown_buffer_minutes: 2
+
+
 symbols:
     WDC:
       fixed_shares: 200
       
-      buy_target_price: 435.1
+      buy_target_price: 364.2
 
-      trail_activation_price: 445.6 # threshold to trigger trailing sell order
+      trail_activation_price: 370.8 # threshold to trigger trailing sell order
       trail_offset_pct: 0.1       # minimal 0.1, trail sell by % from high
       limit_sell_price: 520.5     # hard take-profit limit
       co: 0                       # order cycle options
-
 
       session: "NORMAL"
       duration: "DAY"
 
       stop_loss_dollar: 0
-      stop_loss_pct: 20.0            # ignored while dollar > 0
+      stop_loss_pct: 1.0            # ignored while dollar > 0
       stop_loss_order_duration: "GOOD_TILL_CANCEL"
       
-      buy_drop_pct: 5.0
+      buy_drop_pct: 10.0
       # Always check the Dashboard > Open Orders > Price / Offset or terminal message, for example, "✓ Classic OCO placed for WDC (Stop $365.29 [20.0% below HWM (memory)@456.61] | Limit $520.5)"
 
     
     MU:
       fixed_shares: 50
       
-      buy_target_price: 966
+      buy_target_price: 806
 
       trail_activation_price: 988   # threshold to trigger trailing sell order
       trail_offset_pct: 0.2           # trail sell by % from high
@@ -47,21 +62,26 @@ symbols:
       stop_loss_pct: 30.0            # ignored while dollar > 0
       stop_loss_order_duration: "GOOD_TILL_CANCEL"
       
-      buy_drop_pct: 5.0 
+      buy_drop_pct: 10.0 
 
+    NBIS:
+      fixed_shares: 200
+      
+      buy_target_price: 205.2
 
+      trail_activation_price: 208.2   # threshold to trigger trailing sell order
+      trail_offset_pct: 0.2           # trail sell by % from high
+      limit_sell_price: 400         # hard take-profit limit
+      co: 0
 
-risk:
-  risk_per_trade_pct: 1.0
-  max_positions: 4
-  min_account_equity: 5000.0
-  max_daily_loss_pct: 3.0
-  default_shares: 1
+      session: "NORMAL"
+      duration: "DAY"
 
-# Auto-shutdown configuration
-auto_shutdown_after_close: true
-shutdown_buffer_minutes: 2
-
+      stop_loss_dollar: 0
+      stop_loss_pct: 1.0            # ignored while dollar > 0
+      stop_loss_order_duration: "GOOD_TILL_CANCEL"
+      
+      buy_drop_pct: 10.0 
 
 
 # Bot3 Strategy

@@ -95,7 +95,7 @@ app.layout = dbc.Container(
             columns=[
                 {"name": "Symbol", "id": "Symbol"},
                 {"name": "Current Price", "id": "current_price"},
-                {"name": "Prev Close", "id": "prev_close"},
+                {"name": "Base=min(PreviousClose, DayLow)", "id": "min(prev_close,day_low)"},
                 {"name": "Momentum %", "id": "momentum_pct"},
                 {"name": "Momentum Trigger", "id": "momentum_up_pct"},
                 {"name": "Trail Sell %", "id": "trailing_sell_pct"},
@@ -271,6 +271,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
             for sym, cfg in sorted(bot.symbols_config.items()):
                 price = bot.day_prices.get(sym, {}).get("market")
                 prev_close = bot.day_prices.get(sym, {}).get("close")
+                day_low = bot.day_prices.get(sym, {}).get("low")
                 hwm = bot.day_prices.get(sym, {}).get("hwm")
                 last_sell = bot.last_sell_prices.get(sym)
 
@@ -282,7 +283,7 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                     {
                         "Symbol": sym,
                         "current_price": f"${price:,.2f}" if price else "—",
-                        "prev_close": f"${prev_close:,.2f}" if prev_close else "—",
+                        "min(prev_close,day_low)": f"{min(prev_close, day_low)}=min(${prev_close:,.2f}, ${day_low:,.2f})" if prev_close and day_low else "—",
                         "momentum_pct": (
                             f"{momentum_pct:+.2f}%" if momentum_pct is not None else "—"
                         ),

@@ -11,7 +11,10 @@ systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot
 # Open your browser → http://127.0.0.1:8050
 
 # Change dashboard port
+# When the veenv is activated
 systemd-inhibit --what=idle:sleep --why="Long running Python script" python3 bot3.py --port 8053
+# Or directly run this in the project root (skip `source .venv/bin/activate`)
+systemd-inhibit --what=idle:sleep --why="Long running Python script" uv run python scripts/bot3.py --port 8053
 
 # Run Bot Only (Headless Mode) — No Dashboard
 # This is ideal for: Production / VPS / Server; Running in background; Using with screen, tmux, or systemd
@@ -92,6 +95,14 @@ if __name__ == "__main__":
                                 print(
                                     f"{sym}: {h['shares']} shares @ ${h.get('buy_price', 0):.2f}"
                                 )
+                    elif cmd.startswith("eval "):
+                        expr = cmd[5:].strip()
+                        try:
+                            result = eval(expr, {"self": self, "bot": self})
+                            console.print(result)
+                        except Exception as e:
+                            console.print(f"[red]eval error: {e}[/red]")
+
                     else:
                         print("Commands: stop | reload | status | positions")
                 except Exception:
