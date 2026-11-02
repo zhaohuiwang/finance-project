@@ -1,6 +1,9 @@
 from enum import Enum
+from typing import Any, TypedDict
+
 from schwab_trader.accounts.type_literal import (
     OrderType,
+    Instruction,
     stopPriceLinkBasis,
     stopPriceLinkType,
     Session,
@@ -10,739 +13,725 @@ from schwab_trader.accounts.type_literal import (
 # Dictionary specification for equity orders.
 # Note: Prices must be string in the JSON for precision
 
+OrderPayload = dict[str, Any]  # For the returned type
 
-def buy_market_dict(
-    symbol: str,
-    quantity: int,
-    session: Session = "NORMAL",
-    duration: Duration = "DAY",
-) -> dict:
+# ---------------------------------------------------------------------------
+# Shared validators
+# ---------------------------------------------------------------------------
+
+
+def _validate_symbol_instructions_quantities(symbol: str, **kwargs) -> None:
     """
-    Example:
-    buy_market_dict("AAPL", 10, Duration.FILL_OR_KILL)
-
+    Validate symbol, instructions, and quantities.
+    Requirement: "instruction" has to be in the instruction specification parameter(s) name and so does "quantity" in the quantity parameter(s).
     """
-    return {
-        "orderType": "MARKET",
-        "session": session,
-        "duration": duration,
-        "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {
-                "instruction": "BUY",
-                "quantity": quantity,
-                "instrument": {
-                    "symbol": symbol.upper(),
-                    "assetType": "EQUITY",
-                },
-            }
-        ],
-    }
+    if not isinstance(symbol, str) or not symbol.strip():
+        raise ValueError("symbol must not be empty.")
+
+    for name, value in kwargs.items():
+        if "instruction" in name:
+            if value not in ("BUY", "SELL"):
+                raise ValueError(f"{name.replace('_', ' ')} must be 'BUY' or 'SELL'.")
+        elif "quantity" in name:
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(
+                    f"{name.replace('_', ' ')} must be a positive integer."
+                )
+        else:
+            raise ValueError(f"Unsupported validation field: {name}.")
 
 
-def sell_market_dict(
-    symbol: str,
-    quantity: int,
-    session: Session = "NORMAL",
-    duration: Duration = "DAY",
-) -> dict:
-    return {
-        "orderType": "MARKET",
-        "session": session,
-        "duration": duration,
-        "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,
-                "instrument": {
-                    "symbol": symbol.upper(),
-                    "assetType": "EQUITY",
-                },
-            }
-        ],
-    }
+def _validate_positive_values(**values) -> None:
+    """Validate positive finite numeric values."""
+    from numbers import Real
+    from decimal import Decimal
+    import math
+
+    for name, value in values.items():
+        is_finite = (
+            value.is_finite() if isinstance(value, Decimal) else math.isfinite(value)
+        )
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (Real, Decimal))
+            or not is_finite
+            or value <= 0
+        ):
+            raise ValueError(
+                f"{name.replace('_', ' ')} must be a positive finite number."
+            )
 
 
-def buy_limit_dict(
-    symbol: str,
-    quantity: int,
-    limit_price: float,
-    session: Session = "NORMAL",
-    duration: Duration = "DAY",
-) -> dict:
-    return {
-        "orderType": "LIMIT",
-        "session": session,
-        "duration": duration,
-        "orderStrategyType": "SINGLE",
-        "price": str(limit_price),
-        "orderLegCollection": [
-            {
-                "instruction": "BUY",
-                "quantity": quantity,
-                "instrument": {
-                    "symbol": symbol.upper(),
-                    "assetType": "EQUITY",
-                },
-            }
-        ],
-    }
+def _validate_positive_percent_values(**values) -> None:
+    """Validate percentage values (0 < value < 100)."""
+    from numbers import Real
+    from decimal import Decimal
+    import math
+
+    for name, value in values.items():
+        is_finite = (
+            value.is_finite() if isinstance(value, Decimal) else math.isfinite(value)
+        )
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (Real, Decimal))
+            or not is_finite
+            or not 0 < value < 100
+        ):
+            raise ValueError(
+                f"{name.replace('_', ' ')} must be a percentage "
+                "greater than 0 and less than 100."
+            )
 
 
-def sell_limit_dict(
-    symbol: str,
-    quantity: int,
-    limit_price: float,
-    session: Session = "NORMAL",
-    duration: Duration = "DAY",
-) -> dict:
-    return {
-        "orderType": "LIMIT",
-        "session": session,
-        "duration": duration,
-        "orderStrategyType": "SINGLE",
-        "price": str(limit_price),
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,
-                "instrument": {
-                    "symbol": symbol.upper(),
-                    "assetType": "EQUITY",
-                },
-            }
-        ],
-    }
-
-
-def buy_limit_trigger_sell_limit_dict(
-    symbol: str,
-    quantity: int,
-    buy_limit_price: float,
-    sell_limit_price: float,
-    session_buy: Session = "NORMAL",
-    session_sell: Session = "NORMAL",
-    buy_duration: Duration = "DAY",
-    sell_duration: Duration = "DAY",
-) -> dict:
-    """
-    Conditional Order: One Triggers Another
-    Buy 10 shares of XYZ at a Limit price of $34.97 good for the Day. If filled, immediately submit an order to Sell 10 shares of XYZ with a Limit price of $42.03 good for the Day. Also known as 1st Trigger Sequence.
-    a.k.a. 1st Trigger Sequence.
-    """
-    instrument = {"symbol": symbol.upper(), "assetType": "EQUITY"}
-    return {
-        "orderType": "LIMIT",
-        "session": session_buy,
-        "price": str(buy_limit_price),  # "34.97"
-        "duration": buy_duration,
-        "orderStrategyType": "TRIGGER",
-        "orderLegCollection": [
-            {
-                "instruction": "BUY",
-                "quantity": quantity,
-                "instrument": instrument,
-            }
-        ],
-        "childOrderStrategies": [
-            {
-                "orderType": "LIMIT",
-                "session": session_sell,
-                "price": str(sell_limit_price),  # "42.03"
-                "duration": sell_duration,
-                "orderStrategyType": "SINGLE",
-                "orderLegCollection": [
-                    {
-                        "instruction": "SELL",
-                        "quantity": quantity,
-                        "instrument": instrument,
-                    }
-                ],
-            }
-        ],
-    }
-
-
-def sell_limit_sell_stoplimit_oco_dict(
-    symbol: str,
-    quantity: int,
-    sell_limit_price: float,
-    sell_stop_price: float,
-    sell_stoplimit_price: float,
-    session_sell_limit: Session = "NORMAL",
-    session_sell_stoplimit: Session = "NORMAL",
-    duration: Duration = "DAY",
-) -> dict:
-    """
-    Conditional Order: One Cancels Another
-    Sell 2 shares of XYZ at a Limit price of $45.97 and Sell 2 shares of XYZ with a Stop Limit order where the stop price is $37.03 and limit is $37.00. Both orders are sent at the same time. If one order fills, the other order is immediately cancelled. Both orders are good for the Day. Also known as an OCO order.
-    """
-    instrument = {"symbol": symbol.upper(), "assetType": "EQUITY"}
-
-    limit_leg = {
-        "orderType": "LIMIT",
-        "session": session_sell_limit,
-        "price": str(sell_limit_price),  # "45.97"
-        "duration": duration,
-        "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,
-                "instrument": instrument,
-            }
-        ],
-    }
-    stop_limit_leg = {
-        "orderType": "STOP_LIMIT",
-        "session": session_sell_stoplimit,
-        "price": str(sell_stoplimit_price),  # "37.00"
-        "stopPrice": str(sell_stop_price),  # "37.03"
-        "duration": duration,
-        "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,
-                "instrument": instrument,
-            }
-        ],
-    }
-
-    return {
-        "orderStrategyType": "OCO",
-        "childOrderStrategies": [limit_leg, stop_limit_leg],
-    }
-
-
-def sell_trailingstop_sell_limit_oco_dict(
-    symbol: str,
-    quantity: int,
-    sell_limit_price: float,
+def _validate_trailing_stop(
+    stop_price_link_type: stopPriceLinkType,
     stop_price_offset: float,
+) -> None:
+    """Validate trailing-stop offset and link type."""
+    if stop_price_link_type not in ("VALUE", "PERCENT", "TICK"):
+        raise ValueError("stop_price_link_type must be 'VALUE', 'PERCENT', or 'TICK'.")
+    if stop_price_link_type == "PERCENT":
+        _validate_positive_percent_values(stop_price_offset=stop_price_offset)
+    else:
+        _validate_positive_values(stop_price_offset=stop_price_offset)
+
+
+def _make_equity_leg(
+    symbol: str,
+    quantity: int,
+    instruction: Instruction,
+) -> dict:
+    """Common order-leg builder."""
+    return {
+        "orderLegType": "EQUITY",
+        "instruction": instruction,
+        "quantity": quantity,
+        "instrument": {
+            "symbol": symbol.upper(),
+            "assetType": "EQUITY",
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Payloads
+# ---------------------------------------------------------------------------
+
+
+def build_market_order_payload(
+    symbol: str,
+    quantity: int,
+    instruction: Instruction,
+    session: Session = "NORMAL",
+) -> OrderPayload:
+    """Market order. Duration is always DAY for market orders."""
+    _validate_symbol_instructions_quantities(
+        symbol,
+        input_instruction=instruction,
+        input_quantity=quantity,
+    )
+    order_leg = _make_equity_leg(symbol, quantity, instruction)
+    return {
+        "orderType": "MARKET",
+        "session": session,
+        "duration": "DAY",
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [order_leg],
+    }
+
+
+def build_limit_order_payload(
+    symbol: str,
+    quantity: int,
+    limit_price: float,
+    instruction: Instruction,
+    session: Session = "NORMAL",
+    duration: Duration = "DAY",
+) -> OrderPayload:
+    """Simple limit order."""
+    _validate_symbol_instructions_quantities(
+        symbol,
+        input_instruction=instruction,
+        input_quantity=quantity,
+    )
+    _validate_positive_values(input_limit_price=limit_price)
+
+    order_leg = _make_equity_leg(symbol, quantity, instruction)
+    return {
+        "orderType": "LIMIT",
+        "price": str(limit_price),
+        "session": session,
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [order_leg],
+    }
+
+
+def build_trailing_stop_order_payload(
+    symbol: str,
+    quantity: int,
+    instruction: Instruction,  # "BUY" or "SELL"
+    stop_price_link_basis: stopPriceLinkBasis = "BID",
     stop_price_link_type: stopPriceLinkType = "PERCENT",
+    stop_price_offset: float = 2.0,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> dict:
     """
-    Build a Schwab OCO sell order with a trailing-stop and limit-sell leg.
+    Build a Schwab trailing-stop order payload for an equity position.
 
-    The returned order contains two SELL child orders:
-
-    1. LIMIT SELL:
-       Sells the specified quantity when the market reaches the
-       specified `sell_limit_price`.
-
-    2. TRAILING STOP SELL:
-       Sells the specified quantity when the trailing stop is triggered.
-       The trailing stop is linked to the LAST traded price and uses
-       `stop_price_offset` according to `stop_price_link_type`.
-      
-
-    For a 2% trailing stop, the basic relationship is:
-    Trailing Stop Price=Highest Reference Pricex(1-0.02) where the Highest Reference Price is the highest qualifying LAST price reached since the trailing order became active.
-
-    Because the two orders are combined as an OCO (One-Cancels-the-Other),
-    execution of one child order causes the other child order to be
-    canceled.
+    The trailing stop trigger price follows the reference market price
+    according to the specified offset. When triggered, the order submits
+    a market order.
 
     Args:
-        symbol: Stock ticker symbol, e.g. "AAPL".
-        quantity: Number of shares to sell.
-        sell_limit_price: Limit price for the take-profit SELL order.
-        stop_price_offset: Trailing-stop offset. Its meaning depends on
-            `stop_price_link_type`; for example, 2 with "PERCENT" means
-            a 2% trailing offset.
-        stop_price_link_type: Type of trailing-stop offset, such as
-            "PERCENT" or another value supported by Schwab.
-        session: Trading session for the child orders. Defaults to
-            "NORMAL".
-        duration: Order duration for the child orders. Defaults to "DAY".
+        symbol:
+            Stock ticker symbol.
+
+        quantity:
+            Number of shares.
+
+        instruction:
+            Order instruction: "BUY" or "SELL".
+
+        stop_price_link_basis:
+            Reference price used for trailing calculations:
+            "BID", "ASK", "LAST", or "MARK".
+
+        stop_price_link_type:
+            Trailing offset type:
+            "VALUE", "PERCENT", or "TICK".
+
+        stop_price_offset:
+            Trailing offset amount.
+
+        session:
+            Trading session, typically "NORMAL".
+
+        duration:
+            Order duration, typically "DAY".
 
     Returns:
-        A dictionary formatted for use as a Schwab API OCO order.
+        dict:
+            Schwab API trailing-stop order payload.
+    """
+    # Validate inputs.
+    _validate_symbol_instructions_quantities(
+        symbol,
+        input_instruction=instruction,
+        input_quantity=quantity,
+    )
+
+    if stop_price_link_type == "PERCENT":
+        _validate_positive_percent_values(input_stop_price_offset=stop_price_offset)
+    else:
+        _validate_positive_values(input_stop_price_offset=stop_price_offset)
+
+    _validate_trailing_stop(stop_price_link_type, stop_price_offset)
+
+    instrument = {
+        "symbol": symbol.upper(),
+        "assetType": "EQUITY",
+    }
+    order_leg = _make_equity_leg(symbol, quantity, instruction)
+    return {
+        "complexOrderStrategyType": "NONE",
+        "orderType": "TRAILING_STOP",
+        "session": session,
+        "stopPriceLinkBasis": stop_price_link_basis,
+        "stopPriceLinkType": stop_price_link_type,
+        "stopPriceOffset": stop_price_offset,
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [order_leg],
+    }
+
+
+def build_oto_limit_order_payload(
+    symbol: str,
+    quantity: int,
+    instructions: tuple[Instruction, Instruction],
+    limit_prices: tuple[float, float],
+    sessions: tuple[Session, Session] = ("NORMAL", "NORMAL"),
+    durations: tuple[Duration, Duration] = ("DAY", "DAY"),
+) -> dict:
+    """
+    Build a One-Triggers-Other (OTO) limit order.
+
+    Tuple positions:
+        [0] Primary order
+        [1] Secondary order
 
     Example:
-        >>> order = sell_trailing_sell_limit_oco_dict(
-        ...     symbol="AAPL",
-        ...     quantity=100,
-        ...     sell_limit_price=250.00,
-        ...     stop_price_offset=2.0,
-        ...     stop_price_link_type="PERCENT",
-        ... )
-        >>>
-        >>> response = client.place_order(hash_value, order)
-
-    The example creates an OCO order that attempts to:
-        - Sell 100 AAPL shares at a $250.00 limit price, OR
-        - Sell 100 AAPL shares using a 2% trailing stop.
-
-    Whichever SELL order executes first causes the other OCO leg
-    to be canceled.
+        Buy 10 shares of XYZ at $34.97.
+        When filled, trigger a sell order at $42.03.
     """
 
-    instrument = {"symbol": symbol, "assetType": "EQUITY"}
+    # Validate inputs.
+    _validate_symbol_instructions_quantities(
+        symbol,
+        primary_instruction=instructions[0],
+        secondary_instruction=instructions[1],
+        quantity=quantity,
+    )
 
-    limit_leg = {
+    # Validate tuple/list inputs.
+    for name, values in (
+        ("instructions", instructions),
+        ("limit_prices", limit_prices),
+        ("sessions", sessions),
+        ("durations", durations),
+    ):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError(f"{name} must contain exactly two values.")
+
+    # Validate individual values.
+    _validate_positive_values(
+        primary_limit_price=limit_prices[0],
+        secondary_limit_price=limit_prices[1],
+    )
+
+    primary_instruction, secondary_instruction = instructions
+    primary_price, secondary_price = limit_prices
+    primary_session, secondary_session = sessions
+    primary_duration, secondary_duration = durations
+
+    primary_leg = _make_equity_leg(symbol, quantity, primary_instruction)
+    secondary_leg = _make_equity_leg(symbol, quantity, secondary_instruction)
+
+    secondary_payload = {
         "orderType": "LIMIT",
-        "session": session,
-        "duration": duration,
-        "price": str(sell_limit_price),
+        "price": str(secondary_price),
+        "session": secondary_session,
+        "duration": secondary_duration,
         "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,
-                "instrument": instrument}
-        ],
-    }
-
-    trailing_leg = {
-        "orderType": "TRAILING_STOP",
-        "session": session,
-        "duration": duration,
-        "stopPriceLinkBasis": "LAST",
-        "stopPriceLinkType": stop_price_link_type,
-        "stopPriceOffset": stop_price_offset,
-        "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {"instruction": "SELL", "quantity": quantity, "instrument": instrument}
-        ],
+        "orderLegCollection": [secondary_leg],
     }
 
     return {
-        "orderStrategyType": "OCO",
-        "childOrderStrategies": [limit_leg, trailing_leg],
+        "orderType": "LIMIT",
+        "price": str(primary_price),
+        "session": primary_session,
+        "duration": primary_duration,
+        "orderStrategyType": "TRIGGER",
+        "orderLegCollection": [primary_leg],
+        "childOrderStrategies": [secondary_payload],
     }
 
 
-def sell_trailingstop_sell_stoplimit_oco_dict(
+def build_sell_limit_stoplimit_oco_payload(
     symbol: str,
     quantity: int,
-    sell_stop_price: float,
-    sell_stoplimit_price: float,
-    stop_price_offset: float,
+    # (limit_price, (stop_price, stop_limit_price))
+    sell_prices: tuple[float, tuple[float, float]],
+    sessions: tuple[Session, Session] = ("NORMAL", "NORMAL"),
+    duration: Duration = "DAY",
+) -> OrderPayload:
+    """
+    OCO: SELL limit  +  SELL stop-limit.
+
+    sell_prices = (limit_price, (stop_price, stop_limit_price))
+    Constraint: limit_price > stop_price >= stop_limit_price
+    """
+    _validate_symbol_instructions_quantities(
+        symbol, input_instruction="SELL", input_quantity=quantity
+    )
+
+    if (
+        not isinstance(sell_prices, (tuple, list))
+        or len(sell_prices) != 2
+        or not isinstance(sell_prices[1], (tuple, list))
+        or len(sell_prices[1]) != 2
+    ):
+        raise ValueError(
+            "sell_prices must be (limit_price, (stop_price, stop_limit_price))"
+        )
+    if not isinstance(sessions, (tuple, list)) or len(sessions) != 2:
+        raise ValueError("sessions must contain exactly two values")
+
+    limit_price, (stop_price, stop_limit_price) = sell_prices
+    session_limit, session_stoplimit = sessions
+
+    _validate_positive_values(
+        limit_price=limit_price,
+        stop_price=stop_price,
+        stop_limit_price=stop_limit_price,
+    )
+    if not limit_price > stop_price:
+        raise ValueError("limit_price must be greater than stop_price")
+    if not stop_price >= stop_limit_price:
+        raise ValueError("stop_limit_price must be <= stop_price")
+
+    leg = _make_equity_leg(symbol, quantity, "SELL")
+
+    limit_payload = {
+        "orderType": "LIMIT",
+        "price": str(limit_price),
+        "session": session_limit,
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [leg],
+    }
+    stoplimit_payload = {
+        "orderType": "STOP_LIMIT",
+        "price": str(stop_limit_price),
+        "stopPrice": str(stop_price),
+        "session": session_stoplimit,
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [leg],
+    }
+    return {
+        "orderStrategyType": "OCO",
+        "childOrderStrategies": [limit_payload, stoplimit_payload],
+    }
+
+
+def build_sell_trailingstop_sell_limit_oco_payload(
+    symbol: str,
+    quantity: int,
+    # (limit_price, trailing_offset)
+    sell_prices: tuple[float, float],
+    stop_price_link_type: stopPriceLinkType = "PERCENT",
+    stop_price_link_basis: stopPriceLinkBasis = "LAST",
     session: Session = "NORMAL",
     duration: Duration = "DAY",
-    stop_price_link_type: stopPriceLinkType = "PERCENT",
-) -> dict:
+) -> OrderPayload:
     """
-    Conditional Order: One Cancels Another
-    Sell 2 shares of XYZ at a TRAILING STOP price of $45.97 and Sell 2 shares of XYZ with a Stop Limit order where the stop price is $37.03 and limit is $37.00. Both orders are sent at the same time. If one order fills, the other order is immediately cancelled. Both orders are good for the Day. Also known as an OCO order.
-    """
-    instrument = {"symbol": symbol.upper(), "assetType": "EQUITY"}
+    OCO: SELL limit  +  SELL trailing-stop.
 
-    trailing_leg = {
+    sell_prices = (limit_price, trailing_offset)
+    """
+    _validate_symbol_instructions_quantities(
+        symbol, input_instruction="SELL", input_quantity=quantity
+    )
+    if not isinstance(sell_prices, (tuple, list)) or len(sell_prices) != 2:
+        raise ValueError("sell_prices must be (limit_price, trailing_offset)")
+
+    limit_price, offset = sell_prices
+    _validate_positive_values(limit_price=limit_price)
+    _validate_trailing_stop(stop_price_link_type, offset)
+
+    leg = _make_equity_leg(symbol, quantity, "SELL")
+
+    limit_payload = {
+        "orderType": "LIMIT",
+        "price": str(limit_price),
+        "session": session,
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [leg],
+    }
+    trailing_payload = {
+        "orderType": "TRAILING_STOP",
+        "stopPriceLinkBasis": stop_price_link_basis,
+        "stopPriceLinkType": stop_price_link_type,
+        "stopPriceOffset": offset,
+        "session": session,
+        "duration": duration,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [leg],
+    }
+    return {
+        "orderStrategyType": "OCO",
+        "childOrderStrategies": [limit_payload, trailing_payload],
+    }
+
+
+def build_sell_trailingstop_sell_stoplimit_oco_payload(
+    symbol: str,
+    quantity: int,
+    # (stop_price, stop_limit_price)
+    stop_prices: tuple[float, float],
+    stop_price_offset: float,
+    stop_price_link_type: stopPriceLinkType = "PERCENT",
+    stop_price_link_basis: stopPriceLinkBasis = "LAST",
+    session: Session = "NORMAL",
+    duration: Duration = "DAY",
+) -> OrderPayload:
+    """
+    OCO: SELL trailing-stop  +  SELL stop-limit.
+
+    stop_prices = (stop_price, stop_limit_price)
+    Constraint: stop_price >= stop_limit_price
+    """
+    _validate_symbol_instructions_quantities(
+        symbol, input_instruction="SELL", input_quantity=quantity
+    )
+    if not isinstance(stop_prices, (tuple, list)) or len(stop_prices) != 2:
+        raise ValueError("stop_prices must be (stop_price, stop_limit_price)")
+
+    stop_price, stop_limit_price = stop_prices
+    _validate_positive_values(stop_price=stop_price, stop_limit_price=stop_limit_price)
+    _validate_trailing_stop(stop_price_link_type, stop_price_offset)
+
+    if stop_price < stop_limit_price:
+        raise ValueError("stop_price must be >= stop_limit_price")
+
+    leg = _make_equity_leg(symbol, quantity, "SELL")
+
+    trailing_payload = {
         "orderType": "TRAILING_STOP",
         "session": session,
         "duration": duration,
-        "stopPriceLinkBasis": "LAST",
+        "stopPriceLinkBasis": stop_price_link_basis,
         "stopPriceLinkType": stop_price_link_type,
         "stopPriceOffset": stop_price_offset,
         "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,
-                "instrument": instrument
-                }
-        ],
+        "orderLegCollection": [leg],
     }
-    stop_limit_leg = {
+    stoplimit_payload = {
         "orderType": "STOP_LIMIT",
+        "price": str(stop_limit_price),
+        "stopPrice": str(stop_price),
         "session": session,
-        "price": str(sell_stoplimit_price),  # "37.00"
-        "stopPrice": str(sell_stop_price),  # "37.03"
         "duration": duration,
         "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,
-                "instrument": instrument,
-            }
-        ],
+        "orderLegCollection": [leg],
     }
-
     return {
         "orderStrategyType": "OCO",
-        "childOrderStrategies": [trailing_leg, stop_limit_leg],
+        "childOrderStrategies": [trailing_payload, stoplimit_payload],
     }
 
 
-def buy_limit_trigger_sell_limit_sell_stop_oco_dict(
+def build_buy_limit_trigger_sell_limit_stop_oco_payload(
     symbol: str,
     quantity: int,
-    buy_limit_price: float,
-    sell_limit_price: float,
-    sell_stop_price: float,
-    session_buy_limit: Session = "NORMAL",
-    session_sell_limit: Session = "NORMAL",
-    session_sell_stop: Session = "NORMAL",
-    buy_duration: Duration = "DAY",
-    sell_duration: Duration = "GOOD_TILL_CANCEL",
-) -> dict:
+    # (buy_limit, sell_limit, sell_stop)
+    prices: tuple[float, float, float],
+    # (buy_session, sell_limit_session, sell_stop_session)
+    sessions: tuple[Session, Session, Session] = (
+        "NORMAL",
+        "NORMAL",
+        "NORMAL",
+    ),
+    # (buy_duration, sell_duration)
+    durations: tuple[Duration, Duration] = ("DAY", "GOOD_TILL_CANCEL"),
+) -> OrderPayload:
     """
-    Conditional Order: One Triggers A One Cancels Another
-    Buy 5 shares of XYZ at a Limit price of $14.97 good for the Day. Once filled, 2 sell orders are immediately sent: Sell 5 shares of XYZ at a Limit price of $15.27 and Sell 5 shares of XYZ with a Stop order where the stop price is $11.27. If one of the sell orders fill, the other order is immediately cancelled. Both Sell orders are Good till Cancel. Also known as a 1st Trigger OCO order.
+    First-triggers-OCO:
 
+        BUY limit  →  OCO(SELL limit, SELL stop)
+
+    prices   = (buy_limit, sell_limit, sell_stop)
+    sessions = (buy, sell_limit, sell_stop)
+    durations = (buy, sell)
     """
-    instrument = {"assetType": "EQUITY", "symbol": symbol.upper()}
-    sell_limit_leg = {
-        "orderStrategyType": "SINGLE",
+    _validate_symbol_instructions_quantities(
+        symbol, input_instruction="BUY", input_quantity=quantity
+    )
+    if not isinstance(prices, (tuple, list)) or len(prices) != 3:
+        raise ValueError("prices must be (buy_limit, sell_limit, sell_stop)")
+    if not isinstance(sessions, (tuple, list)) or len(sessions) != 3:
+        raise ValueError("sessions must contain three values")
+    if not isinstance(durations, (tuple, list)) or len(durations) != 2:
+        raise ValueError("durations must be (buy_duration, sell_duration)")
+
+    buy_limit, sell_limit, sell_stop = prices
+    session_buy, session_sell_limit, session_sell_stop = sessions
+    buy_duration, sell_duration = durations
+
+    _validate_positive_values(
+        buy_limit=buy_limit,
+        sell_limit=sell_limit,
+        sell_stop=sell_stop,
+    )
+
+    buy_leg = _make_equity_leg(symbol, quantity, "BUY")
+    sell_leg = _make_equity_leg(symbol, quantity, "SELL")
+
+    sell_limit_payload = {
+        "orderType": "LIMIT",
+        "price": str(sell_limit),
         "session": session_sell_limit,
         "duration": sell_duration,
-        "orderType": "LIMIT",
-        "price": str(sell_limit_price),  # "15.27"
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,
-                "instrument": instrument,
-            }
-        ],
-    }
-    sell_stop_leg = {
         "orderStrategyType": "SINGLE",
+        "orderLegCollection": [sell_leg],
+    }
+    sell_stop_payload = {
+        "orderType": "STOP",
+        "stopPrice": str(sell_stop),
         "session": session_sell_stop,
         "duration": sell_duration,
-        "orderType": "STOP",
-        "stopPrice": str(sell_stop_price),  # "11.27"
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,
-                "instrument": instrument,
-            }
-        ],
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [sell_leg],
     }
 
     return {
-        "orderStrategyType": "TRIGGER",
-        "session": session_buy_limit,
-        "duration": buy_duration,
         "orderType": "LIMIT",
-        "price": str(buy_limit_price),  # "14.97"
-        "orderLegCollection": [
-            {
-                "instruction": "BUY",
-                "quantity": quantity,
-                "instrument": instrument,
-            }
-        ],
+        "price": str(buy_limit),
+        "session": session_buy,
+        "duration": buy_duration,
+        "orderStrategyType": "TRIGGER",
+        "orderLegCollection": [buy_leg],
         "childOrderStrategies": [
             {
                 "orderStrategyType": "OCO",
-                "childOrderStrategies": [sell_limit_leg, sell_stop_leg],
-            }
-        ],
-    }
-
-
-def buy_trailing_stop_dict(
-    symbol: str,
-    quantity: int,
-    stop_price_link_basis: stopPriceLinkBasis = "BID",
-    stop_price_link_type: stopPriceLinkType = "PERCENT",  # "VALUE" or "PERCENT" or "TICK"
-    stop_price_offset: float = 2.0,
-    session: Session = "NORMAL",
-    duration: Duration = "DAY",
-) -> dict:
-    """
-    Create a BUY trailing stop order for an equity position.
-
-    A trailing stop buy order is typically used to enter a long position only
-    after price begins moving upward from a lower level. The stop trigger price
-    automatically trails the market by a fixed offset.
-
-    Trailing behavior:
-    - The stop price follows the market downward by the specified offset.
-    - If the market reverses upward by the offset amount, the trailing stop
-      triggers and submits a market buy order.
-    - The stop price never moves higher while the market is falling.
-
-    Example:
-        Current price: $110
-        Trailing offset: 10 points (VALUE)
-
-        If the stock drops from $110 to $100:
-            trailing stop adjusts down to $110
-
-        If the stock later rises back to $110:
-            the order triggers and submits a market BUY order.
-
-    Percent example:
-        With stop_price_link_type="PERCENT" and stop_price_offset=2.0,
-        the stop price trails the market by 2%.
-
-    Args:
-        symbol:
-            Stock ticker symbol.
-
-        quantity:
-            Number of shares to purchase.
-
-        stop_price_link_basis:
-            Reference price used for trailing calculations.
-            Common values include:
-            - "BID"
-            - "ASK"
-            - "LAST"
-            - "MARK"
-
-        stop_price_link_type:
-            Type of trailing offset:
-            - "VALUE"   -> dollar amount
-            - "PERCENT" -> percentage
-            - "TICK"    -> tick increment
-
-        stop_price_offset:
-            Trailing offset amount based on stop_price_link_type.
-
-        session:
-            Trading session for the order.
-            Typically "NORMAL".
-
-        duration:
-            Order duration.
-            Common values:
-            - "DAY"
-            - "GOOD_TILL_CANCEL"
-
-    Returns:
-        dict:
-            Schwab API trailing stop BUY order payload.
-    """
-
-    return {
-        "complexOrderStrategyType": "NONE",
-        "orderType": "TRAILING_STOP",
-        "session": session,
-        "stopPriceLinkBasis": stop_price_link_basis,
-        "stopPriceLinkType": stop_price_link_type,
-        "stopPriceOffset": stop_price_offset,  # 10
-        "duration": duration,
-        "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {
-                "instruction": "BUY",
-                "quantity": quantity,  # 10
-                "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-            }
-        ],
-    }
-
-
-def sell_trailing_stop_dict(
-    symbol: str,
-    quantity: int,
-    stop_price_link_basis: stopPriceLinkBasis = "BID",
-    stop_price_link_type: stopPriceLinkType = "PERCENT",  # "VALUE" or "PERCENT" or "TICK"
-    stop_price_offset: float = 2.0,
-    session: Session = "NORMAL",
-    duration: Duration = "DAY",
-) -> dict:
-    """
-    Create a SELL trailing stop order for an equity position.
-
-    A trailing stop sell order is commonly used to protect profits or limit
-    downside risk on an existing long position. The stop trigger price
-    automatically trails the market as price increases.
-
-    Trailing behavior:
-    - The stop price follows the market upward by the specified offset.
-    - If the market reverses downward by the offset amount, the trailing stop
-      triggers and submits a market sell order.
-    - The stop price never moves lower while the market is rising.
-
-    Example:
-        Current price: $110
-        Trailing offset: 10 points (VALUE)
-
-        If the stock rises from $110 to $130:
-            trailing stop adjusts up to $120
-
-        If the stock later falls to $120:
-            the order triggers and submits a market SELL order.
-
-    Percent example:
-        With stop_price_link_type="PERCENT" and stop_price_offset=2.0,
-        the stop price trails the market by 2%.
-
-    Args:
-        symbol:
-            Stock ticker symbol.
-
-        quantity:
-            Number of shares to sell.
-
-        stop_price_link_basis:
-            Reference price used for trailing calculations.
-            Common values include:
-            - "BID"
-            - "ASK"
-            - "LAST"
-            - "MARK"
-
-        stop_price_link_type:
-            Type of trailing offset:
-            - "VALUE"   -> dollar amount
-            - "PERCENT" -> percentage
-            - "TICK"    -> tick increment
-
-        stop_price_offset:
-            Trailing offset amount based on stop_price_link_type.
-
-        session:
-            Trading session for the order.
-            Typically "NORMAL".
-
-        duration:
-            Order duration.
-            Common values:
-            - "DAY"
-            - "GOOD_TILL_CANCEL"
-
-    Returns:
-        dict:
-            Schwab API trailing stop SELL order payload.
-    """
-
-    return {
-        "complexOrderStrategyType": "NONE",
-        "orderType": "TRAILING_STOP",
-        "session": session,
-        "stopPriceLinkBasis": stop_price_link_basis,
-        "stopPriceLinkType": stop_price_link_type,
-        "stopPriceOffset": stop_price_offset,  # 10
-        "duration": duration,
-        "orderStrategyType": "SINGLE",
-        "orderLegCollection": [
-            {
-                "instruction": "SELL",
-                "quantity": quantity,  # 10
-                "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-            }
-        ],
-    }
-
-
-def buy_trailingstop_trigger_sell_trailingstop_dict(
-    symbol: str,
-    quantity_buy: int,
-    quantity_sell: int,
-    stop_price_link_basis_buy: stopPriceLinkBasis = "MARK",
-    stop_price_link_type_buy: stopPriceLinkType = "PERCENT",  # "VALUE" or "PERCENT" or "TICK"
-    stop_price_offset_buy: float = 2.0,
-    session_buy: Session = "NORMAL",
-    buy_duration: Duration = "DAY",  # "GOOD_TILL_CANCEL", "END_OF_WEEK", "END_OF_MONTH", ...
-    stop_price_link_basis_sell: stopPriceLinkBasis = "MARK",
-    stop_price_link_type_sell: stopPriceLinkType = "PERCENT",
-    stop_price_offset_sell: float = 2.0,
-    session_sell: Session = "NORMAL",
-    sell_duration: Duration = "DAY",
-) -> dict:
-    """ """
-    return {
-        "orderType": "TRAILING_STOP",
-        "session": session_buy,
-        "duration": buy_duration,
-        "quantity": quantity_buy,
-        "complexOrderStrategyType": "NONE",
-        "orderStrategyType": "TRIGGER",
-        "stopPriceLinkBasis": stop_price_link_basis_buy,
-        "stopPriceLinkType": stop_price_link_type_buy,
-        "stopPriceOffset": stop_price_offset_buy,
-        "stopType": "MARK",
-        "orderLegCollection": [
-            {
-                "orderLegType": "EQUITY",
-                "instruction": "BUY",
-                "quantity": quantity_buy,
-                "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-            }
-        ],
-        "childOrderStrategies": [
-            {
-                "orderType": "TRAILING_STOP",
-                "session": session_sell,
-                "duration": sell_duration,
-                "quantity": quantity_sell,
-                "complexOrderStrategyType": "NONE",
-                "orderStrategyType": "SINGLE",
-                "stopPriceLinkBasis": stop_price_link_basis_sell,
-                "stopPriceLinkType": stop_price_link_type_sell,
-                "stopPriceOffset": stop_price_offset_sell,
-                "stopType": "MARK",
-                "orderLegCollection": [
-                    {
-                        "orderLegType": "EQUITY",
-                        "instruction": "SELL",
-                        "quantity": quantity_sell,
-                        "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-                    }
+                "childOrderStrategies": [
+                    sell_limit_payload,
+                    sell_stop_payload,
                 ],
             }
         ],
     }
 
 
-def sell_trailingstop_trigger_buy_trailingstop_dict(
+def build_buy_trailingstop_trigger_sell_trailingstop_payload(
     symbol: str,
-    quantity_sell: int,
-    quantity_buy: int,
-    stop_price_link_basis_sell: stopPriceLinkBasis = "MARK",
-    stop_price_link_type_sell: stopPriceLinkType = "PERCENT",  # "VALUE" or "PERCENT" or "TICK"
-    stop_price_offset_sell: float = 2.0,
-    session_sell: Session = "NORMAL",
-    sell_duration: Duration = "DAY",  # "GOOD_TILL_CANCEL", "END_OF_WEEK", "END_OF_MONTH", ...
-    stop_price_link_basis_buy: stopPriceLinkBasis = "MARK",
-    stop_price_link_type_buy: stopPriceLinkType = "PERCENT",
-    stop_price_offset_buy: float = 2.0,
-    session_buy: Session = "NORMAL",
-    buy_duration: Duration = "DAY",
-) -> dict:
-    """ """
-    return {
+    quantities: tuple[int, int],  # (buy_qty, sell_qty)
+    # trailing parameters for buy / sell
+    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = (
+        "MARK",
+        "MARK",
+    ),
+    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = (
+        "PERCENT",
+        "PERCENT",
+    ),
+    stop_price_offsets: tuple[float, float] = (2.0, 2.0),
+    sessions: tuple[Session, Session] = ("NORMAL", "NORMAL"),
+    durations: tuple[Duration, Duration] = ("DAY", "DAY"),
+) -> OrderPayload:
+    """
+    Trailing-stop BUY that triggers a trailing-stop SELL.
+
+    All paired values are 2-tuples: (buy, sell).
+    """
+    if not isinstance(quantities, (tuple, list)) or len(quantities) != 2:
+        raise ValueError("quantities must be (buy_qty, sell_qty)")
+
+    qty_buy, qty_sell = quantities
+    _validate_symbol_instructions_quantities(
+        symbol,
+        buy_instruction="BUY",
+        buy_quantity=qty_buy,
+        sell_instruction="SELL",
+        sell_quantity=qty_sell,
+    )
+
+    for name, values in (
+        ("stop_price_link_bases", stop_price_link_bases),
+        ("stop_price_link_types", stop_price_link_types),
+        ("stop_price_offsets", stop_price_offsets),
+        ("sessions", sessions),
+        ("durations", durations),
+    ):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError(f"{name} must contain exactly two values")
+
+    basis_buy, basis_sell = stop_price_link_bases
+    type_buy, type_sell = stop_price_link_types
+    offset_buy, offset_sell = stop_price_offsets
+    session_buy, session_sell = sessions
+    duration_buy, duration_sell = durations
+
+    _validate_trailing_stop(type_buy, offset_buy)
+    _validate_trailing_stop(type_sell, offset_sell)
+
+    buy_leg = _make_equity_leg(symbol, qty_buy, "BUY")
+    sell_leg = _make_equity_leg(symbol, qty_sell, "SELL")
+
+    sell_payload = {
         "orderType": "TRAILING_STOP",
         "session": session_sell,
-        "duration": sell_duration,
-        "quantity": quantity_sell,
+        "duration": duration_sell,
+        "stopPriceLinkBasis": basis_sell,
+        "stopPriceLinkType": type_sell,
+        "stopPriceOffset": offset_sell,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [sell_leg],
+    }
+
+    return {
         "complexOrderStrategyType": "NONE",
+        "orderType": "TRAILING_STOP",
+        "session": session_buy,
+        "duration": duration_buy,
+        "stopPriceLinkBasis": basis_buy,
+        "stopPriceLinkType": type_buy,
+        "stopPriceOffset": offset_buy,
         "orderStrategyType": "TRIGGER",
-        "stopPriceLinkBasis": stop_price_link_basis_sell,
-        "stopPriceLinkType": stop_price_link_type_sell,
-        "stopPriceOffset": stop_price_offset_sell,
-        "stopType": "MARK",
-        "orderLegCollection": [
-            {
-                "orderLegType": "EQUITY",
-                "instruction": "SELL",
-                "quantity": quantity_sell,
-                "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-            }
-        ],
-        "childOrderStrategies": [
-            {
-                "orderType": "TRAILING_STOP",
-                "session": session_buy,
-                "duration": buy_duration,
-                "quantity": quantity_buy,
-                "complexOrderStrategyType": "NONE",
-                "orderStrategyType": "SINGLE",
-                "stopPriceLinkBasis": stop_price_link_basis_buy,
-                "stopPriceLinkType": stop_price_link_type_buy,
-                "stopPriceOffset": stop_price_offset_buy,
-                "stopType": "MARK",
-                "orderLegCollection": [
-                    {
-                        "orderLegType": "EQUITY",
-                        "instruction": "BUY",
-                        "quantity": quantity_buy,
-                        "instrument": {"symbol": symbol.upper(), "assetType": "EQUITY"},
-                    }
-                ],
-            }
-        ],
+        "orderLegCollection": [buy_leg],
+        "childOrderStrategies": [sell_payload],
+    }
+
+
+def build_sell_trailingstop_trigger_buy_trailingstop_payload(
+    symbol: str,
+    quantities: tuple[int, int],  # (sell_qty, buy_qty)
+    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = (
+        "MARK",
+        "MARK",
+    ),
+    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = (
+        "PERCENT",
+        "PERCENT",
+    ),
+    stop_price_offsets: tuple[float, float] = (2.0, 2.0),
+    sessions: tuple[Session, Session] = ("NORMAL", "NORMAL"),
+    durations: tuple[Duration, Duration] = ("DAY", "DAY"),
+) -> OrderPayload:
+    """
+    Trailing-stop SELL that triggers a trailing-stop BUY.
+
+    All paired values are 2-tuples: (sell, buy).
+    """
+    if not isinstance(quantities, (tuple, list)) or len(quantities) != 2:
+        raise ValueError("quantities must be (sell_qty, buy_qty)")
+
+    qty_sell, qty_buy = quantities
+    _validate_symbol_instructions_quantities(
+        symbol,
+        sell_instruction="SELL",
+        sell_quantity=qty_sell,
+        buy_instruction="BUY",
+        buy_quantity=qty_buy,
+    )
+
+    for name, values in (
+        ("stop_price_link_bases", stop_price_link_bases),
+        ("stop_price_link_types", stop_price_link_types),
+        ("stop_price_offsets", stop_price_offsets),
+        ("sessions", sessions),
+        ("durations", durations),
+    ):
+        if not isinstance(values, (tuple, list)) or len(values) != 2:
+            raise ValueError(f"{name} must contain exactly two values")
+
+    basis_sell, basis_buy = stop_price_link_bases
+    type_sell, type_buy = stop_price_link_types
+    offset_sell, offset_buy = stop_price_offsets
+    session_sell, session_buy = sessions
+    duration_sell, duration_buy = durations
+
+    _validate_trailing_stop(type_sell, offset_sell)
+    _validate_trailing_stop(type_buy, offset_buy)
+
+    sell_leg = _make_equity_leg(symbol, qty_sell, "SELL")
+    buy_leg = _make_equity_leg(symbol, qty_buy, "BUY")
+
+    buy_payload = {
+        "orderType": "TRAILING_STOP",
+        "session": session_buy,
+        "duration": duration_buy,
+        "stopPriceLinkBasis": basis_buy,
+        "stopPriceLinkType": type_buy,
+        "stopPriceOffset": offset_buy,
+        "orderStrategyType": "SINGLE",
+        "orderLegCollection": [buy_leg],
+    }
+
+    return {
+        "complexOrderStrategyType": "NONE",
+        "orderType": "TRAILING_STOP",
+        "session": session_sell,
+        "duration": duration_sell,
+        "stopPriceLinkBasis": basis_sell,
+        "stopPriceLinkType": type_sell,
+        "stopPriceOffset": offset_sell,
+        "orderStrategyType": "TRIGGER",
+        "orderLegCollection": [sell_leg],
+        "childOrderStrategies": [buy_payload],
     }

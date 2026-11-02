@@ -8,6 +8,8 @@ https://developer.schwab.com/products/trader-api--individual/details/specificati
 
 from typing import Literal  # TypedDict
 
+Instruction = Literal["BUY", "SELL"]
+
 Session = Literal["NORMAL", "AM", "PM", "SEAMLESS"]
 # NORMAL    Regular hours order
 # AM        Pre-market buy/sell
