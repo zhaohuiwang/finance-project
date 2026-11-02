@@ -14,39 +14,18 @@ from schwab_trader.accounts.schwab import client, SchwabAccount
 
 from schwab_trader.accounts.type_literal import Duration
 from schwab_trader.orders.equity import (
-    buy_market_dict,
-    sell_market_dict,
-    buy_limit_dict,
-    sell_limit_dict,
-    buy_limit_trigger_sell_limit_dict,
-    sell_limit_sell_stoplimit_oco_dict,
-    buy_limit_trigger_sell_limit_sell_stop_oco_dict,
-    sell_trailing_stop_dict,
-    buy_trailing_stop_dict,
-    sell_trailing_stop_dict,
-    buy_trailingstop_trigger_sell_trailingstop_dict,
-    sell_trailingstop_trigger_buy_trailingstop_dict,
-
+    build_market_order_payload,
+    build_limit_order_payload,
+    build_trailing_stop_order_payload,
+    build_oto_limit_order_payload,
+    build_sell_limit_stoplimit_oco_payload,
+    build_sell_trailingstop_sell_limit_oco_payload,
+    build_sell_trailingstop_sell_stoplimit_oco_payload,
+    build_buy_limit_trigger_sell_limit_stop_oco_payload,
+    build_buy_trailingstop_trigger_sell_trailingstop_payload,
+    build_sell_trailingstop_trigger_buy_trailingstop_payload,
 )
-from schwab_trader.accounts.schwab import client, SchwabAccount
 
-
-from schwab_trader.accounts.type_literal import Duration
-from schwab_trader.orders.equity import (
-    buy_market_dict,
-    sell_market_dict,
-    buy_limit_dict,
-    sell_limit_dict,
-    buy_limit_trigger_sell_limit_dict,
-    sell_limit_sell_stoplimit_oco_dict,
-    buy_limit_trigger_sell_limit_sell_stop_oco_dict,
-    sell_trailing_stop_dict,
-    buy_trailing_stop_dict,
-    sell_trailing_stop_dict,
-    buy_trailingstop_trigger_sell_trailingstop_dict,
-    sell_trailingstop_trigger_buy_trailingstop_dict,
-
-)
 from schwab_trader.orders.option import (
     buy_limit_single_option_dict,
     buy_limit_vertical_call_spread_dict,
@@ -61,7 +40,6 @@ from schwab_trader.orders.utils import (
     iter_keys_path_tuple,
     get_orders,
 )
-
 
 # Specified an accout number, instiate a client, the client will fetch the matching account hashValue for later identification
 # From account number (accountNumber) to account hash (hashValue)
@@ -103,14 +81,14 @@ print(json.dumps(data, indent=4))
 
 # create an order configuration dictionary
 # Buy order configurations
-order_b1 = buy_market_dict(
+order_b1 = build_market_order_payload(
     symbol="THISISADEMO",
     quantity=1,
+    instruction="BUY",
     session="NORMAL",
-    duration="DAY",
 )
 
-order_b3 = buy_limit_dict(
+order_b3 = build_limit_order_payload(
     symbol="CRWV",
     quantity=700,
     limit_price=81.2,
@@ -120,203 +98,129 @@ order_b3 = buy_limit_dict(
 )
 
 
-order_b5 = buy_limit_trigger_sell_limit_dict(
+order_b5 = build_oto_limit_order_payload(
     symbol="NBIS",
     quantity=1,
-    buy_limit_price=20,
-    sell_limit_price=120,
-    session_buy="NORMAL",
-    session_sell="NORMAL",
-    buy_duration="DAY",
-    sell_duration="GOOD_TILL_CANCEL",
+    instructions=["BUY", "SELL"],
+    limit_prices=[100, 120],
+    sessions=("NORMAL", "NORMAL"),
+    durations=("DAY", "DAY"),
 )
 
-order_b7 = buy_limit_trigger_sell_limit_sell_stop_oco_dict(
+order_b7 = build_buy_limit_trigger_sell_limit_stop_oco_payload(
     symbol="IREN",
     quantity=400,
-    buy_limit_price=4.3,  # 14.97
-    sell_limit_price=47.88,  # 15.27
-    sell_stop_price=40.0,  # 11.27
-    session_buy_limit="NORMAL",
-    session_sell_limit="NORMAL",
-    session_sell_stop="NORMAL",
-    buy_duration="DAY",
-    sell_duration="DAY",
+    # (buy_limit, sell_limit, sell_stop)
+    prices=[10.0, 15.0, 9.0],
+    # (buy_session, sell_limit_session, sell_stop_session)
+    sessions=("NORMAL", "NORMAL", "NORMAL"),
+    # (buy_duration, sell_duration)
+    durations=("DAY", "GOOD_TILL_CANCEL"),
 )
 
-order_b9 = buy_trailing_stop_dict(
-    symbol="",
+order_b9 = build_trailing_stop_order_payload(
+    symbol="NBIS",
     quantity=1,
+    instruction="BUY",  # "BUY" or "SELL"
     stop_price_link_basis="BID",
-    stop_price_link_type="PERCENT",  # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_type="PERCENT",  # # "VALUE" or "PERCENT" or "TICK"
     stop_price_offset=2.0,
     session="NORMAL",
     duration="DAY",
-) 
-# Sell order configurations
-order_s2 = sell_market_dict(
-    symbol="THISISADEMO",
-    quantity=1,
-    session="NORMAL",
-    duration="DAY",
 )
 
-order_s4 = sell_limit_dict(
+# Sell order configurations
+order_b1 = build_market_order_payload(
+    symbol="THISISADEMO",
+    quantity=1,
+    instruction="SELL",
+    session="NORMAL",
+)
+
+order_s4 = build_limit_order_payload(
     symbol="IBM",
     quantity=300,
     limit_price=278.4,
+    instruction="SELL",
     session="NORMAL",
     duration="DAY",
 )
 
-order_s6 = sell_trailing_stop_dict(
+order_s6 = build_trailing_stop_order_payload(
     symbol="NBIS",
     quantity=1,
-    stop_price_offset=10,  # 10
-    session="NORMAL",
-    duration="DAY",
-)
-
-order_s8 = sell_limit_sell_stoplimit_oco_dict(
-    # A conditional OCO (One-Cancels-the-Other) order. It pairs a profit-taking limit order with a loss-limiting stop limit order. When the price climbs to sell_limit_price or higher, it triggers the sell limit order to take profit. When the stock falls to the sell_stop_price, a sell limit order is triggeredto sell at sell_stoplimit_price or better.
-    symbol="IREN",
-    quantity=800,
-    sell_limit_price=65,
-    sell_stop_price=42,
-    sell_stoplimit_price=41.8,
-    session_sell_limit="NORMAL",
-    session_sell_stoplimit="NORMAL",
-    duration="GOOD_TILL_CANCEL",
-)
-
-order_s8 = sell_limit_sell_stoplimit_oco_dict(
-    symbol="JOBY",
-    quantity=1700,
-    sell_limit_price=16,
-    sell_stop_price=8.5,
-    sell_stoplimit_price=8.4,
-    session_sell_limit="NORMAL",
-    session_sell_stoplimit="NORMAL",
-    duration="GOOD_TILL_CANCEL",
-)
-order_s8 = sell_limit_sell_stoplimit_oco_dict(
-    symbol="ACHR",
-    quantity=2500,
-    sell_limit_price=11,
-    sell_stop_price=5.5,
-    sell_stoplimit_price=5.4,
-    session_sell_limit="NORMAL",
-    session_sell_stoplimit="NORMAL",
-    duration="GOOD_TILL_CANCEL",
-)
-order_s8 = sell_limit_sell_stoplimit_oco_dict(
-    symbol="IREN",
-    quantity=800,
-    sell_limit_price=56,
-    sell_stop_price=44.8,
-    sell_stoplimit_price=44.7,
-    session_sell_limit="NORMAL",
-    session_sell_stoplimit="NORMAL",
-    duration="GOOD_TILL_CANCEL",
-)
-
-order_s10 = sell_trailing_stop_dict(
-    symbol="",
-    quantity=1,
+    instruction="SELL",
     stop_price_link_basis="BID",
-    stop_price_link_type="PERCENT",  # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_type="PERCENT",
     stop_price_offset=2.0,
     session="NORMAL",
     duration="DAY",
-) 
-
-order_ts_bs = buy_trailingstop_trigger_sell_trailingstop_dict(
-    symbol="JOBY",
-    quantity_buy=1,
-    quantity_sell=1,
-    stop_price_link_basis_buy="MARK",
-    stop_price_link_type_buy="PERCENT",  # "VALUE" or "PERCENT" or "TICK"
-    stop_price_offset_buy=2.0,
-    session_buy="NORMAL",
-    buy_duration="GOOD_TILL_CANCEL",  # "DAY", "END_OF_WEEK", "END_OF_MONTH", ...
-    stop_price_link_basis_sell="MARK",
-    stop_price_link_type_sell="PERCENT",
-    stop_price_offset_sell=2.0,
-    session_sell="NORMAL",
-    sell_duration="GOOD_TILL_CANCEL",
 )
 
-order_ts_sb = sell_trailingstop_trigger_buy_trailingstop_dict(
-    symbol="USAR",
-    quantity_buy=1,
-    quantity_sell=1,
-    stop_price_link_basis_sell="MARK",
-    stop_price_link_type_sell="PERCENT",  # "VALUE" or "PERCENT" or "TICK"
-    stop_price_offset_sell=2.0,
-    session_sell="NORMAL",
-    sell_duration="GOOD_TILL_CANCEL",  # "DAY", "END_OF_WEEK", "END_OF_MONTH", ...
-    stop_price_link_basis_buy="MARK",
-    stop_price_link_type_buy="PERCENT",
-    stop_price_offset_buy=2.0,
-    session_buy="NORMAL",
-    buy_duration="GOOD_TILL_CANCEL",
-)
 
 # ========================================================================
 # Check orders
 # ========================================================================
-from_time, to_time = get_utc_time_range(
-    offset=dt.timedelta(days=0, hours=8, minutes=5)
-)
+from_time, to_time = get_utc_time_range(offset=dt.timedelta(days=0, hours=8, minutes=5))
 
 orders = client.account_orders(
     hashValue,
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
-    #status='WORKING',
-    status="FILLED",
+    status="WORKING",
+    # status="FILLED",
 ).json()
 
 print(json.dumps(orders, indent=4))
 
 #  ==============================================================
-# submit an buy order
+# submit an order
 #  ==============================================================
-order_b = buy_limit_dict(
+# Buy -> Sell limit / Sell stop order
+status, date, order_id = build_buy_limit_trigger_sell_limit_stop_oco_payload(
     symbol="NBIS",
     quantity=100,
-    limit_price=170.2,
-    session="NORMAL",
-    duration="DAY",
-)
-order = order_b
-
-status, date, order_id = place_order(
-    client=client, accountHash=hashValue, order=order
+    # (buy_limit, sell_limit, sell_stop)
+    prices=[151.2, 155.4, 148.2],
+    # (buy_session, sell_limit_session, sell_stop_session)
+    sessions=("NORMAL", "NORMAL", "NORMAL"),
+    # (buy_duration, sell_duration)
+    durations=("DAY", "GOOD_TILL_CANCEL"),
 )
 
 #  ==============================================================
-# submit a sell order
-#  ==============================================================
-order_s = sell_limit_dict(
-    symbol="NBIS",
-    quantity=100,
-    limit_price=179.2,
-    session="NORMAL",
-    duration="DAY",
-)
-order = order_s
-
+# Buy limit order
 status, date, order_id = place_order(
-    client=client, accountHash=hashValue, order=order
+    client=client,
+    accountHash=hashValue,
+    order=build_limit_order_payload(
+        symbol="NBIS",
+        quantity=100,
+        limit_price=172.2,
+        instruction="BUY",
+        session="NORMAL",
+        duration="DAY",
+    ),
 )
 
+#  ==============================================================
+# Sell limit order
+status, date, order_id = place_order(
+    client=client,
+    accountHash=hashValue,
+    order=build_limit_order_payload(
+        symbol="NBIS",
+        quantity=100,
+        limit_price=152.2,
+        instruction="SELL",
+        session="NORMAL",
+        duration="DAY",
+    ),
+)
 
-order_id = "1008321817699"
-
-
-order_id = "1007168170617"  # Limit sell
-order_id = "1007490828759"
+# '1008497726014'
+#  ==============================================================
+order_id = "1008427232542"
 
 # Cancel an order
 status_code, date = cancel_order(
@@ -324,6 +228,7 @@ status_code, date = cancel_order(
     accountHash=hashValue,
     order_id=order_id,
 )  # status_code 200 >>> success
+
 
 # ========================================================================
 # Place an option order
@@ -356,9 +261,7 @@ order_o3 = buy_limit_single_option_dict(
 order = order_o1
 
 
-status, date, order_id = place_order(
-    client=client, accountHash=hashValue, order=order
-)
+status, date, order_id = place_order(client=client, accountHash=hashValue, order=order)
 
 # ========================================================================
 # Check orders
@@ -379,7 +282,7 @@ orders = client.account_orders(
     hashValue,
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
-    #status='WORKING',
+    # status='WORKING',
     status="FILLED",
 ).json()
 
@@ -582,8 +485,9 @@ response = client.transactions(
 
 data = response.json()
 import json
+
 acctivity_list = json.dumps(data, indent=4)
-print(acctivity_list )
+print(acctivity_list)
 
 
 response = client.transaction_details(
@@ -638,21 +542,19 @@ account.refresh()
 #     place_trade()
 
 
-
 import os
 from dotenv import load_dotenv
 import schwabdev
+
 load_dotenv()
 
 
 client = schwabdev.Client(
-    os.getenv("APP_KEY"),
-    os.getenv("APP_SECRET"),
-    os.getenv("CALLBACK_URL")
-    )
+    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+)
 
-streamer = schwabdev.Stream(client) 
-streamer.start(receiver=print) 
+streamer = schwabdev.Stream(client)
+streamer.start(receiver=print)
 # receiver=print show everything including response, data, notify categories. simply prints every message Schwab server sends to your receiver.
 # 1. response — result of your request. "I received your subscription request, and it succeeded."
 # 2. data — actual streaming data. "Here is new data for your subscription."
@@ -679,5 +581,6 @@ response = client.transactions(
 
 data = response.json()
 import json
+
 acctivity_list = json.dumps(data, indent=4)
-print(acctivity_list )
+print(acctivity_list)
