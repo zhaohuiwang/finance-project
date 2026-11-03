@@ -21,46 +21,50 @@ from typing import (
 import math
 
 from schwab_trader.accounts.type_literal import (
-    Instruction,
-    Session,
-    Duration,
-    OrderType,
+    complexOrderStrategyType, # ["NONE", ...]
+    Instruction, # ["BUY","SELL", ...]
+    Session, # ["NORMAL", "AM", "PM", "SEAMLESS"]
+    Duration, # ["DAY","GOOD_TILL_CANCEL",...]
+    OrderType, # ["MARKET","LIMIT","STOP","STOP_LIMIT","TRAILING_STOP",...]
+    orderStrategyType, # ["SINGLE","OCO","TRIGGER",...]
+    OrderLegCollectionInstrumentAssetType, # ["EQUITY","OPTION",...]
     stopPriceLinkBasis,
-    stopPriceLinkType,
+    stopPriceLinkType, # ["VALUE", "PERCENT", "TICK"]
 )
 
+
 # ---------------------------------------------------------------------------
-# Strong typing
+# Strong typing - TypedDict creates a typing construct, it is essentially a dict with extra metadata
 # ---------------------------------------------------------------------------
 
 class Instrument(TypedDict):
     symbol: str
-    assetType: Literal["EQUITY"]
+    assetType: OrderLegCollectionInstrumentAssetType
 
 
 class OrderLeg(TypedDict):
-    orderLegType: Literal["EQUITY"]
+    # orderLegType: optional, mostly the same as instrument.assetType
     instruction: Instruction
     quantity: int
     instrument: Instrument
 
 
 class OrderPayload(TypedDict):
-    """Base shape of every Schwab order payload we produce."""
+    """Base shape of every Schwab order payload."""
     orderType: OrderType
     session: Session
     duration: Duration
-    orderStrategyType: Literal["SINGLE", "TRIGGER", "OCO"]
+    orderStrategyType: orderStrategyType
     orderLegCollection: list[OrderLeg]
 
-    # Optional / conditional fields
+    # Optional / conditional fields - Keys marked with NotRequired is optional
     price: NotRequired[str]
     stopPrice: NotRequired[str]
     stopPriceLinkBasis: NotRequired[stopPriceLinkBasis]
     stopPriceLinkType: NotRequired[stopPriceLinkType]
     stopPriceOffset: NotRequired[float]
-    complexOrderStrategyType: NotRequired[Literal["NONE"]]
-    childOrderStrategies: NotRequired[list["OrderPayload"]]
+    complexOrderStrategyType: NotRequired[complexOrderStrategyType]
+    childOrderStrategies: NotRequired[list["OrderPayload"]] # "OrderPayload" ← forward ref
 
 
 Number = Union[int, float, Decimal]
@@ -93,6 +97,7 @@ def _validate_percent(name: str, value: Number) -> None:
 def _validate_quantity(name: str, quantity: int) -> None:
     if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity <= 0:
         raise ValueError(f"{name} must be a positive integer, got {quantity!r}")
+    # !r is a conversion flag in f-strings. It call repr(value) instead of str(value), makes the error message show the exact value (with quotes if it’s a string, etc.)
 
 
 def _validate_instruction(name: str, instruction: Instruction) -> None:
@@ -262,8 +267,8 @@ def build_market_order_payload(
 def build_limit_order_payload(
     symbol: str,
     quantity: int,
-    limit_price: Number,
     instruction: Instruction,
+    limit_price: Number,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> OrderPayload:
@@ -272,7 +277,7 @@ def build_limit_order_payload(
 
     Example
     -------
-    >>> build_limit_order_payload("AAPL", 10, 175.50, "BUY")
+    >>> build_limit_order_payload("AAPL", 10, "BUY", 175.50)
     """
     leg = _make_leg(symbol, quantity, instruction)
     return _limit_order(leg, limit_price, session, duration)
