@@ -3,6 +3,18 @@ Schwab equity order payload builders.
 
 All public functions return a dict that can be sent directly to the
 Schwab Trader API.  Prices are always emitted as strings for precision.
+
+TypedDict is the more accurate choice (other than @dataclass) because the Schwab API works with plain JSON objects (dictionaries), not Python class instances. TypedDict alone never protects you at runtime. 
+At development time, we run the following static type checker:
+pip install pyright mypy
+pyright your_module.py
+# or
+mypy your_module.py
+
+If you want to 1. validate data 2. covert or coerce values 3. raise errors from wrong input at runtime, you need to add Pydantic models.
+
+TypedDict helps you write correct code. Pydantic (or manual checks) helps you run correct code.
+
 """
 
 from __future__ import annotations
