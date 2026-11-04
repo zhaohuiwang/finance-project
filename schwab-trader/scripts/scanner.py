@@ -13,7 +13,6 @@ from zoneinfo import ZoneInfo
 import schwabdev
 from dotenv import load_dotenv
 
-
 # ============================================================
 # CONFIG
 # ============================================================
@@ -61,6 +60,7 @@ ACTIVITY_WEIGHT = 10
 # DATA CLASSES
 # ============================================================
 
+
 @dataclass
 class Candle:
     timestamp: int
@@ -103,6 +103,7 @@ class Candidate:
 # HELPERS
 # ============================================================
 
+
 def safe_float(value, default=0.0):
 
     try:
@@ -139,27 +140,20 @@ def is_regular_session(timestamp_ms: int):
 
     dt = epoch_to_et(timestamp_ms)
 
-    return (
-        dt.weekday() < 5
-        and dt_time(9, 30)
-        <= dt.time()
-        < dt_time(16, 0)
-    )
+    return dt.weekday() < 5 and dt_time(9, 30) <= dt.time() < dt_time(16, 0)
 
 
 def slot_key(timestamp_ms: int):
 
     dt = epoch_to_et(timestamp_ms)
 
-    return (
-        dt.hour,
-        dt.minute // 5
-    )
+    return (dt.hour, dt.minute // 5)
 
 
 # ============================================================
 # MARKET SCANNER
 # ============================================================
+
 
 class MarketScanner:
 
@@ -171,9 +165,7 @@ class MarketScanner:
             CALLBACK_URL,
         )
 
-        self.stream = schwabdev.Stream(
-            self.client
-        )
+        self.stream = schwabdev.Stream(self.client)
 
         self.lock = threading.RLock()
 
@@ -183,10 +175,7 @@ class MarketScanner:
         self.historical_volume = {}
 
         # symbol -> latest live candle
-        self.live_candles: dict[
-            str,
-            Candle
-        ] = {}
+        self.live_candles: dict[str, Candle] = {}
 
         self.last_message = None
 
@@ -199,18 +188,10 @@ class MarketScanner:
     def screener_keys(self):
 
         return [
-
-            f"EQUITY_ALL_PERCENT_CHANGE_UP_"
-            f"{SCREENER_MINUTES}",
-
-            f"EQUITY_ALL_PERCENT_CHANGE_DOWN_"
-            f"{SCREENER_MINUTES}",
-
-            f"EQUITY_ALL_VOLUME_"
-            f"{SCREENER_MINUTES}",
-
-            f"EQUITY_ALL_TRADES_"
-            f"{SCREENER_MINUTES}",
+            f"EQUITY_ALL_PERCENT_CHANGE_UP_" f"{SCREENER_MINUTES}",
+            f"EQUITY_ALL_PERCENT_CHANGE_DOWN_" f"{SCREENER_MINUTES}",
+            f"EQUITY_ALL_VOLUME_" f"{SCREENER_MINUTES}",
+            f"EQUITY_ALL_TRADES_" f"{SCREENER_MINUTES}",
         ]
 
     def subscribe_screeners(self):
@@ -247,9 +228,7 @@ class MarketScanner:
 
         except Exception as exc:
 
-            print(
-                f"\n[STREAM ERROR] {exc}"
-            )
+            print(f"\n[STREAM ERROR] {exc}")
 
     # ========================================================
     # MESSAGE ROUTER
@@ -264,21 +243,15 @@ class MarketScanner:
 
         for service in data:
 
-            service_name = service.get(
-                "service"
-            )
+            service_name = service.get("service")
 
             if service_name == "SCREENER_EQUITY":
 
-                self.process_screener(
-                    service
-                )
+                self.process_screener(service)
 
             elif service_name == "CHART_EQUITY":
 
-                self.process_chart(
-                    service
-                )
+                self.process_chart(service)
 
     # ========================================================
     # SCREENER PROCESSING
@@ -295,9 +268,7 @@ class MarketScanner:
 
         for payload in content:
 
-            sort_field = str(
-                payload.get("2", "")
-            )
+            sort_field = str(payload.get("2", ""))
 
             rows = payload.get(
                 "4",
@@ -309,9 +280,7 @@ class MarketScanner:
                 start=1,
             ):
 
-                symbol = row.get(
-                    "symbol"
-                )
+                symbol = row.get("symbol")
 
                 if not symbol:
                     continue
@@ -322,27 +291,16 @@ class MarketScanner:
 
                 with self.lock:
 
-                    candidate = (
-                        self.candidates.get(
-                            symbol
-                        )
-                    )
+                    candidate = self.candidates.get(symbol)
 
                     if candidate is None:
 
                         candidate = Candidate(
                             symbol=symbol,
-                            description=(
-                                row.get(
-                                    "description",
-                                    ""
-                                )
-                            ),
+                            description=(row.get("description", "")),
                         )
 
-                        self.candidates[
-                            symbol
-                        ] = candidate
+                        self.candidates[symbol] = candidate
 
                     self.update_candidate(
                         candidate,
@@ -355,14 +313,10 @@ class MarketScanner:
         # load their historical RVOL baseline.
         for symbol in new_symbols:
 
-            self.prepare_history(
-                symbol
-            )
+            self.prepare_history(symbol)
 
         # Subscribe to live 5-minute chart data.
-        self.subscribe_chart_symbols(
-            new_symbols
-        )
+        self.subscribe_chart_symbols(new_symbols)
 
     # ========================================================
     # UPDATE SCREENER CANDIDATE
@@ -376,10 +330,7 @@ class MarketScanner:
         rank,
     ):
 
-        candidate.description = (
-            row.get("description")
-            or candidate.description
-        )
+        candidate.description = row.get("description") or candidate.description
 
         candidate.price = safe_float(
             row.get("lastPrice"),
@@ -395,9 +346,7 @@ class MarketScanner:
         #
         candidate.change_percent = (
             safe_float(
-                row.get(
-                    "netPercentChange"
-                ),
+                row.get("netPercentChange"),
                 candidate.change_percent,
             )
             * 100
@@ -445,9 +394,7 @@ class MarketScanner:
             if symbol in self.historical_volume:
                 return
 
-        print(
-            f"\nLoading RVOL history: {symbol}"
-        )
+        print(f"\nLoading RVOL history: {symbol}")
 
         try:
 
@@ -462,11 +409,7 @@ class MarketScanner:
 
             if not response.ok:
 
-                print(
-                    f"History failed for "
-                    f"{symbol}: "
-                    f"{response.status_code}"
-                )
+                print(f"History failed for " f"{symbol}: " f"{response.status_code}")
 
                 return
 
@@ -481,32 +424,22 @@ class MarketScanner:
 
             for candle in candles:
 
-                timestamp = safe_int(
-                    candle.get("datetime")
-                )
+                timestamp = safe_int(candle.get("datetime"))
 
                 if not timestamp:
                     continue
 
-                if not is_regular_session(
-                    timestamp
-                ):
+                if not is_regular_session(timestamp):
                     continue
 
-                volume = safe_int(
-                    candle.get("volume")
-                )
+                volume = safe_int(candle.get("volume"))
 
                 if volume <= 0:
                     continue
 
-                key = slot_key(
-                    timestamp
-                )
+                key = slot_key(timestamp)
 
-                history[key].append(
-                    volume
-                )
+                history[key].append(volume)
 
             averages = {}
 
@@ -515,28 +448,17 @@ class MarketScanner:
                 if not volumes:
                     continue
 
-                averages[key] = (
-                    sum(volumes)
-                    / len(volumes)
-                )
+                averages[key] = sum(volumes) / len(volumes)
 
             with self.lock:
 
-                self.historical_volume[
-                    symbol
-                ] = averages
+                self.historical_volume[symbol] = averages
 
-            print(
-                f"  {symbol}: "
-                f"{len(averages)} time slots"
-            )
+            print(f"  {symbol}: " f"{len(averages)} time slots")
 
         except Exception as exc:
 
-            print(
-                f"History error "
-                f"{symbol}: {exc}"
-            )
+            print(f"History error " f"{symbol}: {exc}")
 
     # ========================================================
     # CHART STREAM
@@ -555,11 +477,7 @@ class MarketScanner:
         # Only subscribe to symbols we know.
         with self.lock:
 
-            symbols = [
-                symbol
-                for symbol in symbols
-                if symbol in self.candidates
-            ]
+            symbols = [symbol for symbol in symbols if symbol in self.candidates]
 
         if not symbols:
             return
@@ -585,65 +503,36 @@ class MarketScanner:
 
         for row in content:
 
-            symbol = row.get(
-                "key"
-            )
+            symbol = row.get("key")
 
             if not symbol:
                 continue
 
-            timestamp = safe_int(
-                row.get("7")
-            )
+            timestamp = safe_int(row.get("7"))
 
             if not timestamp:
                 continue
 
             candle = Candle(
                 timestamp=timestamp,
-
-                open=safe_float(
-                    row.get("2")
-                ),
-
-                high=safe_float(
-                    row.get("3")
-                ),
-
-                low=safe_float(
-                    row.get("4")
-                ),
-
-                close=safe_float(
-                    row.get("5")
-                ),
-
-                volume=safe_int(
-                    row.get("6")
-                ),
+                open=safe_float(row.get("2")),
+                high=safe_float(row.get("3")),
+                low=safe_float(row.get("4")),
+                close=safe_float(row.get("5")),
+                volume=safe_int(row.get("6")),
             )
 
             with self.lock:
 
-                self.live_candles[
-                    symbol
-                ] = candle
+                self.live_candles[symbol] = candle
 
-                candidate = (
-                    self.candidates.get(
-                        symbol
-                    )
-                )
+                candidate = self.candidates.get(symbol)
 
                 if candidate:
 
-                    candidate.price = (
-                        candle.close
-                    )
+                    candidate.price = candle.close
 
-                    candidate.five_min_volume = (
-                        candle.volume
-                    )
+                    candidate.five_min_volume = candle.volume
 
                     self.update_rvol(
                         candidate,
@@ -660,41 +549,26 @@ class MarketScanner:
         candle,
     ):
 
-        if not is_regular_session(
-            candle.timestamp
-        ):
+        if not is_regular_session(candle.timestamp):
 
             return
 
-        historical = (
-            self.historical_volume.get(
-                candidate.symbol
-            )
-        )
+        historical = self.historical_volume.get(candidate.symbol)
 
         if not historical:
             return
 
-        key = slot_key(
-            candle.timestamp
-        )
+        key = slot_key(candle.timestamp)
 
-        expected = historical.get(
-            key
-        )
+        expected = historical.get(key)
 
         if not expected or expected <= 0:
 
             return
 
-        candidate.expected_volume = (
-            expected
-        )
+        candidate.expected_volume = expected
 
-        candidate.rvol = (
-            candle.volume
-            / expected
-        )
+        candidate.rvol = candle.volume / expected
 
     # ========================================================
     # FILTER
@@ -725,9 +599,7 @@ class MarketScanner:
         #
 
         momentum = min(
-            abs(
-                candidate.change_percent
-            ) / 10,
+            abs(candidate.change_percent) / 10,
             1,
         )
 
@@ -748,14 +620,10 @@ class MarketScanner:
         # $100M/day = max.
         #
 
-        dollar_volume = (
-            candidate.price
-            * candidate.day_volume
-        )
+        dollar_volume = candidate.price * candidate.day_volume
 
         liquidity = min(
-            dollar_volume
-            / 100_000_000,
+            dollar_volume / 100_000_000,
             1,
         )
 
@@ -801,17 +669,11 @@ class MarketScanner:
 
         with self.lock:
 
-            rows = list(
-                self.candidates.values()
-            )
+            rows = list(self.candidates.values())
 
             for candidate in rows:
 
-                candidate.score = (
-                    self.calculate_score(
-                        candidate
-                    )
-                )
+                candidate.score = self.calculate_score(candidate)
 
             return rows
 
@@ -823,67 +685,40 @@ class MarketScanner:
 
         rows = self.get_candidates()
 
-        qualified = [
-            row
-            for row in rows
-            if self.qualifies(row)
-        ]
+        qualified = [row for row in rows if self.qualifies(row)]
 
         winners = sorted(
-            [
-                row
-                for row in qualified
-                if row.change_percent > 0
-            ],
-            key=lambda x:
-                x.change_percent,
+            [row for row in qualified if row.change_percent > 0],
+            key=lambda x: x.change_percent,
             reverse=True,
         )
 
         losers = sorted(
-            [
-                row
-                for row in qualified
-                if row.change_percent < 0
-            ],
-            key=lambda x:
-                x.change_percent,
+            [row for row in qualified if row.change_percent < 0],
+            key=lambda x: x.change_percent,
         )
 
         high_rvol = sorted(
             qualified,
-            key=lambda x:
-                x.rvol,
+            key=lambda x: x.rvol,
             reverse=True,
         )
 
         overall = sorted(
             qualified,
-            key=lambda x:
-                x.score,
+            key=lambda x: x.score,
             reverse=True,
         )
 
-        print(
-            "\033[2J\033[H"
-        )
+        print("\033[2J\033[H")
 
-        print(
-            "=============================================================="
-        )
+        print("==============================================================")
 
-        print(
-            "             SCHWAB MARKET MOVER SCANNER"
-        )
+        print("             SCHWAB MARKET MOVER SCANNER")
 
-        print(
-            "=============================================================="
-        )
+        print("==============================================================")
 
-        print(
-            f"Candidates: {len(rows)} | "
-            f"5m RVOL baseline: {HISTORY_DAYS} days"
-        )
+        print(f"Candidates: {len(rows)} | " f"5m RVOL baseline: {HISTORY_DAYS} days")
 
         self.print_table(
             "TOP WINNERS",
@@ -916,9 +751,7 @@ class MarketScanner:
     ):
 
         print()
-        print(
-            f"--- {title} ---"
-        )
+        print(f"--- {title} ---")
 
         print(
             f"{'SYM':<7}"
@@ -931,13 +764,9 @@ class MarketScanner:
             f"{'SCORE':>8}"
         )
 
-        print(
-            "-" * 88
-        )
+        print("-" * 88)
 
-        for row in rows[
-            :DISPLAY_ROWS
-        ]:
+        for row in rows[:DISPLAY_ROWS]:
 
             print(
                 f"{row.symbol:<7}"
@@ -956,36 +785,26 @@ class MarketScanner:
 
     def run(self):
 
-        print(
-            "Creating Schwab connection..."
-        )
+        print("Creating Schwab connection...")
 
-        self.stream.start(
-            receiver=self.on_message
-        )
+        self.stream.start(receiver=self.on_message)
 
         self.subscribe_screeners()
 
         print()
-        print(
-            "Waiting for market-wide candidates..."
-        )
+        print("Waiting for market-wide candidates...")
 
         try:
 
             while True:
 
-                time.sleep(
-                    DISPLAY_INTERVAL
-                )
+                time.sleep(DISPLAY_INTERVAL)
 
                 self.render()
 
         except KeyboardInterrupt:
 
-            print(
-                "\nStopping..."
-            )
+            print("\nStopping...")
 
         finally:
 

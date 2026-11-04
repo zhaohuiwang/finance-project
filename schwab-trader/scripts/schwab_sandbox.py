@@ -1,5 +1,3 @@
-
-
 import os
 import schwabdev
 
@@ -8,49 +6,33 @@ from dotenv import load_dotenv
 load_dotenv()
 
 client = schwabdev.Client(
-    os.getenv("APP_KEY"),
-    os.getenv("APP_SECRET"),
-    os.getenv("CALLBACK_URL")
-    )
+    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+)
 
 streamer = schwabdev.Stream(client)
 
 symbols = ["WDC", "MU"]
 symbols_str = ",".join(symbols)
 
-fields = ",".join(str(x) for x in [
-    0, 1, 2, 3,
-    4, 5,
-    8, 9,
-    10, 11, 12,
-    17, 18,
-    29, 31, 32, 33,
-    34, 35
-])
+fields = ",".join(
+    str(x) for x in [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 17, 18, 29, 31, 32, 33, 34, 35]
+)
 
 streamer.start(receiver=print)
 
 streamer.send(
     # Market data
-    streamer.level_one_equities(
-        symbols_str,
-        fields
-    )
+    streamer.level_one_equities(symbols_str, fields)
 )
 
 streamer.send(
     # Specific Schwab account data
-    streamer.account_activity(
-        "Account Activity",
-        "0,1,2,3"
-    )
+    streamer.account_activity("Account Activity", "0,1,2,3")
 )
 
 input("Press ENTER to stop...\n")
 
 streamer.stop()
-
-
 
 
 import json
@@ -66,8 +48,8 @@ def receiver(message):
 
     print(json.dumps(data, indent=2))
 
-streamer.start(receiver=receiver)
 
+streamer.start(receiver=receiver)
 
 
 # Level One Equities Quotes, fields for equity quotes.
@@ -125,41 +107,43 @@ streamer.start(receiver=receiver)
 # 51      Post market net change percent
 
 
-{"data":[
-    {"service":"LEVELONE_EQUITIES", 
-     "timestamp":1786378769961,
-     "command":"SUBS",
-     "content":[
-         {"key":"MU",
-          "1":878.66,
-          "2":879,
-          "3":878.83,
-          "5":360,
-          "8":16493307,
-          "9":100,
-          "18":1.26,
-          "29":878.83,
-          "31":1.26,
-          "33":878.83,
-          "34":1786378769486,
-          "35":1786378769407
-          },
-          {"key":"WDC",
-           "3":445.71,
-           "8":3509813,
-           "9":200,
-           "18":11.41,
-           "29":445.71,
-           "31":11.41,
-           "33":445.71,
-           "35":1786378768994
-           }
-           ]
-           }
-           ]
-           }
-
-
+{
+    "data": [
+        {
+            "service": "LEVELONE_EQUITIES",
+            "timestamp": 1786378769961,
+            "command": "SUBS",
+            "content": [
+                {
+                    "key": "MU",
+                    "1": 878.66,
+                    "2": 879,
+                    "3": 878.83,
+                    "5": 360,
+                    "8": 16493307,
+                    "9": 100,
+                    "18": 1.26,
+                    "29": 878.83,
+                    "31": 1.26,
+                    "33": 878.83,
+                    "34": 1786378769486,
+                    "35": 1786378769407,
+                },
+                {
+                    "key": "WDC",
+                    "3": 445.71,
+                    "8": 3509813,
+                    "9": 200,
+                    "18": 11.41,
+                    "29": 445.71,
+                    "31": 11.41,
+                    "33": 445.71,
+                    "35": 1786378768994,
+                },
+            ],
+        }
+    ]
+}
 
 
 """
@@ -172,7 +156,6 @@ from dotenv import load_dotenv
 import schwabdev
 import json
 import datetime
-
 
 
 def translate_data(response) -> list[str]:
@@ -196,12 +179,12 @@ def translate_data(response) -> list[str]:
                         for field, value in quote.copy().items():
                             if field.isdigit():
                                 new_field = translate_field(service, field)
-                                quote[new_field] = quote.pop(field)                           
-                                      
+                                quote[new_field] = quote.pop(field)
+
     return response
-    
-    
-def translate_field(service: str, field: str|int) -> str:
+
+
+def translate_field(service: str, field: str | int) -> str:
     """
     Translate field number to field name
 
@@ -227,6 +210,7 @@ def translate_field(service: str, field: str|int) -> str:
     except Exception:
         return str(field)
 
+
 if __name__ == "__main__":
     print("Welcome to Schwabdev, The Unofficial Schwab API Python Wrapper!")
     print("Documentation: https://tylerebowers.github.io/Schwabdev/")
@@ -234,15 +218,11 @@ if __name__ == "__main__":
     # place your app key and app secret in the .env file
     load_dotenv()  # load environment variables from .env file
 
-    
-
     # set logging level
     logging.basicConfig(level=logging.INFO)
 
     client = schwabdev.Client(
-    os.getenv("APP_KEY"),
-    os.getenv("APP_SECRET"),
-    os.getenv("CALLBACK_URL")
+        os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
     )
     streamer = schwabdev.Stream(client)
 
@@ -250,22 +230,16 @@ if __name__ == "__main__":
         translated = translate_data(json.loads(msg))
         print(translated)
 
-
     streamer.start(response_handler)
     streamer.start(receiver=print)
 
     streamer.send(
-        streamer.level_one_equities(
-            "AMD,INTC", "0,1,2,3,4,5,6,7,8,9,10,11,12,13"
-            )
-            )
-    streamer.send(
-        streamer.account_activity(
-            "Account Activity", "0,1,2,3"
-            )
-            )
+        streamer.level_one_equities("AMD,INTC", "0,1,2,3,4,5,6,7,8,9,10,11,12,13")
+    )
+    streamer.send(streamer.account_activity("Account Activity", "0,1,2,3"))
     # streamer.send(streamer.nyse_book(["F"], "0,1,2,3,4,5,6,7,8"))
 
     import time
+
     time.sleep(30)
     streamer.stop()

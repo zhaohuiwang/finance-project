@@ -1,5 +1,3 @@
-
-
 # schwab-trader/src/schwab_trader/dashboard/bot4_dashboard.py
 """
 Dash-based web dashboard for the Schwab Trailing Momentum Bot (Bot4).
@@ -58,7 +56,6 @@ app.layout = dbc.Container(
             ),
             className="mb-3",
         ),
-
         # ---------- Current Account Holdings ----------
         html.H4("Current Account Holdings", className="mt-4 mb-2"),
         dash_table.DataTable(
@@ -87,7 +84,6 @@ app.layout = dbc.Container(
                 },
             ],
         ),
-
         # ---------- Managed Symbols (Bot4 strategy) ----------
         html.H4("Managed Symbols (Trailing Momentum Config)", className="mt-4 mb-2"),
         dash_table.DataTable(
@@ -95,7 +91,10 @@ app.layout = dbc.Container(
             columns=[
                 {"name": "Symbol", "id": "Symbol"},
                 {"name": "Current Price", "id": "current_price"},
-                {"name": "Base=min(PreviousClose, DayLow)", "id": "min(prev_close,day_low)"},
+                {
+                    "name": "Base=min(PreviousClose, DayLow)",
+                    "id": "min(prev_close,day_low)",
+                },
                 {"name": "Momentum %", "id": "momentum_pct"},
                 {"name": "Momentum Trigger", "id": "momentum_up_pct"},
                 {"name": "Trail Sell %", "id": "trailing_sell_pct"},
@@ -131,7 +130,6 @@ app.layout = dbc.Container(
                     "color": "tomato",
                     "fontWeight": "bold",
                 },
-
                 # Current price always highlighted
                 {
                     "if": {"column_id": "current_price"},
@@ -140,7 +138,6 @@ app.layout = dbc.Container(
                 },
             ],
         ),
-
         # ---------- Open Orders ----------
         html.H4("Open Orders", className="mt-5 mb-2"),
         dash_table.DataTable(
@@ -175,7 +172,6 @@ app.layout = dbc.Container(
                 },
             ],
         ),
-
         # ---------- Account Summary ----------
         dbc.Row(
             dbc.Col(
@@ -200,7 +196,6 @@ app.layout = dbc.Container(
             ),
             className="mb-4",
         ),
-
         html.Div(id="status-footer", className="mt-5 text-center"),
         dcc.Interval(id="interval-component", interval=8000, n_intervals=0),
     ],
@@ -259,7 +254,9 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                         "Shares": shares,
                         "Avg Buy": f"${buy_p:,.2f}" if buy_p else "—",
                         "Price": f"${price:,.2f}" if price else "—",
-                        "Today's % Chg": (f"{day_chg:+.2f}%" if abs(day_chg) > 0.001 else "—"),
+                        "Today's % Chg": (
+                            f"{day_chg:+.2f}%" if abs(day_chg) > 0.001 else "—"
+                        ),
                         "P/L %": f"{pl:+.1f}%",
                         "Market Value": f"${market_val:,.2f}",
                     }
@@ -283,7 +280,11 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
                     {
                         "Symbol": sym,
                         "current_price": f"${price:,.2f}" if price else "—",
-                        "min(prev_close,day_low)": f"{min(prev_close, day_low)}=min(${prev_close:,.2f}, ${day_low:,.2f})" if prev_close and day_low else "—",
+                        "min(prev_close,day_low)": (
+                            f"{min(prev_close, day_low)}=min(${prev_close:,.2f}, ${day_low:,.2f})"
+                            if prev_close and day_low
+                            else "—"
+                        ),
                         "momentum_pct": (
                             f"{momentum_pct:+.2f}%" if momentum_pct is not None else "—"
                         ),
@@ -323,7 +324,10 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
             {"Metric": "Equity(Net Liq)", "Value": f"${snapshot['equity']:,.2f}"},
             {"Metric": "CashBalance", "Value": f"${snapshot['cashBalance']:,.2f}"},
             {"Metric": "BuyingPower", "Value": f"${snapshot['buyingPower']:,.2f}"},
-            {"Metric": "IntradayBuingPowerAmount", "Value": f"${snapshot['intradayBPA']:,.2f}"},
+            {
+                "Metric": "IntradayBuingPowerAmount",
+                "Value": f"${snapshot['intradayBPA']:,.2f}",
+            },
         ]
 
         # ---------- Status footer ----------

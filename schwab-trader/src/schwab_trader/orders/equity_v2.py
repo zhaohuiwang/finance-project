@@ -4,7 +4,7 @@ Schwab equity order payload builders.
 All public functions return a dict that can be sent directly to the
 Schwab Trader API.  Prices are always emitted as strings for precision.
 
-TypedDict is the more accurate choice (other than @dataclass) because the Schwab API works with plain JSON objects (dictionaries), not Python class instances. TypedDict alone never protects you at runtime. 
+TypedDict is the more accurate choice (other than @dataclass) because the Schwab API works with plain JSON objects (dictionaries), not Python class instances. TypedDict alone never protects you at runtime.
 At development time, we run the following static type checker:
 pip install pyright mypy
 pyright your_module.py
@@ -33,21 +33,21 @@ from typing import (
 import math
 
 from schwab_trader.accounts.type_literal import (
-    complexOrderStrategyType, # ["NONE", ...]
-    Instruction, # ["BUY","SELL", ...]
-    Session, # ["NORMAL", "AM", "PM", "SEAMLESS"]
-    Duration, # ["DAY","GOOD_TILL_CANCEL",...]
-    OrderType, # ["MARKET","LIMIT","STOP","STOP_LIMIT","TRAILING_STOP",...]
-    orderStrategyType, # ["SINGLE","OCO","TRIGGER",...]
-    OrderLegCollectionInstrumentAssetType, # ["EQUITY","OPTION",...]
+    complexOrderStrategyType,  # ["NONE", ...]
+    Instruction,  # ["BUY","SELL", ...]
+    Session,  # ["NORMAL", "AM", "PM", "SEAMLESS"]
+    Duration,  # ["DAY","GOOD_TILL_CANCEL",...]
+    OrderType,  # ["MARKET","LIMIT","STOP","STOP_LIMIT","TRAILING_STOP",...]
+    orderStrategyType,  # ["SINGLE","OCO","TRIGGER",...]
+    OrderLegCollectionInstrumentAssetType,  # ["EQUITY","OPTION",...]
     stopPriceLinkBasis,
-    stopPriceLinkType, # ["VALUE", "PERCENT", "TICK"]
+    stopPriceLinkType,  # ["VALUE", "PERCENT", "TICK"]
 )
-
 
 # ---------------------------------------------------------------------------
 # Strong typing - TypedDict creates a typing construct, it is essentially a dict with extra metadata
 # ---------------------------------------------------------------------------
+
 
 class Instrument(TypedDict):
     symbol: str
@@ -63,6 +63,7 @@ class OrderLeg(TypedDict):
 
 class OrderPayload(TypedDict):
     """Base shape of every Schwab order payload."""
+
     orderType: OrderType
     session: Session
     duration: Duration
@@ -76,7 +77,9 @@ class OrderPayload(TypedDict):
     stopPriceLinkType: NotRequired[stopPriceLinkType]
     stopPriceOffset: NotRequired[float]
     complexOrderStrategyType: NotRequired[complexOrderStrategyType]
-    childOrderStrategies: NotRequired[list["OrderPayload"]] # "OrderPayload" ← forward ref
+    childOrderStrategies: NotRequired[
+        list["OrderPayload"]
+    ]  # "OrderPayload" ← forward ref
 
 
 Number = Union[int, float, Decimal]
@@ -85,6 +88,7 @@ Number = Union[int, float, Decimal]
 # ---------------------------------------------------------------------------
 # Validation helpers (clear error messages, no stringly typing)
 # ---------------------------------------------------------------------------
+
 
 def _validate_symbol(symbol: str) -> str:
     if not isinstance(symbol, str) or not symbol.strip():
@@ -95,7 +99,9 @@ def _validate_symbol(symbol: str) -> str:
 def _validate_positive(name: str, value: Number) -> None:
     if isinstance(value, bool) or not isinstance(value, (Real, Decimal)):
         raise ValueError(f"{name} must be a real number, got {value!r}")
-    is_finite = value.is_finite() if isinstance(value, Decimal) else math.isfinite(value)
+    is_finite = (
+        value.is_finite() if isinstance(value, Decimal) else math.isfinite(value)
+    )
     if not is_finite or value <= 0:
         raise ValueError(f"{name} must be a positive finite number, got {value!r}")
 
@@ -133,12 +139,15 @@ def _validate_trailing_stop(
 
 def _validate_tuple(name: str, value: Sequence[Any], expected_len: int) -> None:
     if not isinstance(value, (tuple, list)) or len(value) != expected_len:
-        raise ValueError(f"{name} must be a sequence of length {expected_len}, got {value!r}")
+        raise ValueError(
+            f"{name} must be a sequence of length {expected_len}, got {value!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Low-level construction helpers
 # ---------------------------------------------------------------------------
+
 
 def _price(value: Number) -> str:
     """Schwab expects prices as strings for precision."""
@@ -259,6 +268,7 @@ def _trailing_stop_order(
 # Public builders – simple orders
 # ---------------------------------------------------------------------------
 
+
 def build_market_order_payload(
     symbol: str,
     quantity: int,
@@ -327,6 +337,7 @@ def build_trailing_stop_order_payload(
 # Public builders – multi-leg / complex orders
 # ---------------------------------------------------------------------------
 
+
 def build_oto_limit_order_payload(
     symbol: str,
     quantity: int,
@@ -365,7 +376,11 @@ def build_oto_limit_order_payload(
         secondary_leg, secondary_price, secondary_session, secondary_duration
     )
     primary = _limit_order(
-        primary_leg, primary_price, primary_session, primary_duration, strategy="TRIGGER"
+        primary_leg,
+        primary_price,
+        primary_session,
+        primary_duration,
+        strategy="TRIGGER",
     )
     primary["childOrderStrategies"] = [secondary]
     return primary
@@ -488,7 +503,12 @@ def build_sell_trailingstop_sell_stoplimit_oco_payload(
 
     leg = _make_leg(symbol, quantity, "SELL")
     trailing_leg = _trailing_stop_order(
-        leg, stop_price_link_basis, stop_price_link_type, stop_price_offset, session, duration
+        leg,
+        stop_price_link_basis,
+        stop_price_link_type,
+        stop_price_offset,
+        session,
+        duration,
     )
     stoplimit_leg = _stop_limit_order(
         leg, stop_price, stop_limit_price, session, duration
@@ -556,8 +576,14 @@ def build_buy_limit_trigger_sell_limit_sell_stop_oco_payload(
 def build_buy_trailingstop_trigger_sell_trailingstop_payload(
     symbol: str,
     quantities: tuple[int, int],
-    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = ("MARK", "MARK"),
-    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = ("PERCENT", "PERCENT"),
+    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = (
+        "MARK",
+        "MARK",
+    ),
+    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = (
+        "PERCENT",
+        "PERCENT",
+    ),
     stop_price_offsets: tuple[Number, Number] = (2.0, 2.0),
     sessions: tuple[Session, Session] = ("NORMAL", "NORMAL"),
     durations: tuple[Duration, Duration] = ("DAY", "DAY"),
@@ -596,7 +622,13 @@ def build_buy_trailingstop_trigger_sell_trailingstop_payload(
         sell_leg, basis_sell, type_sell, offset_sell, session_sell, duration_sell
     )
     primary = _trailing_stop_order(
-        buy_leg, basis_buy, type_buy, offset_buy, session_buy, duration_buy, strategy="TRIGGER"
+        buy_leg,
+        basis_buy,
+        type_buy,
+        offset_buy,
+        session_buy,
+        duration_buy,
+        strategy="TRIGGER",
     )
     primary["childOrderStrategies"] = [sell_payload]
     return primary
@@ -605,8 +637,14 @@ def build_buy_trailingstop_trigger_sell_trailingstop_payload(
 def build_sell_trailingstop_trigger_buy_trailingstop_payload(
     symbol: str,
     quantities: tuple[int, int],
-    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = ("MARK", "MARK"),
-    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = ("PERCENT", "PERCENT"),
+    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = (
+        "MARK",
+        "MARK",
+    ),
+    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = (
+        "PERCENT",
+        "PERCENT",
+    ),
     stop_price_offsets: tuple[Number, Number] = (2.0, 2.0),
     sessions: tuple[Session, Session] = ("NORMAL", "NORMAL"),
     durations: tuple[Duration, Duration] = ("DAY", "DAY"),
@@ -645,7 +683,13 @@ def build_sell_trailingstop_trigger_buy_trailingstop_payload(
         buy_leg, basis_buy, type_buy, offset_buy, session_buy, duration_buy
     )
     primary = _trailing_stop_order(
-        sell_leg, basis_sell, type_sell, offset_sell, session_sell, duration_sell, strategy="TRIGGER"
+        sell_leg,
+        basis_sell,
+        type_sell,
+        offset_sell,
+        session_sell,
+        duration_sell,
+        strategy="TRIGGER",
     )
     primary["childOrderStrategies"] = [buy_payload]
     return primary

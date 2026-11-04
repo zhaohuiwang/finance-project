@@ -45,6 +45,7 @@ import schwabdev
 # Optional YAML support
 try:
     import yaml
+
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
@@ -83,7 +84,7 @@ class Settings:
     callback_url: str = "https://127.0.0.1:8182"
 
     universes: tuple[str, ...] = ("EQUITY_ALL",)
-    frequency: int = 5                    # minutes (0 = full day)
+    frequency: int = 5  # minutes (0 = full day)
     display_count: int = 15
 
     min_price: float = 2.0
@@ -150,9 +151,7 @@ class Settings:
             app_key=str(app_key),
             app_secret=str(app_secret),
             callback_url=str(
-                get("callback_url")
-                or get("CALLBACK_URL")
-                or "https://127.0.0.1:8182"
+                get("callback_url") or get("CALLBACK_URL") or "https://127.0.0.1:8182"
             ),
             universes=universes,
             frequency=as_int(get("frequency"), 5),
@@ -191,6 +190,7 @@ class Settings:
 # Domain model
 # ---------------------------------------------------------------------------
 
+
 @dataclass(slots=True)
 class Candidate:
     symbol: str
@@ -203,7 +203,7 @@ class Candidate:
     total_volume: int = 0
     interval_volume: int = 0
     trades: int = 0
-    average_percent_volume: float = 0.0   # 100 ≈ normal, 200 ≈ 2×
+    average_percent_volume: float = 0.0  # 100 ≈ normal, 200 ≈ 2×
 
     winner_rank: int | None = None
     loser_rank: int | None = None
@@ -218,6 +218,7 @@ class Candidate:
 # ---------------------------------------------------------------------------
 # Scanner
 # ---------------------------------------------------------------------------
+
 
 class MarketScanner:
     """Thread-safe market-wide equity scanner driven by Schwab SCREENER_EQUITY."""
@@ -398,7 +399,8 @@ class MarketScanner:
             (
                 c
                 for c in all_cands
-                if c.price >= self.cfg.min_price and c.total_volume >= self.cfg.min_volume
+                if c.price >= self.cfg.min_price
+                and c.total_volume >= self.cfg.min_volume
             ),
             key=lambda x: x.average_percent_volume,
             reverse=True,
@@ -537,6 +539,7 @@ class MarketScanner:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _to_float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value) if value is not None else default
@@ -555,8 +558,9 @@ def _to_int(value: Any, default: int = 0) -> int:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
-    settings = Settings.from_env()          # reads .env + optional config.yaml
+    settings = Settings.from_env()  # reads .env + optional config.yaml
     scanner = MarketScanner(settings)
 
     # use_auto=True → only runs during regular market hours (recommended)
@@ -566,4 +570,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

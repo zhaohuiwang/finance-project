@@ -8,7 +8,9 @@ from pathlib import Path
 # Use absolute path relative to the project root
 X_level = 3
 PROJECT_ROOT = Path(__file__).resolve().parents[X_level]  # X+1 levels up
-DB_PATH = PROJECT_ROOT / "logs" / "trading.sqlite" # SQLite does not care about the file extension. Most common extension are .db and .sqlite
+DB_PATH = (
+    PROJECT_ROOT / "logs" / "trading.sqlite"
+)  # SQLite does not care about the file extension. Most common extension are .db and .sqlite
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 print(f"[DB] Using database at: {DB_PATH}")
@@ -17,8 +19,9 @@ print(f"[DB] Using database at: {DB_PATH}")
 def get_connection():
     """Get a database connection with timeout for thread safety."""
     conn = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
-    conn.row_factory = sqlite3.Row          #
+    conn.row_factory = sqlite3.Row  #
     return conn
+
 
 def init_db():
     """Initialize database tables (includes high_price from the start)."""
@@ -61,6 +64,7 @@ def init_db():
     except Exception as e:
         print(f"[DB ERROR] Failed to initialize database: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -71,7 +75,7 @@ def log_transaction(
     price: float,
     order_id: str = None,
     note: str = None,
-    ts: str = None
+    ts: str = None,
 ):
     """Log a transaction with optional fields."""
     try:
@@ -100,6 +104,7 @@ def log_transaction(
 
         traceback.print_exc()
 
+
 def save_state(
     symbol: str,
     *,
@@ -108,7 +113,7 @@ def save_state(
     last_sell_price: float | None = None,
     last_sell_qty: float | None = None,
     high_price: float | None = None,
-    ts: str | None = None
+    ts: str | None = None,
 ):
 
     try:
@@ -127,7 +132,9 @@ def save_state(
         ).fetchone()
 
         if existing:
-            buy_price, buy_qty, buy_time, sell_price, sell_qty, sell_time, high = existing
+            buy_price, buy_qty, buy_time, sell_price, sell_qty, sell_time, high = (
+                existing
+            )
         else:
             buy_price = buy_qty = buy_time = None
             sell_price = sell_qty = sell_time = None
@@ -144,7 +151,7 @@ def save_state(
             sell_price = last_sell_price
             sell_qty = last_sell_qty
             sell_time = ts
-            high = None                     # clear on exit
+            high = None  # clear on exit
         if high_price is not None:
             high = high_price
 
@@ -156,13 +163,24 @@ def save_state(
                 high_price, ts
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (symbol, buy_price, buy_qty, buy_time, sell_price, sell_qty, sell_time, high, ts),
+            (
+                symbol,
+                buy_price,
+                buy_qty,
+                buy_time,
+                sell_price,
+                sell_qty,
+                sell_time,
+                high,
+                ts,
+            ),
         )
         conn.commit()
         conn.close()
     except Exception as e:
         print(f"[DB ERROR] Failed to save state for {symbol}: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -171,14 +189,19 @@ def get_last_buy_info(symbol: str) -> float | None:
     try:
         with get_connection() as conn:
             cur = conn.execute(
-            "SELECT last_buy_price, last_buy_qty, last_buy_time FROM state WHERE symbol=?", (symbol,)
+                "SELECT last_buy_price, last_buy_qty, last_buy_time FROM state WHERE symbol=?",
+                (symbol,),
             )
             row = cur.fetchone()
             conn.close()
 
             if row and row["last_buy_price"] is not None:
-                return  float(row["last_buy_price"]), float(row["last_buy_qty"] or 0), row["last_buy_time"]
-        
+                return (
+                    float(row["last_buy_price"]),
+                    float(row["last_buy_qty"] or 0),
+                    row["last_buy_time"],
+                )
+
     except Exception as e:
         print(f"[DB] Error getting last buy info for {symbol}: {e}")
         return None, None, None
@@ -188,20 +211,25 @@ def get_last_sell_info(symbol: str) -> float | None:
     try:
         with get_connection() as conn:
             cur = conn.execute(
-            "" \
-            "SELECT last_sell_price, last_sell_qty, last_sell_time FROM state WHERE symbol=? ORDER BY last_sell_time DESC LIMIT 1" \
-            "", (symbol,)
-        )
+                ""
+                "SELECT last_sell_price, last_sell_qty, last_sell_time FROM state WHERE symbol=? ORDER BY last_sell_time DESC LIMIT 1"
+                "",
+                (symbol,),
+            )
             row = cur.fetchone()
 
             if row and row["last_sell_price"] is not None:
-                return float(row["last_sell_price"]), float(row["last_sell_qty"] or 0), row["last_sell_time"]
+                return (
+                    float(row["last_sell_price"]),
+                    float(row["last_sell_qty"] or 0),
+                    row["last_sell_time"],
+                )
 
     except Exception as e:
         print(f"[DB] Error getting last sell info for {symbol}: {e}")
         return None, None, None
 
-    
+
 def get_high_price(symbol: str) -> float | None:
     try:
         conn = get_connection()

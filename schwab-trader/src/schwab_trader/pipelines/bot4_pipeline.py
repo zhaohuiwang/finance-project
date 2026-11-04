@@ -46,6 +46,7 @@ console = Console()
 # Set the global context strategy to strictly round down
 decimal.getcontext().rounding = decimal.ROUND_DOWN
 
+
 class TradingBot:
     """
     Main trading bot class implementing trailing momentum strategy.
@@ -71,7 +72,7 @@ class TradingBot:
             for sym in self.symbols
         }
         self.holdings = {}
-        self.last_sell_prices = {}          # still needed for Bot4 pullback logic
+        self.last_sell_prices = {}  # still needed for Bot4 pullback logic
         self.auto_buy_allowed = {sym: True for sym in self.symbols}
 
         self.lock = threading.RLock()
@@ -94,15 +95,14 @@ class TradingBot:
         self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
 
         # Signal handlers
-        signal.signal(signal.SIGHUP, self._on_sighup)      # Reload config
-        signal.signal(signal.SIGUSR1, self._on_sigusr1)    # Pause
-        signal.signal(signal.SIGUSR2, self._on_sigusr2)    # Resume
+        signal.signal(signal.SIGHUP, self._on_sighup)  # Reload config
+        signal.signal(signal.SIGUSR1, self._on_sigusr1)  # Pause
+        signal.signal(signal.SIGUSR2, self._on_sigusr2)  # Resume
 
         console.print(
             "[bold green]TradingBot (Trailing Momentum Strategy) initialized "
             "[/bold green]"
         )
-
 
     @property
     def symbols(self):
@@ -112,29 +112,27 @@ class TradingBot:
         accounts = self.client.linked_accounts().json()
         return accounts[0]["hashValue"]
 
-        
     def get_account_snapshot(self):
-            """Retrieve a snapshot of the current account balances."""
-            try:
-                acc = self.client.account_details(self.account_hash).json()
-                bal = acc.get("securitiesAccount", {}).get("currentBalances", {})
-                return {
-                    "equity": float(
-                        bal.get("liquidationValue") or bal.get("equity") or 0.0
-                    ),
-                    "cashBalance": float(bal.get("cashBalance") or 0.0),
-                    "buyingPower": float(bal.get("buyingPower") or 0.0),
-                    "intradayBPA": float(bal.get("intradayBuyingPowerAmount") or 0.0),
-                }
-            except Exception as e:
-                console.print(f"[red]Snapshot error: {e}[/red]")
-                return {
-                    "equity": 0.0,
-                    "cashBalance": 0.0,
-                    "buyingPower": 0.0,
-                    "intradayBPA": 0.0,
-                }
-
+        """Retrieve a snapshot of the current account balances."""
+        try:
+            acc = self.client.account_details(self.account_hash).json()
+            bal = acc.get("securitiesAccount", {}).get("currentBalances", {})
+            return {
+                "equity": float(
+                    bal.get("liquidationValue") or bal.get("equity") or 0.0
+                ),
+                "cashBalance": float(bal.get("cashBalance") or 0.0),
+                "buyingPower": float(bal.get("buyingPower") or 0.0),
+                "intradayBPA": float(bal.get("intradayBuyingPowerAmount") or 0.0),
+            }
+        except Exception as e:
+            console.print(f"[red]Snapshot error: {e}[/red]")
+            return {
+                "equity": 0.0,
+                "cashBalance": 0.0,
+                "buyingPower": 0.0,
+                "intradayBPA": 0.0,
+            }
 
     def _on_sighup(self, signum, frame):
         """Handle SIGHUP → hot-reload config without stopping the bot."""
@@ -144,7 +142,6 @@ class TradingBot:
             console.print("[bold green]Config reload complete[/bold green]")
         except Exception as e:
             console.print(f"[red]Config reload via SIGHUP failed: {e}[/red]")
-
 
     def update_holdings_from_api(self):
         try:
@@ -163,7 +160,7 @@ class TradingBot:
                         "shares": long_qty,
                         "buy_price": avg,
                         "day_pct": day_pct,
-                        }
+                    }
             with self.lock:
                 self.holdings = new_holdings
                 for sym in self.symbols:
@@ -172,7 +169,6 @@ class TradingBot:
             self._sync_high_prices()
         except Exception as e:
             console.print(f"[red]Holdings update failed: {e}[/red]")
-
 
     def _load_last_sell_prices(self):
         """Restore last sell prices from DB so the dashboard and strategy work after restart."""
@@ -184,7 +180,6 @@ class TradingBot:
         except Exception as e:
             console.print(f"[yellow]Could not load last sell prices: {e}[/yellow]")
 
-            
     def get_open_orders(self):
         now = time.time()
         if (
@@ -255,29 +250,28 @@ class TradingBot:
             return False
         self.last_order_placement[symbol] = now
         return True
-    
 
     def cancel_all_orders_for_symbol(self, symbol: str):
-            """Cancel every working order for a symbol."""
-            try:
-                orders = self.get_open_orders()
-                for o in orders:
-                    if o.get("symbol") == symbol:
-                        order_id = o.get("orderId")
-                        if order_id:
-                            try:
-                                self.client.cancel_order(self.account_hash, order_id)
-                                console.print(
-                                    f"[yellow]Cancelled order {order_id} for {symbol}[/yellow]"
-                                )
-                            except Exception as e:
-                                console.print(
-                                    f"[red]Failed to cancel order {order_id}: {e}[/red]"
-                                )
-                self.invalidate_open_orders_cache()
-            except Exception as e:
-                console.print(f"[red]Error cancelling orders for {symbol}: {e}[/red]")
-    
+        """Cancel every working order for a symbol."""
+        try:
+            orders = self.get_open_orders()
+            for o in orders:
+                if o.get("symbol") == symbol:
+                    order_id = o.get("orderId")
+                    if order_id:
+                        try:
+                            self.client.cancel_order(self.account_hash, order_id)
+                            console.print(
+                                f"[yellow]Cancelled order {order_id} for {symbol}[/yellow]"
+                            )
+                        except Exception as e:
+                            console.print(
+                                f"[red]Failed to cancel order {order_id}: {e}[/red]"
+                            )
+            self.invalidate_open_orders_cache()
+        except Exception as e:
+            console.print(f"[red]Error cancelling orders for {symbol}: {e}[/red]")
+
     # ====================== ORDER PLACEMENT ======================
     def place_trailing_stop_sell(self, symbol: str, qty: int, trail_pct: float):
         if not self.risk_checks_pass(symbol) or not self.can_place_order(symbol):
@@ -318,7 +312,7 @@ class TradingBot:
     def place_trailing_buy(self, symbol: str, qty: int, trail_pct: float):
         if not self.risk_checks_pass(symbol) or not self.can_place_order(symbol):
             return False
-    
+
         if not self.can_place_order(symbol):
             return False
         symbol = symbol.upper()
@@ -355,10 +349,11 @@ class TradingBot:
     def _conditional_truncate(self, x: float) -> float:
         """Achwab API: Orders above $1 can be endtered in no more than two decimals; orders below $1, no more than four decimals"""
         import math
+
         decimals = 2 if x > 1 else 4
-        factor = 10 ** decimals
+        factor = 10**decimals
         return math.trunc(x * factor) / factor
-    
+
     def _sync_high_prices(self):
         """Same as Bot3 - seed / refresh HWM from DB or average cost."""
         with self.lock:
@@ -394,8 +389,8 @@ class TradingBot:
         price = self.day_prices.get(symbol, {}).get("market")
         prev_close = self.day_prices.get(symbol, {}).get("close")
         day_low = self.day_prices.get(symbol, {}).get("low")
-         
-        # some of day_prices maybe None or 0.0, so this falsy check is valid, 
+
+        # some of day_prices maybe None or 0.0, so this falsy check is valid,
         # if price is None or prev_close is None or day_low is None: is not appropriate here
         if not price or not prev_close or not day_low:
             return
@@ -451,7 +446,7 @@ class TradingBot:
             if sym not in self.day_prices:
                 continue
             try:
-                price = content.get("3")          # Last price
+                price = content.get("3")  # Last price
                 day_low = content.get("11")
                 day_high = content.get("10")
                 previous_close = content.get("12")
@@ -480,7 +475,6 @@ class TradingBot:
             except (TypeError, ValueError):
                 pass
 
-
     def reload_config(self):
         """Hot-reload configuration from disk."""
         try:
@@ -505,8 +499,12 @@ class TradingBot:
                         self.last_sell_prices.pop(sym, None)
 
                 # Update auto-shutdown settings if present
-                self.auto_shutdown_after_close = getattr(new_cfg, "auto_shutdown_after_close", True)
-                self.shutdown_buffer_minutes = getattr(new_cfg, "shutdown_buffer_minutes", 2)
+                self.auto_shutdown_after_close = getattr(
+                    new_cfg, "auto_shutdown_after_close", True
+                )
+                self.shutdown_buffer_minutes = getattr(
+                    new_cfg, "shutdown_buffer_minutes", 2
+                )
 
             # Refresh derived state
             self._sync_high_prices()
@@ -524,8 +522,7 @@ class TradingBot:
 
         except Exception as e:
             console.print(f"[red]Config reload failed: {e}[/red]")
-            raise   # re-raise so the SIGHUP handler can log it
-
+            raise  # re-raise so the SIGHUP handler can log it
 
     def _decode_schwab_decimal(self, obj) -> float:
         """Exactly the same decoder as Bot3."""
@@ -535,7 +532,11 @@ class TradingBot:
             return float(obj)
         if isinstance(obj, dict) and "lo" in obj:
             try:
-                lo = Decimal(str(obj.get("lo"))) if obj.get("lo") is not None else Decimal("0.00")
+                lo = (
+                    Decimal(str(obj.get("lo")))
+                    if obj.get("lo") is not None
+                    else Decimal("0.00")
+                )
                 sign_scale = int(obj.get("signScale", 0))
                 value = lo / (Decimal(10) ** (sign_scale // 2))
                 if sign_scale % 2:
@@ -589,9 +590,11 @@ class TradingBot:
             action_status = (
                 "Filled"
                 if leg_status == "LegSubStatusFilled"
-                else "PartiallyFilled"
-                if leg_status == "LegSubStatusPartiallyFilled"
-                else None
+                else (
+                    "PartiallyFilled"
+                    if leg_status == "LegSubStatusPartiallyFilled"
+                    else None
+                )
             )
 
             execution_info = fill_info.get("ExecutionInfo", {})
@@ -615,9 +618,7 @@ class TradingBot:
             if not symbol or symbol not in self.symbols_config:
                 continue
 
-            console.print(
-                f"[bold]{side} FILL: {symbol} @ ${price:.2f} x {qty}[/bold]"
-            )
+            console.print(f"[bold]{side} FILL: {symbol} @ ${price:.2f} x {qty}[/bold]")
 
             with self.lock:
                 if side in ("SELL", "SELL_SHORT"):
@@ -727,7 +728,9 @@ class TradingBot:
 
     def _handle_new_trading_day(self, today_et: date):
         """Reset daily state when the ET date changes."""
-        console.print(f"[bold cyan]New trading day ({today_et}) → resetting state[/bold cyan]")
+        console.print(
+            f"[bold cyan]New trading day ({today_et}) → resetting state[/bold cyan]"
+        )
 
         self.today = today_et
         self.trading_paused = False
@@ -735,7 +738,9 @@ class TradingBot:
         try:
             snap = self.get_account_snapshot()
             self.daily_start_equity = snap.get("equity", 0.0)
-            console.print(f"[cyan]Daily start equity: ${self.daily_start_equity:,.2f}[/cyan]")
+            console.print(
+                f"[cyan]Daily start equity: ${self.daily_start_equity:,.2f}[/cyan]"
+            )
         except Exception as e:
             console.print(f"[red]Equity snapshot failed on day change: {e}[/red]")
             self.daily_start_equity = 0.0
@@ -744,7 +749,6 @@ class TradingBot:
         self.load_previous_closes()
         self._sync_high_prices()
         self._load_last_sell_prices()
-
 
     def _should_auto_shutdown(self) -> bool:
         """Return True if auto-shutdown conditions are met."""
@@ -755,17 +759,19 @@ class TradingBot:
 
         now = self.now_et()
         buffer = timedelta(minutes=getattr(self, "shutdown_buffer_minutes", 2))
-        shutdown_after = datetime.combine(
-            now.date(), dt_time(16, 0), tzinfo=self.ET
-        ) + buffer
+        shutdown_after = (
+            datetime.combine(now.date(), dt_time(16, 0), tzinfo=self.ET) + buffer
+        )
 
         return now >= shutdown_after
 
-
     def start_control_interface(self):
         """Start a background thread that accepts terminal commands."""
+
         def control_loop():
-            console.print("\n[bold cyan]Control interface ready. Type 'help' for commands.[/bold cyan]")
+            console.print(
+                "\n[bold cyan]Control interface ready. Type 'help' for commands.[/bold cyan]"
+            )
             while self.running:
                 try:
                     cmd = input().strip().lower()
@@ -824,7 +830,6 @@ class TradingBot:
         t = threading.Thread(target=control_loop, daemon=True, name="ControlInterface")
         t.start()
 
-
     def _print_status(self):
         snap = self.get_account_snapshot()
         console.print("\n[bold]=== Bot Status ===[/bold]")
@@ -834,11 +839,15 @@ class TradingBot:
         console.print(f"Symbols          : {', '.join(self.symbols) or 'None'}")
         console.print(f"Open positions   : {len(self.holdings)}")
         console.print(f"Account equity   : ${snap.get('equity', 0):,.2f}")
-        console.print(f"Daily start eq.  : ${getattr(self, 'daily_start_equity', 0):,.2f}")
+        console.print(
+            f"Daily start eq.  : ${getattr(self, 'daily_start_equity', 0):,.2f}"
+        )
         if self.holdings:
             console.print("Holdings:")
             for sym, h in self.holdings.items():
-                console.print(f"  {sym}: {h.get('shares')} shares @ ${h.get('buy_price', 0):.2f}")
+                console.print(
+                    f"  {sym}: {h.get('shares')} shares @ ${h.get('buy_price', 0):.2f}"
+                )
         console.print("")
 
     # ====================== Market hours ======================
@@ -937,7 +946,7 @@ class TradingBot:
 
         # Start terminal control interface
         self.start_control_interface()
-    
+
         console.print("[bold green]✅ Bot started[/bold green]")
 
     def stop(self):
@@ -950,7 +959,6 @@ class TradingBot:
                 pass
         console.print("[bold yellow]Bot stopped[/bold yellow]")
 
-
     def _on_sighup(self, signum, frame):
         """SIGHUP → hot-reload config"""
         console.print("[bold cyan]SIGHUP received → reloading config...[/bold cyan]")
@@ -960,19 +968,18 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Config reload via SIGHUP failed: {e}[/red]")
 
-
     def _on_sigusr1(self, signum, frame):
         """SIGUSR1 → Pause trading"""
         self.trading_paused = True
         console.print("[bold yellow]SIGUSR1 received → Trading PAUSED[/bold yellow]")
-
 
     def _on_sigusr2(self, signum, frame):
         """SIGUSR2 → Resume trading"""
         self.trading_paused = False
         console.print("[bold green]SIGUSR2 received → Trading RESUMED[/bold green]")
 
-'''
+
+"""
 How to use from another terminal
 # Find the PID
 ps aux | grep bot4   # or bot3
@@ -989,4 +996,4 @@ kill -HUP <pid>
 # Stop cleanly
 kill <pid>           # or systemctl stop schwab-bot4
 
-'''
+"""

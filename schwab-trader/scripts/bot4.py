@@ -40,7 +40,6 @@ from schwab_trader.config.bot.bot4_config import TradingConfig
 from schwab_trader.pipelines.bot4_pipeline import TradingBot
 from schwab_trader.dashboard.bot4_dashboard import run_dashboard
 
-
 console = Console()
 
 
@@ -95,7 +94,9 @@ if __name__ == "__main__":
                             print("No open positions")
                         else:
                             for sym, h in bot.holdings.items():
-                                print(f"{sym}: {h['shares']} shares @ ${h.get('buy_price', 0):.2f}")
+                                print(
+                                    f"{sym}: {h['shares']} shares @ ${h.get('buy_price', 0):.2f}"
+                                )
                     else:
                         print("Commands: stop | reload | status | positions")
                 except Exception:

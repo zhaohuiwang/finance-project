@@ -60,6 +60,13 @@ C. One-Triggers-Other (OTO) – parent TRIGGER + child
 D. Bracket / First-Triggers-OCO
 ```JSON
 {
+        "orderLegType": "EQUITY",
+        "instruction": instruction,
+        "quantity": quantity,
+        "instrument": _make_instrument(symbol),
+    }
+    
+{
   "orderType": "LIMIT",
   "session": "NORMAL",
   "duration": "DAY",
@@ -88,6 +95,3 @@ E. Pure top-level OCO
   ]
 }
 ```
-
-
-

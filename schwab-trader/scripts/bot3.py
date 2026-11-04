@@ -39,7 +39,6 @@ from schwab_trader.config.bot.bot3_config import TradingConfig
 from schwab_trader.pipelines.bot3_pipeline import TradingBot
 from schwab_trader.dashboard.bot3_dashboard import run_dashboard
 
-
 console = Console()
 
 

@@ -18,18 +18,12 @@ https://tylerebowers.github.io/Schwabdev/
 
 import os
 import decimal
-import time     # stdlib: sleep, time.time()
+import time  # stdlib: sleep, time.time()
 import threading
 import json
 import signal
 
-from datetime import (
-    datetime,
-    timedelta,
-    timezone,
-    date,
-    time as dt_time
-    )
+from datetime import datetime, timedelta, timezone, date, time as dt_time
 from dotenv import load_dotenv
 from pathlib import Path
 from rich.console import Console
@@ -37,7 +31,12 @@ from zoneinfo import ZoneInfo
 
 import schwabdev
 
-from schwab_trader.config.bot.bot3_config import TradingConfig, SymbolConfig, SymbolState, state
+from schwab_trader.config.bot.bot3_config import (
+    TradingConfig,
+    SymbolConfig,
+    SymbolState,
+    state,
+)
 from schwab_trader.orders.equity import (
     sell_limit_sell_stoplimit_oco_dict,
     sell_trailingstop_sell_limit_oco_dict,
@@ -56,6 +55,7 @@ console = Console()
 # Set the global context strategy to strictly round down
 decimal.getcontext().rounding = decimal.ROUND_DOWN
 
+
 class TradingBot:
     """
     Automated trading engine for Schwab brokerage accounts.
@@ -64,8 +64,9 @@ class TradingBot:
     opportunities based on configuration, and manages orders throughout
     their lifecycle.
     """
+
     ET = ZoneInfo("America/New_York")  # class-level constant
-    
+
     def __init__(self, cfg: TradingConfig, mode: str = "cli", config_path=None):
         """
         Initialize the trading bot.
@@ -81,10 +82,13 @@ class TradingBot:
         self.symbols_config: dict[str, SymbolConfig] = cfg.symbols
         # log the last buy/sell
         self.state = {sym: SymbolState() for sym in self.symbols}
-        self.day_prices: dict[str, dict[str, float]] = {sym: {p: None for p in ['market', 'low', 'high', 'close', 'hwm']} for sym in self.symbols}
+        self.day_prices: dict[str, dict[str, float]] = {
+            sym: {p: None for p in ["market", "low", "high", "close", "hwm"]}
+            for sym in self.symbols
+        }
         # for market, day low, day high, previous close and high water mark prices.
-        self.holdings = {} # Only positions that are also in symbols_config
-        self.all_holdings = {} # Every long position in the Schwab account
+        self.holdings = {}  # Only positions that are also in symbols_config
+        self.all_holdings = {}  # Every long position in the Schwab account
         self.pending_buy_orders = set()
         self.auto_buy_allowed = {sym: True for sym in self.symbols}
         self.lock = threading.RLock()
@@ -103,15 +107,15 @@ class TradingBot:
         self.today = date.today()
 
         # Shutdown config
-        self.trading_enabled = False   # flipped by monitor based on clock
-        self.auto_shutdown_after_close = getattr(cfg,"auto_shutdown_after_close", True)
+        self.trading_enabled = False  # flipped by monitor based on clock
+        self.auto_shutdown_after_close = getattr(cfg, "auto_shutdown_after_close", True)
         self.shutdown_buffer_minutes = getattr(cfg, "shutdown_buffer_minutes", 2)
 
         # Signal handlers
-        signal.signal(signal.SIGHUP, self._on_sighup)      # Reload config
-        signal.signal(signal.SIGUSR1, self._on_sigusr1)    # Pause
-        signal.signal(signal.SIGUSR2, self._on_sigusr2)    # Resume
-        
+        signal.signal(signal.SIGHUP, self._on_sighup)  # Reload config
+        signal.signal(signal.SIGUSR1, self._on_sigusr1)  # Pause
+        signal.signal(signal.SIGUSR2, self._on_sigusr2)  # Resume
+
         console.print("[bold green]TradingBot initialized[/bold green]")
 
     @property
@@ -252,12 +256,12 @@ class TradingBot:
         return results
 
     def has_open_order_for_symbol(self, symbol: str, instruction=None) -> bool:
-            for o in self.get_open_orders():
-                if o["symbol"] == symbol and (
-                    not instruction or o["instruction"] == instruction
-                ):
-                    return True
-            return False
+        for o in self.get_open_orders():
+            if o["symbol"] == symbol and (
+                not instruction or o["instruction"] == instruction
+            ):
+                return True
+        return False
 
     def can_place_order(self, symbol: str) -> bool:
         """Anti-duplicate protection."""
@@ -321,7 +325,9 @@ class TradingBot:
             console.print(f"[red]Buy failed: {e}[/red]")
             return False
 
-    def _get_reference_price(self, symbol: str, holding: dict, sym_cfg) -> tuple[float, str]:
+    def _get_reference_price(
+        self, symbol: str, holding: dict, sym_cfg
+    ) -> tuple[float, str]:
         """
         Return (reference_price, source_label).
         Preference order:
@@ -350,7 +356,6 @@ class TradingBot:
         # 4. Config fallback
         return sym_cfg.buy_target_price, "buy_target"
 
-
     def submit_sell_bracket_oco(self, symbol: str):
         """
         Exit strategy:
@@ -365,7 +370,9 @@ class TradingBot:
         holding = self.holdings[symbol]
         _cfg = self.symbols_config[symbol]
         qty = int(holding["shares"])
-        price = self.day_prices.get(symbol, {}).get("market") or holding.get("buy_price", 0)
+        price = self.day_prices.get(symbol, {}).get("market") or holding.get(
+            "buy_price", 0
+        )
 
         if price <= 0:
             console.print(f"[yellow]No valid price for {symbol}, skipping OCO[/yellow]")
@@ -386,7 +393,6 @@ class TradingBot:
                 symbol=symbol,
                 quantity=qty,
                 sell_limit_price=str(_cfg.limit_sell_price),
-                
                 stop_price_offset=_cfg.trail_offset_pct,
                 session=_cfg.session,
                 duration=_cfg.duration,
@@ -412,7 +418,9 @@ class TradingBot:
 
         if _cfg.stop_loss_dollar and _cfg.stop_loss_dollar > 0:
             stop_price = round(reference_price - _cfg.stop_loss_dollar, 2)
-            stop_source = f"${_cfg.stop_loss_dollar} below {ref_source}@{reference_price}"
+            stop_source = (
+                f"${_cfg.stop_loss_dollar} below {ref_source}@{reference_price}"
+            )
         else:
             stop_price = round(reference_price * (1 - _cfg.stop_loss_pct / 100), 2)
             stop_source = f"{_cfg.stop_loss_pct}% below {ref_source}@{reference_price}"
@@ -506,10 +514,11 @@ class TradingBot:
         # ------------------------------------------------------------------
         if not has_position and not has_buy:
             s = self.state.get(symbol)
-            #last_sell_price, last_sell_qty, last_sell_time = get_last_sell_info(symbol)
+            # last_sell_price, last_sell_qty, last_sell_time = get_last_sell_info(symbol)
             last_sell_price = s.last_sell.price if s.last_sell else None
             trigger = price <= _cfg.buy_target_price or (
-                last_sell_price is not None and price <= last_sell_price * (1 - _cfg.buy_drop_pct / 100)
+                last_sell_price is not None
+                and price <= last_sell_price * (1 - _cfg.buy_drop_pct / 100)
             )
             if trigger and self.risk_checks_pass(symbol):
                 console.print(f"[yellow]Ensuring BUY order for {symbol}[/yellow]")
@@ -535,7 +544,9 @@ class TradingBot:
                     for o in orders
                 )
                 if not has_trailing:
-                    console.print(f"[cyan]Upgrading {symbol} to Trailing+Limit OCO[/cyan]")
+                    console.print(
+                        f"[cyan]Upgrading {symbol} to Trailing+Limit OCO[/cyan]"
+                    )
                     self.cancel_all_orders_for_symbol(symbol)
                     time.sleep(0.8)
                     self.submit_sell_bracket_oco(symbol)
@@ -570,10 +581,10 @@ class TradingBot:
     def _conditional_truncate(self, x: float) -> float:
         """Achwab API: Orders above $1 can be endtered in no more than two decimals; orders below $1, no more than four decimals"""
         import math
-        decimals = 2 if x > 1 else 4
-        factor = 10 ** decimals
-        return math.trunc(x * factor) / factor
 
+        decimals = 2 if x > 1 else 4
+        factor = 10**decimals
+        return math.trunc(x * factor) / factor
 
     def _compute_ideal_stop(self, symbol: str) -> float | None:
         """
@@ -589,7 +600,11 @@ class TradingBot:
             return None
 
         holding = self.holdings[symbol]
-        price = self.day_prices.get(symbol, {}).get("market") or holding.get("buy_price") or 0
+        price = (
+            self.day_prices.get(symbol, {}).get("market")
+            or holding.get("buy_price")
+            or 0
+        )
         if price <= 0:
             return None
 
@@ -607,7 +622,6 @@ class TradingBot:
 
         return stop_price
 
-    
     def _get_current_stop_price(self, symbol: str) -> float | None:
         """
         Best-effort extraction of the working stop price for a symbol.
@@ -628,7 +642,6 @@ class TradingBot:
                     except (TypeError, ValueError):
                         continue
         return None
-    
 
     def _sync_high_prices(self):
         """
@@ -653,7 +666,6 @@ class TradingBot:
                 if sym not in self.symbols_config and sym in self.day_prices:
                     self.day_prices.pop(sym, None)
 
-
     def reload_config(self):
         """
         Hot-reload configuration from disk without stopping the bot.
@@ -668,8 +680,12 @@ class TradingBot:
                 self.symbols_config = new_cfg.symbols
 
                 # Auto-shutdown settings
-                self.auto_shutdown_after_close = getattr(new_cfg, "auto_shutdown_after_close", True)
-                self.shutdown_buffer_minutes = getattr(new_cfg, "shutdown_buffer_minutes", 2)
+                self.auto_shutdown_after_close = getattr(
+                    new_cfg, "auto_shutdown_after_close", True
+                )
+                self.shutdown_buffer_minutes = getattr(
+                    new_cfg, "shutdown_buffer_minutes", 2
+                )
 
                 # Synchronize day_prices and related state with new symbol list
                 for sym in self.symbols:
@@ -684,13 +700,15 @@ class TradingBot:
                     if sym not in self.symbols_config:
                         self.day_prices.pop(sym, None)
                         self.auto_buy_allowed.pop(sym, None)
-                        #self.last_sell_prices.pop(sym, None)
+                        # self.last_sell_prices.pop(sym, None)
 
             # Refresh derived state
             self._sync_high_prices()
 
             console.print("[bold cyan]Config reloaded successfully[/bold cyan]")
-            console.print(f"[cyan]Symbols now: {', '.join(self.symbols) or 'None'}[/cyan]")
+            console.print(
+                f"[cyan]Symbols now: {', '.join(self.symbols) or 'None'}[/cyan]"
+            )
 
             # Cancel all existing orders (old parameters may no longer be valid)
             for sym in list(self.symbols):
@@ -704,7 +722,6 @@ class TradingBot:
             console.print(f"[red]Config reload failed: {e}[/red]")
             raise
 
-
     # ====================== STREAM HANDLING ======================
     # ---------- Schwab decimal decoder ----------
     def _decode_schwab_decimal(self, obj) -> float:
@@ -715,8 +732,13 @@ class TradingBot:
             return float(obj)
         if isinstance(obj, dict) and "lo" in obj:
             from decimal import Decimal
+
             try:
-                lo = Decimal(str(obj.get("lo"))) if obj.get("lo") is not None else Decimal("0.00")
+                lo = (
+                    Decimal(str(obj.get("lo")))
+                    if obj.get("lo") is not None
+                    else Decimal("0.00")
+                )
                 sign_scale = int(obj.get("signScale", 0))
                 # 'lo' may not exist, but 'signScale' always in the streamed data
                 value = lo / (Decimal(10) ** (sign_scale // 2))
@@ -727,7 +749,6 @@ class TradingBot:
                 return 0.0
         return 0.0
 
-        
     def unified_receiver(self, message):
         """Dispatch streaming messages."""
         if isinstance(message, str):
@@ -745,7 +766,6 @@ class TradingBot:
             elif service == "ACCT_ACTIVITY":
                 self._handle_fill(item)
 
-
     def _handle_price(self, item):
         """Process price updates and maintain high-water mark."""
         for content in item.get("content", []):
@@ -753,11 +773,11 @@ class TradingBot:
             if sym not in self.day_prices:
                 continue
             try:
-                price = content.get("3") # Last price
+                price = content.get("3")  # Last price
                 day_low = content.get("11")
                 day_high = content.get("10")
                 previous_close = content.get("12")
-                # Not all fields will be returned by evey stream pulse. 
+                # Not all fields will be returned by evey stream pulse.
 
                 if price is None:
                     continue
@@ -783,11 +803,9 @@ class TradingBot:
             except (TypeError, ValueError):
                 pass
 
-
             # console.print("self_price", self.day_prices)
             # console.print(price, previous_close, day_low, day_high)
             # console.print("content", content)
-            
 
     def _handle_fill(self, item):
         """
@@ -801,8 +819,8 @@ class TradingBot:
             # "1" = Account
             # "2" = MessageType (string)
             # "3" = MessageData (JSON string)
-            msg_type = content.get('2', '')
-            msg_data = content.get('3', '')
+            msg_type = content.get("2", "")
+            msg_data = content.get("3", "")
 
             ###################################################
             from pathlib import Path
@@ -816,42 +834,43 @@ class TradingBot:
 
             # Then use it like this:
             LOG_FILE = STATE_DIR / "fill_updates.log"
-                    
+
             entry = {
                 "timestamp": datetime.now().isoformat(),
-                "streamed_content": content
-                }
-                    
-            with open(LOG_FILE, "a") as f:          # "a" = append mode
-                f.write(json.dumps(entry) + "\n\n")   # one JSON object per line
+                "streamed_content": content,
+            }
+
+            with open(LOG_FILE, "a") as f:  # "a" = append mode
+                f.write(json.dumps(entry) + "\n\n")  # one JSON object per line
             ###################################################
 
             if not msg_data or msg_type not in (
-                            #'OrderAccepted',
-                            'OrderFillCompleted',
-                        ): 
-                            # Schwab does not have clear documentation, only based on https://tylerebowers.github.io/Schwabdev/?source=pages%2Fstream.html
-                            continue
+                #'OrderAccepted',
+                "OrderFillCompleted",
+            ):
+                # Schwab does not have clear documentation, only based on https://tylerebowers.github.io/Schwabdev/?source=pages%2Fstream.html
+                continue
 
             try:
-                msg_data_parsed = json.loads(msg_data) if isinstance(msg_data, str) else msg_data
+                msg_data_parsed = (
+                    json.loads(msg_data) if isinstance(msg_data, str) else msg_data
+                )
             except (json.JSONDecodeError, TypeError):
                 continue
-            # Note: json.load() doesn't necessarily give you a dictionary. 
-            # 1. json.loads('{"a": 1}')             # → dict 
-            # 2. json.loads('[{"a": 1},{"a": 2}]')  # → list 
+            # Note: json.load() doesn't necessarily give you a dictionary.
+            # 1. json.loads('{"a": 1}')             # → dict
+            # 2. json.loads('[{"a": 1},{"a": 2}]')  # → list
             # 3. json.loads('"hello"')              # → str
             # In the example from the above reference, it's a dict
 
-            order_id = msg_data_parsed.get("SchwabOrderID", '')
+            order_id = msg_data_parsed.get("SchwabOrderID", "")
             base_event = msg_data_parsed.get("BaseEvent", {})
 
             if base_event.get("EventType") != "OrderFillCompleted":
                 continue
 
             fill_info = base_event.get(
-                "OrderFillCompletedEventOrderLegQuantityInfo",
-                {}
+                "OrderFillCompletedEventOrderLegQuantityInfo", {}
             )
 
             # Partial fill or complete fill
@@ -864,23 +883,30 @@ class TradingBot:
                 action_status = None
 
             # streamer.account_activity("Account Activity", "0,1,2,3")
-            # In the message data (a list[dict-like]) returned, "data": [...]> when "service": "ACCT_ACTIVITY" and "content":{..., "2": "OrderFillCompleted", ...}, "content":{..., "3":{...,"BaseEvent": <there are three sections including "QuantityInfo", "ExecutionInfo", and "OrderInfoForTransactionPosting". All may contain quantity, price infomation.>, ...} 
+            # In the message data (a list[dict-like]) returned, "data": [...]> when "service": "ACCT_ACTIVITY" and "content":{..., "2": "OrderFillCompleted", ...}, "content":{..., "3":{...,"BaseEvent": <there are three sections including "QuantityInfo", "ExecutionInfo", and "OrderInfoForTransactionPosting". All may contain quantity, price infomation.>, ...}
             execution_info = fill_info.get("ExecutionInfo", {})
             order_info = fill_info.get("OrderInfoForTransactionPosting", {})
 
             try:
-                symbol = order_info.get("Symbol", '').upper()
-                side = order_info.get("BuySellCode", '').upper()
+                symbol = order_info.get("Symbol", "").upper()
+                side = order_info.get("BuySellCode", "").upper()
 
-                qty = self._decode_schwab_decimal(execution_info.get("ExecutionQuantity", {}))
-                price = self._decode_schwab_decimal(execution_info.get("ExecutionPrice", {}))
-                timestamp = execution_info.get("ExecutionTimeStamp", {}).get("DateTimeString")
+                qty = self._decode_schwab_decimal(
+                    execution_info.get("ExecutionQuantity", {})
+                )
+                price = self._decode_schwab_decimal(
+                    execution_info.get("ExecutionPrice", {})
+                )
+                timestamp = execution_info.get("ExecutionTimeStamp", {}).get(
+                    "DateTimeString"
+                )
                 # All the above three are {}s
             except Exception:
                 continue
 
-
-            console.print(f"[bold]{side} FILLED: {symbol} @ ${price:.2f} x {qty}[/bold] (orde_id:{order_id})")
+            console.print(
+                f"[bold]{side} FILLED: {symbol} @ ${price:.2f} x {qty}[/bold] (orde_id:{order_id})"
+            )
 
             with self.lock:
                 if side in ("SELL", "SELL_SHORT"):
@@ -961,11 +987,13 @@ class TradingBot:
         # Subscriptions are remembered by start_auto and re-sent every day
         symbols_str = ",".join(self.symbols)
         if symbols_str:
-            self.streamer.send(self.streamer.level_one_equities(symbols_str, "0,3,8,10,11,12,19,20,21")) # 0: Symbol, 1: BidPrice, 2: AskPrice, 3: Last tradePrice, 8:TotalVolumeTradedToday, 10: Today'sHighPrice, 11: Today'sLowPrice, 12: PreviousClosePrice,18: NetChange, 19: 52-week-high, 20: 52-week-low, 21: P/E 
+            self.streamer.send(
+                self.streamer.level_one_equities(symbols_str, "0,3,8,10,11,12,19,20,21")
+            )  # 0: Symbol, 1: BidPrice, 2: AskPrice, 3: Last tradePrice, 8:TotalVolumeTradedToday, 10: Today'sHighPrice, 11: Today'sLowPrice, 12: PreviousClosePrice,18: NetChange, 19: 52-week-high, 20: 52-week-low, 21: P/E
 
             self.streamer.send(
                 self.streamer.account_activity("Account Activity", "0,1,2,3")
-            ) # 0: SubscriptionKey,Symbol, 1: Account, 2: MessageType, 3: MessageData.
+            )  # 0: SubscriptionKey,Symbol, 1: Account, 2: MessageType, 3: MessageData.
             # MessageType ['SUBSCRIBED','ORDER_ENTRY','ORDER_CANCEL','ORDER_FILL','ORDER_PARTIAL_FILL']
 
         self.update_holdings_from_api()
@@ -973,7 +1001,6 @@ class TradingBot:
         self._sync_high_prices()
         for sym in self.symbols:
             self.ensure_orders(sym)
-
 
     def monitor_logic(self):
         """Background monitoring thread."""
@@ -987,7 +1014,9 @@ class TradingBot:
                     self.today = today_et
                     self.daily_start_equity = self.get_account_snapshot()["equity"]
                     self.trading_paused = False
-                    console.print(f"[cyan]New trading day ({today_et}) → state reset[/cyan]")
+                    console.print(
+                        f"[cyan]New trading day ({today_et}) → state reset[/cyan]"
+                    )
 
                 # ----- Optional auto-shutdown -----
                 if self._should_auto_shutdown():
@@ -1010,7 +1039,6 @@ class TradingBot:
                 console.print(f"[red]monitor_logic error: {e}[/red]")
                 time.sleep(15)
 
-    
     def _should_auto_shutdown(self) -> bool:
         """Return True if auto-shutdown conditions are met."""
         if not getattr(self, "auto_shutdown_after_close", False):
@@ -1020,17 +1048,19 @@ class TradingBot:
 
         now = self.now_et()
         buffer = timedelta(minutes=getattr(self, "shutdown_buffer_minutes", 2))
-        shutdown_after = datetime.combine(
-            now.date(), dt_time(16, 0), tzinfo=self.ET
-        ) + buffer
+        shutdown_after = (
+            datetime.combine(now.date(), dt_time(16, 0), tzinfo=self.ET) + buffer
+        )
 
         return now >= shutdown_after
 
-
     def start_control_interface(self):
         """Start a background thread that accepts terminal commands."""
+
         def control_loop():
-            console.print("\n[bold cyan]Control interface ready. Type 'help' for commands.[/bold cyan]")
+            console.print(
+                "\n[bold cyan]Control interface ready. Type 'help' for commands.[/bold cyan]"
+            )
             while self.running:
                 try:
                     cmd = input().strip().lower()
@@ -1076,14 +1106,15 @@ class TradingBot:
                             status         - Show current bot state
                             reload         - Hot-reload config
                             help           - Show this help
-                            """
-                            )
+                            """)
                     # ---------- Power-user eval ----------
                     elif cmd.startswith("eval "):
                         expr = cmd[5:].strip()
                         # Only allow expressions that start with self. or bot.
                         if not (expr.startswith("self.") or expr.startswith("bot.")):
-                            console.print("[red]Only expressions starting with self. or bot. are allowed[/red]")
+                            console.print(
+                                "[red]Only expressions starting with self. or bot. are allowed[/red]"
+                            )
                             continue
                         try:
                             result = eval(expr, {"self": self, "bot": self})
@@ -1102,7 +1133,6 @@ class TradingBot:
         t = threading.Thread(target=control_loop, daemon=True, name="ControlInterface")
         t.start()
 
-
     def _print_status(self):
         snap = self.get_account_snapshot()
         console.print("\n[bold]=== Bot Status ===[/bold]")
@@ -1112,11 +1142,15 @@ class TradingBot:
         console.print(f"Symbols          : {', '.join(self.symbols) or 'None'}")
         console.print(f"Open positions   : {len(self.holdings)}")
         console.print(f"Account equity   : ${snap.get('equity', 0):,.2f}")
-        console.print(f"Daily start eq.  : ${getattr(self, 'daily_start_equity', 0):,.2f}")
+        console.print(
+            f"Daily start eq.  : ${getattr(self, 'daily_start_equity', 0):,.2f}"
+        )
         if self.holdings:
             console.print("Holdings:")
             for sym, h in self.holdings.items():
-                console.print(f"  {sym}: {h.get('shares')} shares @ ${h.get('buy_price', 0):.2f}")
+                console.print(
+                    f"  {sym}: {h.get('shares')} shares @ ${h.get('buy_price', 0):.2f}"
+                )
         console.print("")
 
     # ====================== Market hours ======================
@@ -1224,7 +1258,6 @@ class TradingBot:
                 pass
         console.print("[bold yellow]Bot stopped[/bold yellow]")
 
-
     def _on_sighup(self, signum, frame):
         """SIGHUP → hot-reload config"""
         console.print("[bold cyan]SIGHUP received → reloading config...[/bold cyan]")
@@ -1234,12 +1267,10 @@ class TradingBot:
         except Exception as e:
             console.print(f"[red]Config reload via SIGHUP failed: {e}[/red]")
 
-
     def _on_sigusr1(self, signum, frame):
         """SIGUSR1 → Pause trading"""
         self.trading_paused = True
         console.print("[bold yellow]SIGUSR1 received → Trading PAUSED[/bold yellow]")
-
 
     def _on_sigusr2(self, signum, frame):
         """SIGUSR2 → Resume trading"""
@@ -1247,7 +1278,7 @@ class TradingBot:
         console.print("[bold green]SIGUSR2 received → Trading RESUMED[/bold green]")
 
 
-'''
+"""
 How to use from another terminal
 # Find the PID
 ps aux | grep bot4   # or bot3
@@ -1264,7 +1295,7 @@ kill -HUP <pid>
 # Stop cleanly
 kill <pid>           # or systemctl stop schwab-bot4
 
-'''
+"""
 
 
 """
@@ -1407,4 +1438,3 @@ streamer.send(streamer.account_activity("Account Activity", "0,1,2,3"))
 
 So "key" is Schwab's always-present symbol identifier on the message. Field "0" is the Symbol data field you can also subscribe to. They both mean the ticker, but they are not the same JSON slot.
 """
-

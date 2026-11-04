@@ -36,7 +36,10 @@ logger = logging.getLogger(__name__)
 
 
 # ========================= SCHWAB AUTH SETUP =========================
-DEFAULT_TOKENS_PATH = Path("~/.schwabdev/tokens.db").expanduser() # The .expanduser() method replaces a leading tilde (~) or ~user in a file path with the user's home directory.
+DEFAULT_TOKENS_PATH = Path(
+    "~/.schwabdev/tokens.db"
+).expanduser()  # The .expanduser() method replaces a leading tilde (~) or ~user in a file path with the user's home directory.
+
 
 def initialize_client(tokens_path: str | Path):
     """Initialize the Schwab client using the specified tokens database."""
@@ -66,11 +69,14 @@ def initialize_client(tokens_path: str | Path):
         CALLBACK_URL = os.getenv("CALLBACK_URL")
         logger.info(f"Initializing Schwab Client with tokens at: {tokens_path}")
     except Exception as e:
-        logger.error(f"Error occurred while initializing Schwab Client with tokens at '{tokens_path}': {e}")
+        logger.error(
+            f"Error occurred while initializing Schwab Client with tokens at '{tokens_path}': {e}"
+        )
         raise
 
     return schwabdev.Client(
-        APP_KEY, APP_SECRET,
+        APP_KEY,
+        APP_SECRET,
         callback_url=CALLBACK_URL,
         tokens_db=str(tokens_path),
     )
@@ -88,9 +94,9 @@ def clean_file(file_path: str | Path):
     logger.warning("About to permanently delete: %s", file_path)
     logger.warning("This action cannot be undone.")
 
-    confirm = input(
-        "Are you sure you want to delete this file? (yes/y): "
-    ).strip().lower()
+    confirm = (
+        input("Are you sure you want to delete this file? (yes/y): ").strip().lower()
+    )
 
     if confirm not in {"yes", "y", "ye"}:
         logger.info("🛑 File deletion cancelled by user.")
@@ -124,7 +130,7 @@ def main():
     parser.add_argument(
         "--clean-tokens",
         "--reset",  # alias to --clean-token
-        action="store_true", 
+        action="store_true",
         # Flag style command-line argument (option as it starts with --): with action="store_true", if --reset is provided arg.reset is True; if --reset (or --clear-tokens) is not provided arg.reset is False.
         dest="clean_tokens",
         # destination or assignment. The value of the CLI option(s) either --reset or --clean-token is assigned to args.clean_tokens
@@ -132,13 +138,11 @@ def main():
     )
 
     parser.add_argument(
-        
         "--tokens-path",
         type=Path,
         # type=Path is a converter here to convert a string into a Path object.
         default=DEFAULT_TOKENS_PATH,
-        help=f"Custom path to tokens.db "
-             f"(default: {DEFAULT_TOKENS_PATH})",
+        help=f"Custom path to tokens.db " f"(default: {DEFAULT_TOKENS_PATH})",
     )
 
     args = parser.parse_args()

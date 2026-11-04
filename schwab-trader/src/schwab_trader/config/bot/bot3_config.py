@@ -109,6 +109,7 @@ class TradingConfig(BaseModel):
             data = yaml.safe_load(f)
         return cls(**data)
 
+
 @dataclass
 class OrderInfo:
     price: float

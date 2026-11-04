@@ -12,6 +12,7 @@ from rich.console import Console
 
 from schwab_trader.pipelines.bot3_pipeline import TradingBot
 from rich.console import Console
+
 # Suppress logs
 logging.getLogger("werkzeug").setLevel(logging.ERROR)
 logging.getLogger("dash").setLevel(logging.ERROR)
@@ -255,15 +256,19 @@ def update_dashboard(n_interval, n_clicks, reload_clicks):
             {"Metric": "Equity(Net Liq)", "Value": f"${snapshot['equity']:,.2f}"},
             {"Metric": "CashBalance", "Value": f"${snapshot['cashBalance']:,.2f}"},
             {"Metric": "BuyingPower", "Value": f"${snapshot['buyingPower']:,.2f}"},
-            {"Metric": "IntradayBuingPowerAmount", "Value": f"${snapshot['intradayBPA']:,.2f}"},
+            {
+                "Metric": "IntradayBuingPowerAmount",
+                "Value": f"${snapshot['intradayBPA']:,.2f}",
+            },
         ]
-
 
         # All Holdings
         all_holdings_data = []
         with bot.lock:
             for sym, h in bot.all_holdings.items():
-                price = bot.day_prices.get(sym, {}).get("market") or h.get("current_price")
+                price = bot.day_prices.get(sym, {}).get("market") or h.get(
+                    "current_price"
+                )
                 shares = h.get("shares", 0)
                 buy_p = h.get("buy_price")
                 hwm = bot.day_prices.get(sym, {}).get("hwm")
@@ -317,5 +322,7 @@ def run_dashboard(trading_bot: TradingBot, port: int = 8050):
     """Start the dashboard."""
     global bot
     bot = trading_bot
-    console.print(f"[bold green]✅ Dashboard running at http://127.0.0.1:{port}[/bold green]")
+    console.print(
+        f"[bold green]✅ Dashboard running at http://127.0.0.1:{port}[/bold green]"
+    )
     app.run(debug=False, use_reloader=False, port=port)
