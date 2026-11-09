@@ -3,88 +3,18 @@
 # "TA_zhwang22gmailcom1753933248 SELL -380 IREN @39.80 STPLMT 40.00 OCO #1005667584230"
 
 
-order = sell_limit_dict(
-    symbol="NBIS",
-    quantity=1,
-    limit_price=100.0,
-    duration=Duration.GOOD_TILL_CANCEL,
-)
-order_details = {
-    "session": "NORMAL",
-    "duration": "GOOD_TILL_CANCEL",
-    "orderType": "LIMIT",
-    "complexOrderStrategyType": "NONE",
-    "quantity": 1.0,
-    "filledQuantity": 0.0,
-    "remainingQuantity": 0.0,
-    "requestedDestination": "AUTO",
-    "destinationLinkName": "AutoRoute",
-    "price": 100.0,
-    "orderLegCollection": [
-        {
-            "orderLegType": "EQUITY",
-            "legId": 1,
-            "instrument": {
-                "assetType": "EQUITY",
-                "cusip": "N97284108",
-                "symbol": "NBIS",
-                "instrumentId": 4339891,
-            },
-            "instruction": "SELL",
-            "positionEffect": "CLOSING",
-            "quantity": 1.0,
-        }
-    ],
-    "orderStrategyType": "SINGLE",
-    "orderId": 1005588236651,
-    "cancelable": False,
-    "editable": False,
-    "status": "CANCELED",
-    "enteredTime": "2026-03-04T01:26:35+0000",
-    "closeTime": "2026-03-04T01:29:35+0000",
-    "tag": "TA_zhwang22gmailcom1753933248",
-    "accountNumber": 29308909,
-    "orderActivityCollection": [
-        {
-            "activityType": "EXECUTION",
-            "activityId": 113515796766,
-            "executionType": "CANCELED",
-            "quantity": 1.0,
-            "orderRemainingQuantity": 0.0,
-            "executionLegs": [
-                {
-                    "legId": 1,
-                    "quantity": 1.0,
-                    "mismarkedQuantity": 0.0,
-                    "price": 0.0,
-                    "time": "2026-03-04T01:29:35+0000",
-                    "instrumentId": 4339891,
-                }
-            ],
-        }
-    ],
-}
-
-
-order = buy_limit_trigger_sell_limit_dict(
-    symbol="NBIS",
-    quantity=1,
-    buy_limit_price=20,
-    sell_limit_price=120,
-    buy_duration=Duration.DAY,
-    sell_duration=Duration.GOOD_TILL_CANCEL,
-)
-order_details = {
+# Real Example - limit sell order triggers limit buy order.  
+    {
     "session": "NORMAL",
     "duration": "DAY",
     "orderType": "LIMIT",
     "complexOrderStrategyType": "NONE",
-    "quantity": 1.0,
+    "quantity": 100.0,
     "filledQuantity": 0.0,
-    "remainingQuantity": 1.0,
+    "remainingQuantity": 100.0,
     "requestedDestination": "AUTO",
     "destinationLinkName": "AutoRoute",
-    "price": 20.0,
+    "price": 138.0,
     "orderLegCollection": [
         {
             "orderLegType": "EQUITY",
@@ -93,33 +23,34 @@ order_details = {
                 "assetType": "EQUITY",
                 "cusip": "N97284108",
                 "symbol": "NBIS",
-                "instrumentId": 4339891,
+                "uniformSymbol": "NBIS",
+                "instrumentId": 4339891
             },
-            "instruction": "BUY",
-            "positionEffect": "OPENING",
-            "quantity": 1.0,
+            "instruction": "SELL",
+            "positionEffect": "CLOSING",
+            "quantity": 100.0
         }
     ],
     "orderStrategyType": "TRIGGER",
-    "orderId": 1005588236683,
-    "cancelable": True,
-    "editable": False,
+    "orderId": 1008594108571,
+    "cancelable": true,
+    "editable": false,
     "status": "PENDING_ACTIVATION",
-    "enteredTime": "2026-03-04T01:46:44+0000",
+    "enteredTime": "2026-11-07T15:26:42+0000",
     "tag": "TA_zhwang22gmailcom1753933248",
     "accountNumber": 29308909,
     "childOrderStrategies": [
         {
             "session": "NORMAL",
-            "duration": "GOOD_TILL_CANCEL",
+            "duration": "DAY",
             "orderType": "LIMIT",
             "complexOrderStrategyType": "NONE",
-            "quantity": 1.0,
+            "quantity": 100.0,
             "filledQuantity": 0.0,
-            "remainingQuantity": 1.0,
+            "remainingQuantity": 100.0,
             "requestedDestination": "AUTO",
             "destinationLinkName": "AutoRoute",
-            "price": 120.0,
+            "price": 123.0,
             "orderLegCollection": [
                 {
                     "orderLegType": "EQUITY",
@@ -128,26 +59,25 @@ order_details = {
                         "assetType": "EQUITY",
                         "cusip": "N97284108",
                         "symbol": "NBIS",
-                        "instrumentId": 4339891,
+                        "uniformSymbol": "NBIS",
+                        "instrumentId": 4339891
                     },
-                    "instruction": "SELL",
-                    "positionEffect": "CLOSING",
-                    "quantity": 1.0,
+                    "instruction": "BUY",
+                    "positionEffect": "OPENING",
+                    "quantity": 100.0
                 }
             ],
             "orderStrategyType": "SINGLE",
-            "orderId": 1005588236684,
-            "cancelable": True,
-            "editable": False,
+            "orderId": 1008594108572,
+            "cancelable": true,
+            "editable": false,
             "status": "AWAITING_PARENT_ORDER",
-            "enteredTime": "2026-03-04T01:46:44+0000",
+            "enteredTime": "2026-11-07T15:26:42+0000",
             "tag": "TA_zhwang22gmailcom1753933248",
-            "accountNumber": 29308909,
+            "accountNumber": 29308909
         }
-    ],
+    ]
 }
-# Notice  'orderLegCollection' and 'childOrderStrategies' > 'orderLegCollection'
-
 
 # Real Example
 order_1 = buy_limit_dict(
@@ -1104,3 +1034,689 @@ example = {
         ],
     },
 ]
+
+
+
+
+
+
+# The following complexOrderStrategyType examples are provided by ChatGPT.
+    # 1. NONE
+    # Description: No complex strategy classification.
+    # Example: Buy 100 shares of XYZ.
+    {
+      "complexOrderStrategyType": "NONE",
+      "orderType": "LIMIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY",
+          "quantity": 100,
+          "instrument": {
+            "symbol": "XYZ",
+            "assetType": "EQUITY"
+          }
+        }
+      ]
+    }
+
+    # 2. COVERED
+    # Description: Covered option position, typically a covered call. Existing underlying shares may be held in the account rather than included as a new order leg.
+    # Example: Sell one call against 100 owned shares.
+    {
+      "complexOrderStrategyType": "COVERED",
+      "orderType": "NET_CREDIT",
+      "orderLegCollection": [
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 3. VERTICAL
+    # Description: Two options, same underlying, expiration and option type, different strikes.
+    # Example: Bull call spread.
+    {
+      "complexOrderStrategyType": "VERTICAL",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 4. BACK_RATIO
+    # Description: Ratio backspread. More options are purchased than sold.
+    # Example: 1x2 call backspread.
+    {
+      "complexOrderStrategyType": "BACK_RATIO",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 5. CALENDAR
+    # Description: Same strike, different expiration dates.
+    # Example: Sell near-term call and buy longer-term call.
+    {
+      "complexOrderStrategyType": "CALENDAR",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  270115C00100000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 6. DIAGONAL
+    # Description: Different strikes and expiration dates.
+    {
+      "complexOrderStrategyType": "DIAGONAL",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00105000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  270115C00100000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 7. STRADDLE
+    # Description: Same strike and expiration, one call and one put.
+    # Example: Long ATM straddle.
+    {
+      "complexOrderStrategyType": "STRADDLE",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00100000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 8. STRANGLE
+    # Description: Different call and put strikes, same expiration.
+    {
+      "complexOrderStrategyType": "STRANGLE",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00090000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 9. COLLAR_SYNTHETIC
+    # Description: Synthetic collar-like construction using options.
+    # Example: Synthetic long stock combined with protective put and short call.
+    {
+      "complexOrderStrategyType": "COLLAR_SYNTHETIC",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00090000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # Validation note: Confirm the broker's precise definition of this classification.
+    # 10. BUTTERFLY
+    # Description: Three strikes, typically 1-2-1 quantities.
+    {
+      "complexOrderStrategyType": "BUTTERFLY",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00090000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  261218C00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 11. CONDOR
+    # Description: Four strikes, typically four options of equal quantity.
+    {
+      "complexOrderStrategyType": "CONDOR",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00085000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00095000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00105000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00115000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 12. IRON_CONDOR
+    # Description: Two put legs and two call legs, usually a credit spread on each side.
+    {
+      "complexOrderStrategyType": "IRON_CONDOR",
+      "orderType": "NET_CREDIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00085000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00090000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00115000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 13. VERTICAL_ROLL
+    # Description: Close an existing vertical and open a replacement vertical.
+    {
+      "complexOrderStrategyType": "VERTICAL_ROLL",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "SELL_TO_CLOSE",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_CLOSE",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00105000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00115000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # Validation note: Verify support for the roll classification and the combined close/open transaction.
+    # 14. COLLAR_WITH_STOCK
+    # Description: Long stock, long protective put and short covered call.
+    {
+      "complexOrderStrategyType": "COLLAR_WITH_STOCK",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY",
+          "quantity": 100,
+          "instrument": {
+            "symbol": "XYZ",
+            "assetType": "EQUITY"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00095000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 15. DOUBLE_DIAGONAL
+    # Description: A call diagonal combined with a put diagonal.
+    {
+      "complexOrderStrategyType": "DOUBLE_DIAGONAL",
+      "orderType": "NET_CREDIT",
+      "orderLegCollection": [
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00105000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  270115C00110000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00095000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  270115P00090000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 16. UNBALANCED_BUTTERFLY
+    # Description: Butterfly-like spread with unequal wing quantities.
+    {
+      "complexOrderStrategyType": "UNBALANCED_BUTTERFLY",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00090000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 3,
+          "instrument": {
+            "symbol": "XYZ  261218C00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 17. UNBALANCED_CONDOR
+    # Description: Condor-like construction with unequal quantities.
+    {
+      "complexOrderStrategyType": "UNBALANCED_CONDOR",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00085000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  261218C00095000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00105000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  261218C00115000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 18. UNBALANCED_IRON_CONDOR
+    # Description: Iron condor with unequal quantities or wing structures.
+    {
+      "complexOrderStrategyType": "UNBALANCED_IRON_CONDOR",
+      "orderType": "NET_CREDIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00085000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  261218P00090000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00115000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 19. UNBALANCED_VERTICAL_ROLL
+    # Description: Vertical roll with unequal quantities in the replacement spread.
+    {
+      "complexOrderStrategyType": "UNBALANCED_VERTICAL_ROLL",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "SELL_TO_CLOSE",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  261218C00100000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_CLOSE",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  261218C00110000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 3,
+          "instrument": {
+            "symbol": "XYZ  270115C00105000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  270115C00115000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }
+
+    # 20. MUTUAL_FUND_SWAP
+    # Description: Mutual fund exchange. This is not a conventional options strategy.
+    # Schematic only — not a confirmed Schwab order payload.
+    {
+      "complexOrderStrategyType": "MUTUAL_FUND_SWAP",
+      "orderStrategyType": "SINGLE",
+      "orderLegCollection": [
+        {
+          "instruction": "EXCHANGE",
+          "quantity": 10000,
+          "instrument": {
+            "symbol": "FUND_A",
+            "assetType": "MUTUAL_FUND"
+          }
+        }
+      ]
+    }
+
+    # Validation note: Mutual fund exchanges have separate request semantics. Verify the actual endpoint schema, destination fund fields and supported instructions.
+    # 21. CUSTOM
+    # Description: Custom combination that does not match a predefined strategy.
+    {
+      "complexOrderStrategyType": "CUSTOM",
+      "orderType": "NET_DEBIT",
+      "orderLegCollection": [
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218C00095000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 2,
+          "instrument": {
+            "symbol": "XYZ  261218C00105000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "BUY_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00090000",
+            "assetType": "OPTION"
+          }
+        },
+        {
+          "instruction": "SELL_TO_OPEN",
+          "quantity": 1,
+          "instrument": {
+            "symbol": "XYZ  261218P00085000",
+            "assetType": "OPTION"
+          }
+        }
+      ]
+    }

@@ -15,6 +15,11 @@ If you want to 1. validate data 2. covert or coerce values 3. raise errors from 
 
 TypedDict helps you write correct code. Pydantic (or manual checks) helps you run correct code.
 
+Naming: 
+stop_price_link_bases -- in helper functions and payload definations
+StopPriceLinkBasis -- Literal type alias defined in type_literal module 
+stopPriceLinkBasis -- JSON formatted payload key
+
 """
 
 from __future__ import annotations
@@ -32,16 +37,18 @@ from typing import (
 )
 import math
 
+
 from schwab_trader.accounts.type_literal import (
-    complexOrderStrategyType,  # ["NONE", ...]
+    ComplexOrderStrategyType,  # ["NONE", ...]
     Instruction,  # ["BUY","SELL", ...]
     Session,  # ["NORMAL", "AM", "PM", "SEAMLESS"]
     Duration,  # ["DAY","GOOD_TILL_CANCEL",...]
     OrderType,  # ["MARKET","LIMIT","STOP","STOP_LIMIT","TRAILING_STOP",...]
-    orderStrategyType,  # ["SINGLE","OCO","TRIGGER",...]
+    OrderStrategyType,  # ["SINGLE","OCO","TRIGGER",...]
     OrderLegCollectionInstrumentAssetType,  # ["EQUITY","OPTION",...]
-    stopPriceLinkBasis,
-    stopPriceLinkType,  # ["VALUE", "PERCENT", "TICK"]
+    StopPriceLinkBasis,
+    StopPriceLinkType,  # ["VALUE", "PERCENT", "TICK"]
+    TaxLotMethod, # ["FIFO", "LIFO", ...]
 )
 
 # ---------------------------------------------------------------------------
@@ -67,16 +74,16 @@ class OrderPayload(TypedDict):
     orderType: OrderType
     session: Session
     duration: Duration
-    orderStrategyType: orderStrategyType
+    orderStrategyType: OrderStrategyType
     orderLegCollection: list[OrderLeg]
 
     # Optional / conditional fields - Keys marked with NotRequired is optional
     price: NotRequired[str]
     stopPrice: NotRequired[str]
-    stopPriceLinkBasis: NotRequired[stopPriceLinkBasis]
-    stopPriceLinkType: NotRequired[stopPriceLinkType]
+    stopPriceLinkBasis: NotRequired[StopPriceLinkBasis]
+    stopPriceLinkType: NotRequired[StopPriceLinkType]
     stopPriceOffset: NotRequired[float]
-    complexOrderStrategyType: NotRequired[complexOrderStrategyType]
+    complexOrderStrategyType: NotRequired[ComplexOrderStrategyType]
     childOrderStrategies: NotRequired[
         list["OrderPayload"]
     ]  # "OrderPayload" ← forward ref
@@ -111,7 +118,7 @@ def _validate_percent(name: str, value: Number) -> None:
     if not 0 < float(value) < 100:
         raise ValueError(f"{name} must be a percentage in (0, 100), got {value!r}")
 
-
+# Both quantity: 100.0 and quantity: 100 specifications are OK.
 def _validate_quantity(name: str, quantity: int) -> None:
     if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity <= 0:
         raise ValueError(f"{name} must be a positive integer, got {quantity!r}")
@@ -124,7 +131,7 @@ def _validate_instruction(name: str, instruction: Instruction) -> None:
 
 
 def _validate_trailing_stop(
-    link_type: stopPriceLinkType,
+    link_type: StopPriceLinkType,
     offset: Number,
 ) -> None:
     if link_type not in ("VALUE", "PERCENT", "TICK"):
@@ -135,6 +142,16 @@ def _validate_trailing_stop(
         _validate_percent("stop_price_offset", offset)
     else:
         _validate_positive("stop_price_offset", offset)
+
+def _validate_order_strategy(strategy: str) -> None:
+    # Only the following three are supported values according to Schwab SDK.
+    if strategy not in ("SINGLE", "OCO", "TRIGGER",):
+        raise ValueError(
+            f"{strategy} is not a verified order submission strategy"
+        )
+    
+def _validate_xxx(xxx: str) -> None:
+    pass
 
 
 def _validate_tuple(name: str, value: Sequence[Any], expected_len: int) -> None:
@@ -243,12 +260,12 @@ def _stop_limit_order(
 
 def _trailing_stop_order(
     leg: OrderLeg,
-    link_basis: stopPriceLinkBasis,
-    link_type: stopPriceLinkType,
+    link_basis: StopPriceLinkBasis,
+    link_type: StopPriceLinkType,
     offset: Number,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
-    strategy: Literal["SINGLE", "TRIGGER"] = "SINGLE",
+    strategy: OrderStrategyType = "SINGLE",
 ) -> OrderPayload:
     _validate_trailing_stop(link_type, offset)
     return {
@@ -309,8 +326,8 @@ def build_trailing_stop_order_payload(
     symbol: str,
     quantity: int,
     instruction: Instruction,
-    stop_price_link_basis: stopPriceLinkBasis = "BID",
-    stop_price_link_type: stopPriceLinkType = "PERCENT",
+    stop_price_link_basis: StopPriceLinkBasis = "BID",
+    stop_price_link_type: StopPriceLinkType = "PERCENT",
     stop_price_offset: Number = 2.0,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
@@ -438,8 +455,8 @@ def build_sell_trailingstop_sell_limit_oco_payload(
     symbol: str,
     quantity: int,
     sell_prices: tuple[Number, Number],
-    stop_price_link_type: stopPriceLinkType = "PERCENT",
-    stop_price_link_basis: stopPriceLinkBasis = "LAST",
+    stop_price_link_type: StopPriceLinkType = "PERCENT",
+    stop_price_link_basis: StopPriceLinkBasis = "LAST",
     session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> OrderPayload:
@@ -474,8 +491,8 @@ def build_sell_trailingstop_sell_stoplimit_oco_payload(
     quantity: int,
     stop_prices: tuple[Number, Number],
     stop_price_offset: Number,
-    stop_price_link_type: stopPriceLinkType = "PERCENT",
-    stop_price_link_basis: stopPriceLinkBasis = "LAST",
+    stop_price_link_type: StopPriceLinkType = "PERCENT",
+    stop_price_link_basis: StopPriceLinkBasis = "LAST",
     session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> OrderPayload:
@@ -576,11 +593,11 @@ def build_buy_limit_trigger_sell_limit_sell_stop_oco_payload(
 def build_buy_trailingstop_trigger_sell_trailingstop_payload(
     symbol: str,
     quantities: tuple[int, int],
-    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = (
+    stop_price_link_bases: tuple[StopPriceLinkBasis, StopPriceLinkBasis] = (
         "MARK",
         "MARK",
     ),
-    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = (
+    stop_price_link_types: tuple[StopPriceLinkType, StopPriceLinkType] = (
         "PERCENT",
         "PERCENT",
     ),
@@ -637,11 +654,11 @@ def build_buy_trailingstop_trigger_sell_trailingstop_payload(
 def build_sell_trailingstop_trigger_buy_trailingstop_payload(
     symbol: str,
     quantities: tuple[int, int],
-    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = (
+    stop_price_link_bases: tuple[StopPriceLinkBasis, StopPriceLinkBasis] = (
         "MARK",
         "MARK",
     ),
-    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = (
+    stop_price_link_types: tuple[StopPriceLinkType, StopPriceLinkType] = (
         "PERCENT",
         "PERCENT",
     ),

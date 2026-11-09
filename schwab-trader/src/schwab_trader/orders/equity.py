@@ -4,10 +4,11 @@ from typing import Any, TypedDict
 from schwab_trader.accounts.type_literal import (
     OrderType,
     Instruction,
-    stopPriceLinkBasis,
-    stopPriceLinkType,
+    StopPriceLinkBasis,
+    StopPriceLinkType,
     Session,
     Duration,
+    TaxLotMethod,
 )
 
 # Dictionary specification for equity orders.
@@ -85,7 +86,7 @@ def _validate_positive_percent_values(**values) -> None:
 
 
 def _validate_trailing_stop(
-    stop_price_link_type: stopPriceLinkType,
+    stop_price_link_type: StopPriceLinkType,
     stop_price_offset: float,
 ) -> None:
     """Validate trailing-stop offset and link type."""
@@ -172,8 +173,8 @@ def build_trailing_stop_order_payload(
     symbol: str,
     quantity: int,
     instruction: Instruction,  # "BUY" or "SELL"
-    stop_price_link_basis: stopPriceLinkBasis = "BID",
-    stop_price_link_type: stopPriceLinkType = "PERCENT",
+    stop_price_link_basis: StopPriceLinkBasis = "BID",
+    stop_price_link_type: StopPriceLinkType = "PERCENT",
     stop_price_offset: float = 2.0,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
@@ -393,8 +394,8 @@ def build_sell_trailingstop_sell_limit_oco_payload(
     quantity: int,
     # (limit_price, trailing_offset)
     sell_prices: tuple[float, float],
-    stop_price_link_type: stopPriceLinkType = "PERCENT",
-    stop_price_link_basis: stopPriceLinkBasis = "LAST",
+    stop_price_link_type: StopPriceLinkType = "PERCENT",
+    stop_price_link_basis: StopPriceLinkBasis = "LAST",
     session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> OrderPayload:
@@ -445,8 +446,8 @@ def build_sell_trailingstop_sell_stoplimit_oco_payload(
     # (stop_price, stop_limit_price)
     stop_prices: tuple[float, float],
     stop_price_offset: float,
-    stop_price_link_type: stopPriceLinkType = "PERCENT",
-    stop_price_link_basis: stopPriceLinkBasis = "LAST",
+    stop_price_link_type: StopPriceLinkType = "PERCENT",
+    stop_price_link_basis: StopPriceLinkBasis = "LAST",
     session: Session = "NORMAL",
     duration: Duration = "DAY",
 ) -> OrderPayload:
@@ -582,11 +583,11 @@ def build_buy_trailingstop_trigger_sell_trailingstop_payload(
     symbol: str,
     quantities: tuple[int, int],  # (buy_qty, sell_qty)
     # trailing parameters for buy / sell
-    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = (
+    stop_price_link_bases: tuple[StopPriceLinkBasis, StopPriceLinkBasis] = (
         "MARK",
         "MARK",
     ),
-    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = (
+    stop_price_link_types: tuple[StopPriceLinkType, StopPriceLinkType] = (
         "PERCENT",
         "PERCENT",
     ),
@@ -661,11 +662,11 @@ def build_buy_trailingstop_trigger_sell_trailingstop_payload(
 def build_sell_trailingstop_trigger_buy_trailingstop_payload(
     symbol: str,
     quantities: tuple[int, int],  # (sell_qty, buy_qty)
-    stop_price_link_bases: tuple[stopPriceLinkBasis, stopPriceLinkBasis] = (
+    stop_price_link_bases: tuple[StopPriceLinkBasis, StopPriceLinkBasis] = (
         "MARK",
         "MARK",
     ),
-    stop_price_link_types: tuple[stopPriceLinkType, stopPriceLinkType] = (
+    stop_price_link_types: tuple[StopPriceLinkType, StopPriceLinkType] = (
         "PERCENT",
         "PERCENT",
     ),

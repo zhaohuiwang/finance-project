@@ -11,19 +11,17 @@ import pandas as pd
 
 from schwab_trader.accounts.schwab import client, SchwabAccount
 
-
-from schwab_trader.accounts.type_literal import Duration
-from schwab_trader.orders.equity import (
+from schwab_trader.orders.equity_v2 import (
     build_market_order_payload,
     build_limit_order_payload,
     build_trailing_stop_order_payload,
     build_oto_limit_order_payload,
-    build_sell_limit_stoplimit_oco_payload,
-    build_sell_trailingstop_sell_limit_oco_payload,
-    build_sell_trailingstop_sell_stoplimit_oco_payload,
-    build_buy_limit_trigger_sell_limit_stop_oco_payload,
-    build_buy_trailingstop_trigger_sell_trailingstop_payload,
-    build_sell_trailingstop_trigger_buy_trailingstop_payload,
+    # build_sell_limit_stoplimit_oco_payload,
+    # build_sell_trailingstop_sell_limit_oco_payload,
+    # build_sell_trailingstop_sell_stoplimit_oco_payload,
+    # build_buy_limit_trigger_sell_limit_stop_oco_payload,
+    # build_buy_trailingstop_trigger_sell_trailingstop_payload,
+    # build_sell_trailingstop_trigger_buy_trailingstop_payload,
 )
 
 from schwab_trader.orders.option import (
@@ -107,16 +105,16 @@ order_b5 = build_oto_limit_order_payload(
     durations=("DAY", "DAY"),
 )
 
-order_b7 = build_buy_limit_trigger_sell_limit_stop_oco_payload(
-    symbol="IREN",
-    quantity=400,
-    # (buy_limit, sell_limit, sell_stop)
-    prices=[10.0, 15.0, 9.0],
-    # (buy_session, sell_limit_session, sell_stop_session)
-    sessions=("NORMAL", "NORMAL", "NORMAL"),
-    # (buy_duration, sell_duration)
-    durations=("DAY", "GOOD_TILL_CANCEL"),
-)
+# order_b7 = build_buy_limit_trigger_sell_limit_stop_oco_payload(
+#     symbol="IREN",
+#     quantity=400,
+#     # (buy_limit, sell_limit, sell_stop)
+#     prices=[10.0, 15.0, 9.0],
+#     # (buy_session, sell_limit_session, sell_stop_session)
+#     sessions=("NORMAL", "NORMAL", "NORMAL"),
+#     # (buy_duration, sell_duration)
+#     durations=("DAY", "GOOD_TILL_CANCEL"),
+# )
 
 order_b9 = build_trailing_stop_order_payload(
     symbol="NBIS",
@@ -161,32 +159,42 @@ order_s6 = build_trailing_stop_order_payload(
 # ========================================================================
 # Check orders
 # ========================================================================
-from_time, to_time = get_utc_time_range(offset=dt.timedelta(days=0, hours=8, minutes=5))
+from_time, to_time = get_utc_time_range(offset=dt.timedelta(days=1, hours=8, minutes=5))
 
 orders = client.account_orders(
     hashValue,
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
-    status="WORKING",
+    # status="EXPIRED",
+    status="PENDING_ACTIVATION",
+    # status="WORKING",
     # status="FILLED",
 ).json()
 
 print(json.dumps(orders, indent=4))
 
+
 #  ==============================================================
 # submit an order
 #  ==============================================================
-# Buy -> Sell limit / Sell stop order
-status, date, order_id = build_buy_limit_trigger_sell_limit_stop_oco_payload(
+
+order_payload = build_oto_limit_order_payload(
     symbol="NBIS",
     quantity=100,
-    # (buy_limit, sell_limit, sell_stop)
-    prices=[151.2, 155.4, 148.2],
-    # (buy_session, sell_limit_session, sell_stop_session)
-    sessions=("NORMAL", "NORMAL", "NORMAL"),
-    # (buy_duration, sell_duration)
-    durations=("DAY", "GOOD_TILL_CANCEL"),
+    instructions=["SELL", "BUY"],
+    limit_prices=[145.2, 138],
+    sessions=("NORMAL", "NORMAL"),
+    durations=("DAY", "DAY"),
 )
+
+status, date, order_id = place_order(
+    client=client,
+    accountHash=hashValue,
+    order=order_payload,
+)
+order_id = "1008600932293"
+order_data = client.order_details(hashValue, order_id)
+print(json.dumps(order_data.json(), indent=4))
 
 #  ==============================================================
 # Buy limit order
@@ -218,9 +226,7 @@ status, date, order_id = place_order(
     ),
 )
 
-# '1008497726014'
 #  ==============================================================
-order_id = "1008427232542"
 
 # Cancel an order
 status_code, date = cancel_order(
@@ -230,9 +236,26 @@ status_code, date = cancel_order(
 )  # status_code 200 >>> success
 
 
+# List all cancalable orders
+from_time, to_time = get_utc_time_range(offset=dt.timedelta(days=3, hours=8, minutes=5))
+orders = get_orders(
+    hashValue=hashValue,
+    status=None,
+    cancelableOnly=True,
+    fromTime=from_time,
+    toTime=to_time,
+)
+
+for order in orders:
+    print(json.dumps(order, indent=4))
+
+
+# ========================================================================
 # ========================================================================
 # Place an option order
 # ========================================================================
+# ========================================================================
+
 
 order_o1 = sell_covered_call_dict(
     symbol="XYZ   260313C00009000",  # XYZ Mar 13 2026 $9.00 Call
@@ -293,6 +316,7 @@ all_orders = get_orders(
     hashValue,
     fromTime=from_time,
     toTime=to_time,
+    cancelableOnly=True,
     status="WORKING",
     # status="FILLED",
     # status="AWAITING_PARENT_ORDER",
@@ -368,6 +392,7 @@ to_time = dt.datetime.now(dt.timezone.utc)
 
 all_orders = get_orders(
     hashValue,
+    cancelableOnly=True,
     fromTime=from_time,
     toTime=to_time,
 )

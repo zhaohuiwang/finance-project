@@ -4,9 +4,20 @@ https://developer.schwab.com/products/trader-api--individual/details/specificati
 
 """
 
-from typing import Literal  # TypedDict
+from typing import Literal
 
-Instruction = Literal["BUY", "SELL"]
+Instruction = Literal[
+    "BUY",
+    "SELL",
+    "BUY_TO_COVER",
+    "SELL_SHORT",
+    "BUY_TO_OPEN",
+    "BUY_TO_CLOSE",
+    "SELL_TO_OPEN",
+    "SELL_TO_CLOSE",
+    "EXCHANGE",
+    "SELL_SHORT_EXEMPT",
+]
 
 Session = Literal["NORMAL", "AM", "PM", "SEAMLESS"]
 # NORMAL    Regular hours order
@@ -49,7 +60,7 @@ OrderRequest = Literal[
     "AWAITING_MANUAL_REVIEW",
     "ACCEPTED",
     "AWAITING_UR_OUT",
-    "PENDING_ACTIVATION",
+    "PENDING_ACTIVATION", # e.g. a NORMAL, DAY order submitted Sunday.
     "QUEUED",
     "WORKING",
     "REJECTED",
@@ -96,18 +107,6 @@ OrderType = Literal[
     "UNKNOWN",
 ]
 
-OrderLegInstruction = Literal[
-    "BUY",
-    "SELL",
-    "BUY_TO_COVER",
-    "SELL_SHORT",
-    "BUY_TO_OPEN",
-    "BUY_TO_CLOSE",
-    "SELL_TO_OPEN",
-    "SELL_TO_CLOSE",
-    "EXCHANGE",
-    "SELL_SHORT_EXEMPT",
-]
 
 OrderLegCollectionInstrumentAssetType = Literal[
     "EQUITY",
@@ -144,18 +143,19 @@ ComplexOrderStrategyType = Literal[
     "CUSTOM",
 ]
 
-stopPriceLinkBasis = Literal[
+StopPriceLinkBasis = Literal[
     "MANUAL", "BASE", "TRIGGER", "LAST", "BID", "ASK", "ASK_BID", "MARK", "AVERAGE"
 ]
 
-stopPriceLinkType = Literal["VALUE", "PERCENT", "TICK"]
+StopPriceLinkType = Literal["VALUE", "PERCENT", "TICK"]
 
-stopTypestring = Literal["STANDARD", "BID", "ASK", "LAST", "MARK"]
+StopType = Literal["STANDARD", "BID", "ASK", "LAST", "MARK"]
+
 priceLinkBasisstring = Literal[
     "MANUAL", "BASE", "TRIGGER", "LAST", "BID", "ASK", "ASK_BID", "MARK", "AVERAGE"
 ]
 
-orderStrategyTypestring = Literal[
+OrderStrategyType = Literal[
     "SINGLE",
     "CANCEL",
     "RECALL",
@@ -167,6 +167,24 @@ orderStrategyTypestring = Literal[
     "TRIGGER",
 ]
 
+TaxLotMethod = Literal[
+    "FIFO",
+    "LIFO",
+    "HIGH_COST",
+    "LOW_COST",
+    "AVERAGE_COST",
+    "SPECIFIC_LOT",
+    "LOSS_HARVESTER"
+    ]
+
+# https://www.schwab.com/node/9326
+# Profile → Account Settings → Cost basis method for equities, options and fixed income → Edit cost basis method → LIFO
+
+# First In First Out (FIFO) - Shares are sold in order of their purchase dates, from oldest to newest.
+# Last In First Out (LIFO) - res are sold in order of their purchase dates, from newest to oldest.
+# High Cost - Shares are sold in order of their original purchase prices, from highest to lowest.
+# Low Cost - Shares are sold in order of their original purchase prices, from lowest to highest.
+# Tax Lot Optimizer™ by Schwab - Shares are sold in a tax-optimized order, from biggest losses to biggest gains.
 
 # from enum import Enum
 # from typing import TYPE_CHECKING
