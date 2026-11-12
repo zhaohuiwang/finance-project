@@ -274,7 +274,7 @@ def to_iso_utc(dt_obj: datetime) -> str:
 def get_orders(
     hashValue: str,
     status: str | None = None,
-    cancelableOnly: bool = False, 
+    cancelableOnly: bool = False,
     fromTime: Any = None,
     toTime: Any = None,
 ) -> list[dict[str, Any]]:
@@ -308,13 +308,10 @@ def get_orders(
         toEnteredTime=toTime,
         status=status,
     ).json()
-    
+
     # Filter by cancelable only when requested
-    if cancelableOnly: # JSON displays "true", but Python reads it as True
-        orders = [
-            order for order in orders
-            if order.get("cancelable") is True
-        ]
+    if cancelableOnly:  # JSON displays "true", but Python reads it as True
+        orders = [order for order in orders if order.get("cancelable") is True]
 
     results: list[dict[str, Any]] = []
 

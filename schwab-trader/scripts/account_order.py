@@ -79,25 +79,25 @@ print(json.dumps(data, indent=4))
 
 # create an order configuration dictionary
 # Buy order configurations
-order_b1 = build_market_order_payload(
+order_payload = build_market_order_payload(
     symbol="THISISADEMO",
     quantity=1,
-    instruction="BUY",
+    instruction="BUY",  # "BUY" | "SELL"
     session="NORMAL",
 )
 
-order_b3 = build_limit_order_payload(
-    symbol="CRWV",
-    quantity=700,
-    limit_price=81.2,
-    # session="NORMAL", # ["NORMAL", "AM", "PM", "SEAMLESS"]
+order_payload = build_limit_order_payload(
+    symbol="THISISADEMO",
+    quantity=300,
+    limit_price=278.4,
+    instruction="SELL",
     session="NORMAL",
     duration="DAY",
 )
 
 
-order_b5 = build_oto_limit_order_payload(
-    symbol="NBIS",
+order_payload = build_oto_limit_order_payload(
+    symbol="THISISADEMO",
     quantity=1,
     instructions=["BUY", "SELL"],
     limit_prices=[100, 120],
@@ -105,8 +105,8 @@ order_b5 = build_oto_limit_order_payload(
     durations=("DAY", "DAY"),
 )
 
-# order_b7 = build_buy_limit_trigger_sell_limit_stop_oco_payload(
-#     symbol="IREN",
+# order_payload = build_buy_limit_trigger_sell_limit_stop_oco_payload(
+#     symbol="THISISADEMO",
 #     quantity=400,
 #     # (buy_limit, sell_limit, sell_stop)
 #     prices=[10.0, 15.0, 9.0],
@@ -116,40 +116,12 @@ order_b5 = build_oto_limit_order_payload(
 #     durations=("DAY", "GOOD_TILL_CANCEL"),
 # )
 
-order_b9 = build_trailing_stop_order_payload(
-    symbol="NBIS",
+order_payload = build_trailing_stop_order_payload(
+    symbol="THISISADEMO",
     quantity=1,
     instruction="BUY",  # "BUY" or "SELL"
     stop_price_link_basis="BID",
     stop_price_link_type="PERCENT",  # # "VALUE" or "PERCENT" or "TICK"
-    stop_price_offset=2.0,
-    session="NORMAL",
-    duration="DAY",
-)
-
-# Sell order configurations
-order_b1 = build_market_order_payload(
-    symbol="THISISADEMO",
-    quantity=1,
-    instruction="SELL",
-    session="NORMAL",
-)
-
-order_s4 = build_limit_order_payload(
-    symbol="IBM",
-    quantity=300,
-    limit_price=278.4,
-    instruction="SELL",
-    session="NORMAL",
-    duration="DAY",
-)
-
-order_s6 = build_trailing_stop_order_payload(
-    symbol="NBIS",
-    quantity=1,
-    instruction="SELL",
-    stop_price_link_basis="BID",
-    stop_price_link_type="PERCENT",
     stop_price_offset=2.0,
     session="NORMAL",
     duration="DAY",
@@ -166,8 +138,8 @@ orders = client.account_orders(
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
     # status="EXPIRED",
-    status="PENDING_ACTIVATION",
-    # status="WORKING",
+    # status="PENDING_ACTIVATION",
+    status="WORKING",
     # status="FILLED",
 ).json()
 
@@ -177,58 +149,41 @@ print(json.dumps(orders, indent=4))
 #  ==============================================================
 # submit an order
 #  ==============================================================
+# Build an order payload
+order_payload = build_limit_order_payload(
+    symbol="NBIS",
+    quantity=100,
+    limit_price=135.2,
+    instruction="SELL",
+    session="SEAMLESS",
+    duration="DAY",
+)
 
 order_payload = build_oto_limit_order_payload(
     symbol="NBIS",
     quantity=100,
     instructions=["SELL", "BUY"],
-    limit_prices=[145.2, 138],
-    sessions=("NORMAL", "NORMAL"),
+    limit_prices=[162.2, 154.2],
+    # instructions=["BUY", "SELL"],
+    # limit_prices=[133.2, 136.2],
+    # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
+    sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
     durations=("DAY", "DAY"),
 )
 
+# Submit an order
 status, date, order_id = place_order(
     client=client,
     accountHash=hashValue,
     order=order_payload,
 )
-order_id = "1008600932293"
+
 order_data = client.order_details(hashValue, order_id)
 print(json.dumps(order_data.json(), indent=4))
 
 #  ==============================================================
-# Buy limit order
-status, date, order_id = place_order(
-    client=client,
-    accountHash=hashValue,
-    order=build_limit_order_payload(
-        symbol="NBIS",
-        quantity=100,
-        limit_price=172.2,
-        instruction="BUY",
-        session="NORMAL",
-        duration="DAY",
-    ),
-)
-
-#  ==============================================================
-# Sell limit order
-status, date, order_id = place_order(
-    client=client,
-    accountHash=hashValue,
-    order=build_limit_order_payload(
-        symbol="NBIS",
-        quantity=100,
-        limit_price=152.2,
-        instruction="SELL",
-        session="NORMAL",
-        duration="DAY",
-    ),
-)
-
-#  ==============================================================
-
 # Cancel an order
+order_id = "1008619647021"
 status_code, date = cancel_order(
     client=client,
     accountHash=hashValue,
@@ -259,7 +214,6 @@ for order in orders:
 
 order_o1 = sell_covered_call_dict(
     symbol="XYZ   260313C00009000",  # XYZ Mar 13 2026 $9.00 Call
-    # symbol=
     quantity=1,
     limit_price=0.30,
 )
@@ -305,8 +259,8 @@ orders = client.account_orders(
     hashValue,
     fromEnteredTime=from_time,
     toEnteredTime=to_time,
-    # status='WORKING',
-    status="FILLED",
+    status="WORKING",
+    # status="FILLED",
 ).json()
 
 print(json.dumps(orders, indent=4))
@@ -369,8 +323,8 @@ order_ids = [
 # Examine an order details - the 1st in the list
 order = client.order_details(
     accountHash=hashValue,
-    # orderId=order_ids[0],
-    orderId="1005789269420",
+    orderId=order_id,
+    # orderId="1005789269420",
 ).json()
 print(json.dumps(order, indent=4))
 

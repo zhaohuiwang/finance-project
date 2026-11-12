@@ -15,9 +15,9 @@ If you want to 1. validate data 2. covert or coerce values 3. raise errors from 
 
 TypedDict helps you write correct code. Pydantic (or manual checks) helps you run correct code.
 
-Naming: 
+Naming:
 stop_price_link_bases -- in helper functions and payload definations
-StopPriceLinkBasis -- Literal type alias defined in type_literal module 
+StopPriceLinkBasis -- Literal type alias defined in type_literal module
 stopPriceLinkBasis -- JSON formatted payload key
 
 """
@@ -34,6 +34,7 @@ from typing import (
     Sequence,
     TypedDict,
     Union,
+    get_args,
 )
 import math
 
@@ -48,7 +49,7 @@ from schwab_trader.accounts.type_literal import (
     OrderLegCollectionInstrumentAssetType,  # ["EQUITY","OPTION",...]
     StopPriceLinkBasis,
     StopPriceLinkType,  # ["VALUE", "PERCENT", "TICK"]
-    TaxLotMethod, # ["FIFO", "LIFO", ...]
+    TaxLotMethod,  # ["FIFO", "LIFO", ...]
 )
 
 # ---------------------------------------------------------------------------
@@ -118,6 +119,7 @@ def _validate_percent(name: str, value: Number) -> None:
     if not 0 < float(value) < 100:
         raise ValueError(f"{name} must be a percentage in (0, 100), got {value!r}")
 
+
 # Both quantity: 100.0 and quantity: 100 specifications are OK.
 def _validate_quantity(name: str, quantity: int) -> None:
     if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity <= 0:
@@ -125,9 +127,10 @@ def _validate_quantity(name: str, quantity: int) -> None:
     # !r is a conversion flag in f-strings. It call repr(value) instead of str(value), makes the error message show the exact value (with quotes if it’s a string, etc.)
 
 
-def _validate_instruction(name: str, instruction: Instruction) -> None:
-    if instruction not in ("BUY", "SELL"):
-        raise ValueError(f"{name} must be 'BUY' or 'SELL', got {instruction!r}")
+def _validate_literal(name: str, value: str, literal_type) -> None:
+    allowed = get_args(literal_type)
+    if value not in allowed:
+        raise ValueError(f"{name} must be one of {list(allowed)}, got {value!r}")
 
 
 def _validate_trailing_stop(
@@ -143,13 +146,17 @@ def _validate_trailing_stop(
     else:
         _validate_positive("stop_price_offset", offset)
 
+
 def _validate_order_strategy(strategy: str) -> None:
     # Only the following three are supported values according to Schwab SDK.
-    if strategy not in ("SINGLE", "OCO", "TRIGGER",):
-        raise ValueError(
-            f"{strategy} is not a verified order submission strategy"
-        )
-    
+    if strategy not in (
+        "SINGLE",
+        "OCO",
+        "TRIGGER",
+    ):
+        raise ValueError(f"{strategy} is not a verified order submission strategy")
+
+
 def _validate_xxx(xxx: str) -> None:
     pass
 
@@ -181,7 +188,7 @@ def _make_leg(
     instruction: Instruction,
 ) -> OrderLeg:
     _validate_quantity("quantity", quantity)
-    _validate_instruction("instruction", instruction)
+    _validate_literal("instruction", instruction, Instruction)
     return {
         "orderLegType": "EQUITY",
         "instruction": instruction,
@@ -194,6 +201,7 @@ def _market_order(
     leg: OrderLeg,
     session: Session = "NORMAL",
 ) -> OrderPayload:
+    _validate_literal("session", session, Session)
     return {
         "orderType": "MARKET",
         "session": session,
@@ -208,9 +216,12 @@ def _limit_order(
     price: Number,
     session: Session = "NORMAL",
     duration: Duration = "DAY",
-    strategy: Literal["SINGLE", "TRIGGER"] = "SINGLE",
+    strategy: OrderStrategyType = "SINGLE",
 ) -> OrderPayload:
     _validate_positive("price", price)
+    _validate_literal("session", session, Session)
+    _validate_literal("duration", duration, Duration)
+    _validate_literal("orderStrategyType", strategy, OrderStrategyType)
     return {
         "orderType": "LIMIT",
         "price": _price(price),
@@ -228,6 +239,8 @@ def _stop_order(
     duration: Duration = "DAY",
 ) -> OrderPayload:
     _validate_positive("stop_price", stop_price)
+    _validate_literal("session", session, Session)
+    _validate_literal("duration", duration, Duration)
     return {
         "orderType": "STOP",
         "stopPrice": _price(stop_price),
@@ -247,6 +260,8 @@ def _stop_limit_order(
 ) -> OrderPayload:
     _validate_positive("stop_price", stop_price)
     _validate_positive("limit_price", limit_price)
+    _validate_literal("session", session, Session)
+    _validate_literal("duration", duration, Duration)
     return {
         "orderType": "STOP_LIMIT",
         "price": _price(limit_price),
@@ -268,6 +283,9 @@ def _trailing_stop_order(
     strategy: OrderStrategyType = "SINGLE",
 ) -> OrderPayload:
     _validate_trailing_stop(link_type, offset)
+    _validate_literal("session", session, Session)
+    _validate_literal("duration", duration, Duration)
+    _validate_literal("orderStrategyType", strategy, OrderStrategyType)
     return {
         "complexOrderStrategyType": "NONE",
         "orderType": "TRAILING_STOP",

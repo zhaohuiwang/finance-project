@@ -60,7 +60,7 @@ OrderRequest = Literal[
     "AWAITING_MANUAL_REVIEW",
     "ACCEPTED",
     "AWAITING_UR_OUT",
-    "PENDING_ACTIVATION", # e.g. a NORMAL, DAY order submitted Sunday.
+    "PENDING_ACTIVATION",  # e.g. a NORMAL, DAY order submitted Sunday.
     "QUEUED",
     "WORKING",
     "REJECTED",
@@ -155,18 +155,6 @@ priceLinkBasisstring = Literal[
     "MANUAL", "BASE", "TRIGGER", "LAST", "BID", "ASK", "ASK_BID", "MARK", "AVERAGE"
 ]
 
-OrderStrategyType = Literal[
-    "SINGLE",
-    "CANCEL",
-    "RECALL",
-    "PAIR",
-    "FLATTEN",
-    "TWO_DAY_SWAP",
-    "BLAST_ALL",
-    "OCO",
-    "TRIGGER",
-]
-
 TaxLotMethod = Literal[
     "FIFO",
     "LIFO",
@@ -174,8 +162,8 @@ TaxLotMethod = Literal[
     "LOW_COST",
     "AVERAGE_COST",
     "SPECIFIC_LOT",
-    "LOSS_HARVESTER"
-    ]
+    "LOSS_HARVESTER",
+]
 
 # https://www.schwab.com/node/9326
 # Profile → Account Settings → Cost basis method for equities, options and fixed income → Edit cost basis method → LIFO

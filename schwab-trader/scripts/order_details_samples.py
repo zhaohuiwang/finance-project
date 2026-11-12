@@ -1720,3 +1720,215 @@ example = {
         }
       ]
     }
+
+
+
+
+
+# A partially filled OCO order
+# "orderActivityCollection"[order1_log, order2_log, ...]
+{
+    "session": "NORMAL",
+    "duration": "DAY",
+    "orderType": "LIMIT",
+    "complexOrderStrategyType": "NONE",
+    "quantity": 100.0,
+    "filledQuantity": 8.0,
+    "remainingQuantity": 92.0,
+    "requestedDestination": "AUTO",
+    "destinationLinkName": "HRTF",
+    "price": 133.2,
+    "orderLegCollection": [
+        {
+            "orderLegType": "EQUITY",
+            "legId": 1,
+            "instrument": {
+                "assetType": "EQUITY",
+                "cusip": "N97284108",
+                "symbol": "NBIS",
+                "uniformSymbol": "NBIS",
+                "instrumentId": 4339891
+            },
+            "instruction": "BUY",
+            "positionEffect": "OPENING",
+            "quantity": 100.0
+        }
+    ],
+    "orderStrategyType": "TRIGGER",
+    "orderId": 1008619647020,
+    "cancelable": true,
+    "editable": false,
+    "status": "WORKING",
+    "enteredTime": "2026-11-10T17:13:32+0000",
+    "tag": "TA_zhwang22gmailcom1753933248",
+    "accountNumber": 29308909,
+    "orderActivityCollection": [
+        {
+            "activityType": "EXECUTION",
+            "activityId": 135937239659,
+            "executionType": "FILL",
+            "quantity": 8.0,
+            "orderRemainingQuantity": 92.0,
+            "executionLegs": [
+                {
+                    "legId": 1,
+                    "quantity": 8.0,
+                    "mismarkedQuantity": 0.0,
+                    "price": 133.2,
+                    "time": "2026-11-10T17:16:36+0000",
+                    "instrumentId": 4339891
+                }
+            ]
+        }
+    ],
+    "childOrderStrategies": [
+        {
+            "session": "NORMAL",
+            "duration": "DAY",
+            "orderType": "LIMIT",
+            "complexOrderStrategyType": "NONE",
+            "quantity": 100.0,
+            "filledQuantity": 0.0,
+            "remainingQuantity": 100.0,
+            "requestedDestination": "AUTO",
+            "destinationLinkName": "AutoRoute",
+            "price": 136.2,
+            "orderLegCollection": [
+                {
+                    "orderLegType": "EQUITY",
+                    "legId": 1,
+                    "instrument": {
+                        "assetType": "EQUITY",
+                        "cusip": "N97284108",
+                        "symbol": "NBIS",
+                        "uniformSymbol": "NBIS",
+                        "instrumentId": 4339891
+                    },
+                    "instruction": "SELL",
+                    "positionEffect": "CLOSING",
+                    "quantity": 100.0
+                }
+            ],
+            "orderStrategyType": "SINGLE",
+            "orderId": 1008619647021,
+            "cancelable": true,
+            "editable": false,
+            "status": "AWAITING_PARENT_ORDER",
+            "enteredTime": "2026-11-10T17:13:32+0000",
+            "tag": "TA_zhwang22gmailcom1753933248",
+            "accountNumber": 29308909
+        }
+    ]
+}
+# After it is completed
+{
+    "session": "NORMAL",
+    "duration": "DAY",
+    "orderType": "LIMIT",
+    "complexOrderStrategyType": "NONE",
+    "quantity": 100.0,
+    "filledQuantity": 100.0,
+    "remainingQuantity": 0.0,
+    "requestedDestination": "AUTO",
+    "destinationLinkName": "HRTF",
+    "price": 133.2,
+    "orderLegCollection": [
+        {
+            "orderLegType": "EQUITY",
+            "legId": 1,
+            "instrument": {
+                "assetType": "EQUITY",
+                "cusip": "N97284108",
+                "symbol": "NBIS",
+                "uniformSymbol": "NBIS",
+                "instrumentId": 4339891
+            },
+            "instruction": "BUY",
+            "positionEffect": "OPENING",
+            "quantity": 100.0
+        }
+    ],
+    "orderStrategyType": "TRIGGER",
+    "orderId": 1008619647020,
+    "cancelable": false,
+    "editable": false,
+    "status": "FILLED",
+    "enteredTime": "2026-11-10T17:13:32+0000",
+    "closeTime": "2026-11-10T17:23:32+0000",
+    "tag": "TA_zhwang22gmailcom1753933248",
+    "accountNumber": 29308909,
+    "orderActivityCollection": [
+        {
+            "activityType": "EXECUTION",
+            "activityId": 135939907886,
+            "executionType": "FILL",
+            "quantity": 92.0,
+            "orderRemainingQuantity": 0.0,
+            "executionLegs": [
+                {
+                    "legId": 1,
+                    "quantity": 92.0,
+                    "mismarkedQuantity": 0.0,
+                    "price": 133.2,
+                    "time": "2026-11-10T17:23:32+0000",
+                    "instrumentId": 4339891
+                }
+            ]
+        },
+        {
+            "activityType": "EXECUTION",
+            "activityId": 135937239659,
+            "executionType": "FILL",
+            "quantity": 8.0,
+            "orderRemainingQuantity": 92.0,
+            "executionLegs": [
+                {
+                    "legId": 1,
+                    "quantity": 8.0,
+                    "mismarkedQuantity": 0.0,
+                    "price": 133.2,
+                    "time": "2026-11-10T17:16:36+0000",
+                    "instrumentId": 4339891
+                }
+            ]
+        }
+    ],
+    "childOrderStrategies": [
+        {
+            "session": "NORMAL",
+            "duration": "DAY",
+            "orderType": "LIMIT",
+            "complexOrderStrategyType": "NONE",
+            "quantity": 100.0,
+            "filledQuantity": 0.0,
+            "remainingQuantity": 100.0,
+            "requestedDestination": "AUTO",
+            "destinationLinkName": "UBSS",
+            "price": 136.2,
+            "orderLegCollection": [
+                {
+                    "orderLegType": "EQUITY",
+                    "legId": 1,
+                    "instrument": {
+                        "assetType": "EQUITY",
+                        "cusip": "N97284108",
+                        "symbol": "NBIS",
+                        "uniformSymbol": "NBIS",
+                        "instrumentId": 4339891
+                    },
+                    "instruction": "SELL",
+                    "positionEffect": "CLOSING",
+                    "quantity": 100.0
+                }
+            ],
+            "orderStrategyType": "SINGLE",
+            "orderId": 1008619647021,
+            "cancelable": true,
+            "editable": false,
+            "status": "WORKING",
+            "enteredTime": "2026-11-10T17:13:32+0000",
+            "tag": "TA_zhwang22gmailcom1753933248",
+            "accountNumber": 29308909
+        }
+    ]
+}
