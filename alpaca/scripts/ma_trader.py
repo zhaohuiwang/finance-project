@@ -62,12 +62,12 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 if cfg.trading.paper_trading:
-    API_KEY = os.getenv("ALPACA_PAPER_API_KEY")
-    SECRET_KEY = os.getenv("ALPACA_PAPER_SECRET_KEY")
+    API_KEY = os.getenv("PAPER_ALPACA_API_KEY")
+    SECRET_KEY = os.getenv("PAPER_ALPACA_API_SECRET_KEY")
     logger.info("Running in PAPER TRADING mode")
 else:
     API_KEY = os.getenv("ALPACA_API_KEY")
-    SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+    SECRET_KEY = os.getenv("ALPACA_API_SECRET_KEY")
     logger.warning("RUNNING IN LIVE REAL MONEY MODE - BE CAREFUL!")
 
 trading_client = TradingClient(API_KEY, SECRET_KEY, paper=cfg.trading.paper_trading)

@@ -159,12 +159,12 @@ cfg = load_momentum_config()
 
 # ==================== ALPACA CLIENTS ====================
 if cfg.paper_trading:
-    API_KEY = os.getenv("ALPACA_PAPER_API_KEY")
-    SECRET_KEY = os.getenv("ALPACA_PAPER_SECRET_KEY")
+    API_KEY = os.getenv("PAPER_ALPACA_API_KEY")
+    SECRET_KEY = os.getenv("PAPER_ALPACA_API_SECRET_KEY")
     logger.info("🚀 Running in PAPER TRADING mode")
 else:
     API_KEY = os.getenv("ALPACA_API_KEY")
-    SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+    SECRET_KEY = os.getenv("ALPACA_API_SECRET_KEY")
     logger.warning("⚠️ RUNNING IN LIVE REAL MONEY MODE")
 
 trading_client = TradingClient(API_KEY, SECRET_KEY, paper=cfg.paper_trading)

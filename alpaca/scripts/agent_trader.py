@@ -28,21 +28,21 @@ Daily cost (390 iterations, 1 symbol, 6.5hr trading day)
 Component	Qty	Unit cost	Daily
 Signal checks	390	$0.004	~$1.55
 Risk checks (20 non-HOLD)	20	$0.007	~$0.14
-Executions (1–2 trades)	2	$0.10	~$0.20
+Executions (1 - 2 trades)	2	$0.10	~$0.20
 Total			~$1.90/day
 Monthly: ~$40/month per symbol. With 3 symbols: ~$120/month.
 
 Compare to simple_ma.py
 simple_ma.py costs $0 — it's purely deterministic.
  77
-How to cut costs 10×
-The signal and risk agents are called on every iteration but their reasoning is straightforward. Swap them to claude-haiku-4-5 ($1.00/$5.00 per 1M — 5× cheaper on output):
+How to cut costs 10 x
+The signal and risk agents are called on every iteration but their reasoning is straightforward. Swap them to claude-haiku-4-5 ($1.00/$5.00 per 1M — 5x cheaper on output):
 
 In src/agents/signal_agent.py and src/agents/risk_agent.py, change:
 model="claude-opus-4-7",
 to:
 model="claude-haiku-4-5",
-Keep claude-opus-4-7 only in execution_agent.py where the retry reasoning actually benefits from the best model. This drops the monthly cost to ~$10–15/month for 1 symbol.
+Keep claude-opus-4-7 only in execution_agent.py where the retry reasoning actually benefits from the best model. This drops the monthly cost to ~$10 - 15/month for 1 symbol.
 """
 
 
@@ -86,12 +86,12 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 if cfg.trading.paper_trading:
-    API_KEY = os.getenv("ALPACA_PAPER_API_KEY")
-    SECRET_KEY = os.getenv("ALPACA_PAPER_SECRET_KEY")
+    API_KEY = os.getenv("PAPER_ALPACA_API_KEY")
+    SECRET_KEY = os.getenv("PAPER_ALPACA_API_SECRET_KEY")
     logger.info("Running in PAPER TRADING mode (multi-agent + ATR)")
 else:
     API_KEY = os.getenv("ALPACA_API_KEY")
-    SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+    SECRET_KEY = os.getenv("ALPACA_API_SECRET_KEY")
     logger.warning("RUNNING IN LIVE REAL MONEY MODE - BE CAREFUL!")
 
 trading_client = TradingClient(API_KEY, SECRET_KEY, paper=cfg.trading.paper_trading)

@@ -6,7 +6,7 @@
 
 import datetime as dt
 import json
-from pprint import pprint
+import pprint
 import pandas as pd
 
 from schwab_trader.accounts.schwab import client, SchwabAccount
@@ -24,11 +24,11 @@ from schwab_trader.orders.equity_v2 import (
     # build_sell_trailingstop_trigger_buy_trailingstop_payload,
 )
 
-from schwab_trader.orders.option import (
-    buy_limit_single_option_dict,
-    buy_limit_vertical_call_spread_dict,
-    sell_covered_call_dict,
-)
+# from schwab_trader.orders.option import (
+#     buy_limit_single_option_dict,
+#     buy_limit_vertical_call_spread_dict,
+#     sell_covered_call_dict,
+# )
 
 from schwab_trader.orders.utils import (
     get_hashvalue,
@@ -119,9 +119,9 @@ order_payload = build_oto_limit_order_payload(
 order_payload = build_trailing_stop_order_payload(
     symbol="THISISADEMO",
     quantity=1,
-    instruction="BUY",  # "BUY" or "SELL"
+    instruction="BUY",  # "BUY" | "SELL"
     stop_price_link_basis="BID",
-    stop_price_link_type="PERCENT",  # # "VALUE" or "PERCENT" or "TICK"
+    stop_price_link_type="PERCENT",  # "VALUE" | "PERCENT" | "TICK"
     stop_price_offset=2.0,
     session="NORMAL",
     duration="DAY",
@@ -131,7 +131,9 @@ order_payload = build_trailing_stop_order_payload(
 # ========================================================================
 # Check orders
 # ========================================================================
-from_time, to_time = get_utc_time_range(offset=dt.timedelta(days=1, hours=8, minutes=5))
+from_time, to_time = get_utc_time_range(
+    offset=dt.timedelta(days=1, hours=8, minutes=0)
+    )
 
 orders = client.account_orders(
     hashValue,
@@ -145,54 +147,114 @@ orders = client.account_orders(
 
 print(json.dumps(orders, indent=4))
 
+# Check account holding positions
+account = SchwabAccount(client, hashValue)
+print(account.positions)
+
 
 #  ==============================================================
-# submit an order
+# submit an order 
+# 🚧 TODO: This feature is still under development.
+# ❗ Important: Validate user input.
 #  ==============================================================
-# Build an order payload
+
+#  Build an 🟢 order payload
 order_payload = build_limit_order_payload(
     symbol="NBIS",
     quantity=100,
-    limit_price=135.2,
-    instruction="SELL",
+    limit_price=105.1,
+    instruction="BUY", # ❗BUY❗ 
     session="SEAMLESS",
     duration="DAY",
 )
 
-order_payload = build_oto_limit_order_payload(
-    symbol="NBIS",
-    quantity=100,
-    instructions=["SELL", "BUY"],
-    limit_prices=[162.2, 154.2],
-    # instructions=["BUY", "SELL"],
-    # limit_prices=[133.2, 136.2],
-    # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
-    sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
-    durations=("DAY", "DAY"),
-)
-
-# Submit an order
+# Submit an 🟢 order
 status, date, order_id = place_order(
     client=client,
     accountHash=hashValue,
     order=order_payload,
 )
+print(status, date, order_id)
+
+#  ==============================================================
+# Build an 🔴 order payload
+order_payload = build_limit_order_payload(
+    symbol="NBIS",
+    quantity=100,
+    limit_price=107.3,
+    instruction="SELL", # ❗SELL❗
+    session="SEAMLESS",
+    duration="DAY",
+)
+
+# Submit an 🔴 order
+status, date, order_id = place_order(
+    client=client,
+    accountHash=hashValue,
+    order=order_payload,
+)
+print(status, date, order_id)
+
+#  ==============================================================
+# Build an 🟢 --> 🔴 order payload
+order_payload = build_oto_limit_order_payload(
+    symbol="NBIS",
+    quantity=100,
+    instructions=["BUY", "SELL"], # ❗BUY --> SELL❗
+    limit_prices=[106.2, 117.4],
+    # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
+    sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
+    durations=("DAY", "DAY"),
+)
+
+# Submit an 🟢 --> 🔴 order
+status, date, order_id = place_order(
+    client=client,
+    accountHash=hashValue,
+    order=order_payload,
+)
+print(status, date, order_id)
+
+#  ==============================================================
+# Build an 🔴 --> 🟢 order payload
+order_payload = build_oto_limit_order_payload(
+    symbol="NBIS",
+    quantity=100,
+    instructions=["SELL", "BUY"], # ❗SELL --> BUY❗
+    limit_prices=[112.2, 108.2],
+    # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
+    sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
+    durations=("DAY", "DAY"),
+)
+
+# Submit an 🔴 --> 🟢 order
+status, date, order_id = place_order(
+    client=client,
+    accountHash=hashValue,
+    order=order_payload,
+)
+print(status, date, order_id)
+
 
 order_data = client.order_details(hashValue, order_id)
 print(json.dumps(order_data.json(), indent=4))
 
 #  ==============================================================
 # Cancel an order
-order_id = "1008619647021"
+order_id = "1008684396386" # SELL 100 NBIS @117.4
 status_code, date = cancel_order(
     client=client,
     accountHash=hashValue,
     order_id=order_id,
 )  # status_code 200 >>> success
+print(status_code, date)
 
 
 # List all cancalable orders
-from_time, to_time = get_utc_time_range(offset=dt.timedelta(days=3, hours=8, minutes=5))
+from_time, to_time = get_utc_time_range(
+    offset=dt.timedelta(days=3, hours=8, minutes=5)
+    )
+
 orders = get_orders(
     hashValue=hashValue,
     status=None,
@@ -202,43 +264,10 @@ orders = get_orders(
 )
 
 for order in orders:
-    print(json.dumps(order, indent=4))
+    # print(json.dumps(order, indent=4))
+    # TypeError: Object of type datetime is not JSON serializable
+    pprint.pprint(orders, indent=2, sort_dicts=False)
 
-
-# ========================================================================
-# ========================================================================
-# Place an option order
-# ========================================================================
-# ========================================================================
-
-
-order_o1 = sell_covered_call_dict(
-    symbol="XYZ   260313C00009000",  # XYZ Mar 13 2026 $9.00 Call
-    quantity=1,
-    limit_price=0.30,
-)
-
-order_o2 = buy_limit_vertical_call_spread_dict(
-    symbol_higher_strike="XYZ   260313C00450000",  # XYZ Mar 13 2026 $45 Put
-    symbol_lower_strike="XYZ   260313P00043000",  # XYZ Mar 13 2026 $43 Put
-    # symbol_higher_strike=
-    # symbol_lower_strike=
-    quantity=1,
-    limit_price=0.30,
-)
-
-order_o3 = buy_limit_single_option_dict(
-    symbol="XYZ   260313C00500000",  # XYZ March 13, 2024 $50 CALL
-    # symbol=
-    quantity=1,
-    limit_price=0.30,
-)
-
-# submit an order
-order = order_o1
-
-
-status, date, order_id = place_order(client=client, accountHash=hashValue, order=order)
 
 # ========================================================================
 # Check orders
@@ -521,30 +550,6 @@ account.refresh()
 #     place_trade()
 
 
-import os
-from dotenv import load_dotenv
-import schwabdev
-
-load_dotenv()
-
-
-client = schwabdev.Client(
-    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
-)
-
-streamer = schwabdev.Stream(client)
-streamer.start(receiver=print)
-# receiver=print show everything including response, data, notify categories. simply prints every message Schwab server sends to your receiver.
-# 1. response — result of your request. "I received your subscription request, and it succeeded."
-# 2. data — actual streaming data. "Here is new data for your subscription."
-# 3. notify — connection/system notification. "The streaming connection is still alive."
-
-
-streamer.send(streamer.level_one_equities("INTC,MU", "0,1,2,3,8,10,11,18,19,20,21"))
-
-streamer.send(streamer.account_activity("Account Activity", "0,1,2,3"))
-
-streamer.stop()
 
 
 # Compare the steaming data to historical account acctivity data
@@ -563,3 +568,40 @@ import json
 
 acctivity_list = json.dumps(data, indent=4)
 print(acctivity_list)
+
+
+
+# ========================================================================
+# ========================================================================
+# Place an option order
+# ========================================================================
+# ========================================================================
+
+
+# order_o1 = sell_covered_call_dict(
+#     symbol="XYZ   260313C00009000",  # XYZ Mar 13 2026 $9.00 Call
+#     quantity=1,
+#     limit_price=0.30,
+# )
+
+# order_o2 = buy_limit_vertical_call_spread_dict(
+#     symbol_higher_strike="XYZ   260313C00450000",  # XYZ Mar 13 2026 $45 Put
+#     symbol_lower_strike="XYZ   260313P00043000",  # XYZ Mar 13 2026 $43 Put
+#     # symbol_higher_strike=
+#     # symbol_lower_strike=
+#     quantity=1,
+#     limit_price=0.30,
+# )
+
+# order_o3 = buy_limit_single_option_dict(
+#     symbol="XYZ   260313C00500000",  # XYZ March 13, 2024 $50 CALL
+#     # symbol=
+#     quantity=1,
+#     limit_price=0.30,
+# )
+
+# # submit an order
+# order = order_o1
+
+
+# status, date, order_id = place_order(client=client, accountHash=hashValue, order=order)

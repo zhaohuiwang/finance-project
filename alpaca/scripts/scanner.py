@@ -40,7 +40,7 @@ from alpaca.trading.client import TradingClient
 # ====================== CONFIG ======================
 load_dotenv()
 API_KEY = os.getenv("ALPACA_API_KEY")
-API_SECRET = os.getenv("ALPACA_SECRET_KEY")
+API_SECRET = os.getenv("ALPACA_API_SECRET_KEY")
 
 # Screening parameters
 DAYS_BACK = 30

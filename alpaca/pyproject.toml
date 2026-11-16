@@ -5,13 +5,25 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "alpaca-py>=0.44.0",
+    "alpaca-py>=0.45.0",
     "alpaca-trade-api>=3.2.0",
-    "duckdb>=1.5.6",
-    "numpy>=2.4.4",
+    "duckdb>=2.0.0",
+    "numpy>=2.5.0",
     "pandas>=3.0.2",
     "pyarrow>=25.0.1",
     "python-dotenv>=1.2.4",
     "requests>=2.34.2",
     "rich>=15.0.0",
+    "streamlit>=1.56.0",
 ]
+
+
+# Check All Installed Environment Packages
+# uv pip list --outdated
+
+# Check Project Dependencies (pyproject.toml)
+# uv tree --outdated --depth 1
+
+# Update all packages
+# uv lock --upgrade
+# uv sync
