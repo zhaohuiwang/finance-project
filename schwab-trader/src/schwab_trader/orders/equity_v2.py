@@ -84,6 +84,7 @@ class OrderPayload(TypedDict):
     stopPriceLinkBasis: NotRequired[StopPriceLinkBasis]
     stopPriceLinkType: NotRequired[StopPriceLinkType]
     stopPriceOffset: NotRequired[float]
+    taxLotMethod: NotRequired[TaxLotMethod]
     complexOrderStrategyType: NotRequired[ComplexOrderStrategyType]
     childOrderStrategies: NotRequired[
         list["OrderPayload"]
@@ -137,7 +138,7 @@ def _validate_trailing_stop(
     link_type: StopPriceLinkType,
     offset: Number,
 ) -> None:
-    if link_type not in ("VALUE", "PERCENT", "TICK"):
+    if link_type not in list(get_args(StopPriceLinkType)):
         raise ValueError(
             f"stop_price_link_type must be 'VALUE', 'PERCENT' or 'TICK', got {link_type!r}"
         )
@@ -149,11 +150,7 @@ def _validate_trailing_stop(
 
 def _validate_order_strategy(strategy: str) -> None:
     # Only the following three are supported values according to Schwab SDK.
-    if strategy not in (
-        "SINGLE",
-        "OCO",
-        "TRIGGER",
-    ):
+    if strategy not in list(get_args(OrderStrategyType)):
         raise ValueError(f"{strategy} is not a verified order submission strategy")
 
 
@@ -207,6 +204,7 @@ def _market_order(
         "session": session,
         "duration": "DAY",
         "orderStrategyType": "SINGLE",
+        "taxLotMethod": "LIFO",
         "orderLegCollection": [leg],
     }
 
@@ -228,6 +226,7 @@ def _limit_order(
         "session": session,
         "duration": duration,
         "orderStrategyType": strategy,
+        "taxLotMethod": "LIFO",
         "orderLegCollection": [leg],
     }
 
@@ -247,6 +246,7 @@ def _stop_order(
         "session": session,
         "duration": duration,
         "orderStrategyType": "SINGLE",
+        "taxLotMethod": "LIFO",
         "orderLegCollection": [leg],
     }
 
@@ -269,6 +269,7 @@ def _stop_limit_order(
         "session": session,
         "duration": duration,
         "orderStrategyType": "SINGLE",
+        "taxLotMethod": "LIFO",
         "orderLegCollection": [leg],
     }
 
@@ -295,6 +296,7 @@ def _trailing_stop_order(
         "session": session,
         "duration": duration,
         "orderStrategyType": strategy,
+        "taxLotMethod": "LIFO",
         "orderLegCollection": [leg],
     }
 
