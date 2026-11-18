@@ -1,4 +1,3 @@
-
 import json
 import os
 import requests
@@ -9,7 +8,7 @@ load_dotenv()
 
 
 ############################################################
-# The top market movers (gainers and losers) 
+# The top market movers (gainers and losers)
 ############################################################
 
 # https://docs.alpaca.markets/us/reference/movers-1
@@ -23,12 +22,7 @@ headers = {
 }
 
 
-response = requests.get(
-    url,
-    headers=headers,
-    params={"top": 10},
-    timeout=15
-)
+response = requests.get(url, headers=headers, params={"top": 10}, timeout=15)
 
 response.raise_for_status()
 print(response.text)
@@ -38,7 +32,6 @@ print(json.dumps(data, indent=4))
 
 # This will automatically format AND color-code your JSON string or dictionary
 print_json(data=data)
-
 
 
 # Using alpaca-py
@@ -53,14 +46,11 @@ client = ScreenerClient(
 )
 
 result = client.get_market_movers(
-    MarketMoversRequest(
-        market_type=MarketType.STOCKS,
-        top=10
-    )
+    MarketMoversRequest(market_type=MarketType.STOCKS, top=10)
 )
 
 ############################################################
-# Most active stocks by volume 
+# Most active stocks by volume
 ############################################################
 
 # https://docs.alpaca.markets/us/reference/mostactives-1
@@ -91,7 +81,7 @@ print_json(data=data)
 
 
 ############################################################
-# RVOL (Relative Volume) 
+# RVOL (Relative Volume)
 ############################################################
 
 # RVOL=Today's Volume / Average Volume over previous N days
@@ -105,30 +95,16 @@ headers = {
     "APCA-API-SECRET-KEY": os.environ["ALPACA_API_SECRET_KEY"],
 }
 
-params = {
-    "timeframe": "1Day",
-    "limit": 21,
-    "feed": "sip"
-}
+params = {"timeframe": "1Day", "limit": 21, "feed": "sip"}
 
-response = requests.get(
-    url,
-    headers=headers,
-    params=params,
-    timeout=15
-)
+response = requests.get(url, headers=headers, params=params, timeout=15)
 
 response.raise_for_status()
 
 data = response.json()
 
 for bar in data["bars"]:
-    print(
-        bar["t"],
-        bar["c"],   # close
-        bar["v"]    # volume
-    )
-
+    print(bar["t"], bar["c"], bar["v"])  # close  # volume
 
 
 url = "https://paper-api.alpaca.markets/v2/assets"
@@ -137,16 +113,9 @@ headers = {
     "APCA-API-KEY-ID": os.getenv("PAPER_ALPACA_API_KEY"),
     "APCA-API-SECRET-KEY": os.environ["PAPER_ALPACA_API_SECRET_KEY"],
 }
-params = {
-    "status": "active",
-    "asset_class": "us_equity"
-}
+params = {"status": "active", "asset_class": "us_equity"}
 
-response = requests.get(
-    url,
-    headers=headers,
-    params=params
-)
+response = requests.get(url, headers=headers, params=params)
 
 response.raise_for_status()
 
@@ -158,17 +127,10 @@ print(json.dumps(data, indent=4))
 print_json(data=data)
 
 
-
-symbols = [
-    x["symbol"]
-    for x in assets
-    if x["tradable"]
-]
+symbols = [x["symbol"] for x in assets if x["tradable"]]
 
 print(len(symbols))
 print(symbols[:20])
-
-
 
 
 from alpaca.trading.client import TradingClient
@@ -176,13 +138,10 @@ from alpaca.trading.requests import GetAssetsRequest
 from alpaca.trading.enums import AssetClass
 
 trading_client = TradingClient(
-    os.environ["PAPER_ALPACA_API_KEY"],
-    os.environ["PAPER_ALPACA_API_SECRET_KEY"]
+    os.environ["PAPER_ALPACA_API_KEY"], os.environ["PAPER_ALPACA_API_SECRET_KEY"]
 )
 
-search_params = GetAssetsRequest(
-    asset_class=AssetClass.US_EQUITY
-)
+search_params = GetAssetsRequest(asset_class=AssetClass.US_EQUITY)
 
 assets = trading_client.get_all_assets(search_params)
 
@@ -190,19 +149,16 @@ for asset in assets[:20]:
     print(asset.symbol, asset.name)
 
 
-
-
-
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from datetime import datetime, timedelta
 
-# 
+#
 client = StockHistoricalDataClient(
     api_key=os.getenv("ALPACA_API_KEY"),
     secret_key=os.environ["ALPACA_API_SECRET_KEY"],
-    )
+)
 
 symbol = "AAPL"
 
@@ -230,7 +186,6 @@ print(f"Average volume: {avg_volume:,.0f}")
 print(f"RVOL: {rvol:.2f}")
 
 
-
 ############################################################
 # Alpha Vantage
 ############################################################
@@ -240,9 +195,7 @@ import requests
 API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 # 1. GET CURRENT REAL-TIME ACTIVE MOVERS
-movers_url = (
-    f"https://alphavantage.co{API_KEY}"
-)
+movers_url = f"https://alphavantage.co{API_KEY}"
 movers_data = requests.get(movers_url).json()
 
 # Grab the top volume leader from the most active list
@@ -257,10 +210,3 @@ eod_data = requests.get(eod_url).json()
 last_refresh = eod_data["Meta Data"]["3. Last Refreshed"]
 daily_summary = eod_data["Time Series (Daily)"][last_refresh]
 print(f"EOD Summary for {last_refresh}: Volume = {daily_summary['5. volume']}")
-
-
-
-
-
-
-

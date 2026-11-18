@@ -1,4 +1,3 @@
-
 """
 This application:
     Connects to Alpaca's IEX WebSocket.
@@ -16,7 +15,6 @@ http://localhost:8501
 
 """
 
-
 import os
 import sqlite3
 import threading
@@ -30,7 +28,6 @@ import streamlit as st
 from dotenv import load_dotenv
 from alpaca.data.enums import DataFeed
 from alpaca.data.live import StockDataStream
-
 
 # ============================================================
 # CONFIGURATION
@@ -48,20 +45,14 @@ DATABASE = Path("outputs/market_data.db")
 
 PERIODS = [5, 10, 15, 30, 60]
 
-DATABASE.parent.mkdir(
-    parents=True,
-    exist_ok=True
-)
+DATABASE.parent.mkdir(parents=True, exist_ok=True)
 
 load_dotenv()
 
 API_KEY = os.getenv("ALPACA_API_KEY")
 API_SECRET = os.getenv("ALPACA_API_SECRET_KEY")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 if not API_KEY or not API_SECRET:
     st.error("Missing Alpaca API credentials. Check your .env file.")
@@ -72,15 +63,12 @@ if not API_KEY or not API_SECRET:
 # DATABASE
 # ============================================================
 
+
 def get_connection():
     """
     WAL mode is particularly useful here because your dashboard is continuously reading while the WebSocket is writing.
     """
-    conn = sqlite3.connect(
-        DATABASE,
-        timeout=15,
-        check_same_thread=False
-    )
+    conn = sqlite3.connect(DATABASE, timeout=15, check_same_thread=False)
 
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -112,23 +100,18 @@ def initialize_database():
 def save_bar(bar):
     """Insert or update a one-minute bar."""
 
-    timestamp = bar.timestamp.astimezone(
-        timezone.utc
-    ).isoformat()
+    timestamp = bar.timestamp.astimezone(timezone.utc).isoformat()
 
-    # 
-    trade_count = (
-        int(bar.trade_count) if bar.trade_count is not None
-        else None
-        )
+    #
+    trade_count = int(bar.trade_count) if bar.trade_count is not None else None
 
     vwap = (
-        float(bar.vwap) if bar.vwap is not None
-        else None
-        ) # Volume Weighted Average Price
+        float(bar.vwap) if bar.vwap is not None else None
+    )  # Volume Weighted Average Price
 
     with get_connection() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO market_bars (
                 symbol, timestamp, open, high, low,
                 close, volume, trade_count, vwap
@@ -144,17 +127,19 @@ def save_bar(bar):
                 volume = excluded.volume,
                 trade_count = excluded.trade_count,
                 vwap = excluded.vwap
-        """, (
-            bar.symbol,
-            timestamp,
-            float(bar.open),
-            float(bar.high),
-            float(bar.low),
-            float(bar.close),
-            float(bar.volume),
-            trade_count,
-            vwap,
-        ))
+        """,
+            (
+                bar.symbol,
+                timestamp,
+                float(bar.open),
+                float(bar.high),
+                float(bar.low),
+                float(bar.close),
+                float(bar.volume),
+                trade_count,
+                vwap,
+            ),
+        )
 
 
 def get_bars(symbol, limit=500):
@@ -168,7 +153,7 @@ def get_bars(symbol, limit=500):
             LIMIT ?
             """,
             conn,
-            params=(symbol, limit)
+            params=(symbol, limit),
         )
 
     if df.empty:
@@ -176,9 +161,7 @@ def get_bars(symbol, limit=500):
 
     df = df.sort_values("timestamp").reset_index(drop=True)
 
-    df["timestamp"] = pd.to_datetime(
-        df["timestamp"], utc=True
-    )
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
 
     return df
 
@@ -186,6 +169,7 @@ def get_bars(symbol, limit=500):
 # ============================================================
 # MOVING AVERAGE CALCULATIONS
 # ============================================================
+
 
 def calculate_indicators(df):
     if df.empty:
@@ -197,39 +181,23 @@ def calculate_indicators(df):
     for period in PERIODS:
 
         df[f"SMA_{period}"] = (
-            df["close"].rolling(
-                window=period,
-                min_periods=period
-            ).mean()
+            df["close"].rolling(window=period, min_periods=period).mean()
         )
 
         df[f"EMA_{period}"] = (
-            df["close"].ewm(
-                span=period,
-                adjust=False,
-                min_periods=period
-            ).mean()
+            df["close"].ewm(span=period, adjust=False, min_periods=period).mean()
         )
 
     # -----------Session VWAP-----------
     # Typical price for each one-minute bar
-    typical_price = (
-        df["high"] +
-        df["low"] +
-        df["close"]
-    ) / 3
+    typical_price = (df["high"] + df["low"] + df["close"]) / 3
 
     # Cumulative volume-weighted price
     cumulative_volume = df["volume"].cumsum()
 
-    cumulative_price_volume = (
-        typical_price * df["volume"]
-    ).cumsum()
+    cumulative_price_volume = (typical_price * df["volume"]).cumsum()
 
-    df["VWAP"] = (
-        cumulative_price_volume /
-        cumulative_volume
-    )
+    df["VWAP"] = cumulative_price_volume / cumulative_volume
 
     return df
 
@@ -277,9 +245,7 @@ def calculate_signal(df):
 
     if pd.notna(vwap) and vwap != 0:
 
-        price_vwap_pct = (
-            (price - vwap) / vwap * 100
-        )
+        price_vwap_pct = (price - vwap) / vwap * 100
 
         if price_vwap_pct > 0.10:
             score += 1
@@ -297,11 +263,7 @@ def calculate_signal(df):
         price_vs_vwap = "N/A"
 
     # 2. -----------EMA ALIGNMENT-----------
-    if (
-        pd.notna(ema5)
-        and pd.notna(ema10)
-        and pd.notna(ema30)
-    ):
+    if pd.notna(ema5) and pd.notna(ema10) and pd.notna(ema30):
 
         if ema5 > ema10:
             score += 1
@@ -325,7 +287,6 @@ def calculate_signal(df):
     else:
         ema_alignment = "WARMING UP"
 
-
     # 3. -----------EMA CROSSOVER-----------
     crossover = "NONE"
 
@@ -336,16 +297,10 @@ def calculate_signal(df):
         and pd.notna(ema10)
     ):
 
-        if (
-            previous["EMA_5"] <= previous["EMA_10"]
-            and ema5 > ema10
-        ):
+        if previous["EMA_5"] <= previous["EMA_10"] and ema5 > ema10:
             crossover = "BULLISH CROSS"
 
-        elif (
-            previous["EMA_5"] >= previous["EMA_10"]
-            and ema5 < ema10
-        ):
+        elif previous["EMA_5"] >= previous["EMA_10"] and ema5 < ema10:
             crossover = "BEARISH CROSS"
 
     # 4. -----------OVERALL SIGNAL-----------
@@ -367,9 +322,11 @@ def calculate_signal(df):
         "crossover": crossover,
     }
 
+
 # ============================================================
 # ALPACA WEBSOCKET
 # ============================================================
+
 
 async def handle_bar(bar):
     try:
@@ -380,7 +337,7 @@ async def handle_bar(bar):
             bar.symbol,
             bar.timestamp,
             bar.close,
-            bar.volume
+            bar.volume,
         )
 
     except Exception:
@@ -409,21 +366,13 @@ def start_market_stream():
 
     initialize_database()
 
-    stream = StockDataStream(
-        API_KEY,
-        API_SECRET,
-        feed=DataFeed.IEX
-    )
+    stream = StockDataStream(API_KEY, API_SECRET, feed=DataFeed.IEX)
 
     stream.subscribe_bars(
-        handle_bar,
-        *SYMBOLS
-    ) # Alpaca's minute bar is an aggregate for the minute.
+        handle_bar, *SYMBOLS
+    )  # Alpaca's minute bar is an aggregate for the minute.
 
-    stream.subscribe_updated_bars(
-        handle_updated_bar,
-        *SYMBOLS
-    )
+    stream.subscribe_updated_bars(handle_updated_bar, *SYMBOLS)
 
     def run_stream():
         try:
@@ -434,9 +383,7 @@ def start_market_stream():
             logging.exception("Market stream stopped unexpectedly")
 
     thread = threading.Thread(
-        target=run_stream,
-        daemon=True,
-        name="alpaca-market-stream"
+        target=run_stream, daemon=True, name="alpaca-market-stream"
     )
 
     thread.start()
@@ -448,17 +395,12 @@ def start_market_stream():
 # DASHBOARD
 # ============================================================
 
-st.set_page_config(
-    page_title="NASDAQ Market Monitor",
-    page_icon="📈",
-    layout="wide"
-)
+st.set_page_config(page_title="NASDAQ Market Monitor", page_icon="📈", layout="wide")
 
 st.title("NASDAQ Live Market Monitor")
 
 st.caption(
-    "Market data: Alpaca IEX | "
-    "Moving averages calculated from one-minute bars"
+    "Market data: Alpaca IEX | " "Moving averages calculated from one-minute bars"
 )
 
 # Start WebSocket
@@ -470,14 +412,14 @@ else:
     st.error("Market data stream stopped")
 
 st.info(
-    "This dashboard uses IEX exchange data, not "
-    "the consolidated US market feed."
+    "This dashboard uses IEX exchange data, not " "the consolidated US market feed."
 )
 
 
 # ============================================================
 # LIVE DISPLAY
 # ============================================================
+
 
 @st.fragment(run_every="2s")
 def display_market():
@@ -518,8 +460,7 @@ def display_market():
 
     if not summary:
         st.warning(
-            "Waiting for market data. "
-            "Indicators will appear as bars accumulate."
+            "Waiting for market data. " "Indicators will appear as bars accumulate."
         )
         return
 
@@ -527,11 +468,7 @@ def display_market():
 
     st.subheader("Current Market Indicators")
 
-    st.dataframe(
-        result,
-        width=True,
-        hide_index=True
-    )
+    st.dataframe(result, width=True, hide_index=True)
 
     st.caption(
         "SMA/EMA values are based on completed one-minute bars. "
@@ -558,23 +495,16 @@ def display_market():
 
         col1, col2, col3 = st.columns(3)
 
-        col1.metric(
-            "Latest Price",
-            f"${latest['close']:,.2f}"
-        )
+        col1.metric("Latest Price", f"${latest['close']:,.2f}")
 
         col2.metric(
             "5-minute SMA",
-            f"${latest['SMA_5']:,.2f}"
-            if pd.notna(latest["SMA_5"])
-            else "Warming up"
+            f"${latest['SMA_5']:,.2f}" if pd.notna(latest["SMA_5"]) else "Warming up",
         )
 
         col3.metric(
             "10-minute SMA",
-            f"${latest['SMA_10']:,.2f}"
-            if pd.notna(latest["SMA_10"])
-            else "Warming up"
+            f"${latest['SMA_10']:,.2f}" if pd.notna(latest["SMA_10"]) else "Warming up",
         )
 
         chart_data = df.set_index("timestamp")[
@@ -585,23 +515,17 @@ def display_market():
                 "SMA_10",
                 "EMA_5",
                 "EMA_10",
-                ]
+            ]
         ]
 
-        st.line_chart(
-            chart_data,
-            height=250
-        )
+        st.line_chart(chart_data, height=250)
 
         with st.expander(f"{symbol} historical data"):
 
             st.dataframe(
-                df.tail(100).sort_values(
-                    "timestamp",
-                    ascending=False
-                ),
+                df.tail(100).sort_values("timestamp", ascending=False),
                 width=True,
-                hide_index=True
+                hide_index=True,
             )
 
         st.divider()
@@ -614,11 +538,7 @@ display_market()
 # FOOTER
 # ============================================================
 
-st.caption(
-    f"Symbols: {', '.join(SYMBOLS)} | "
-    f"Database: {DATABASE} | "
-    f"Feed: IEX"
-)
+st.caption(f"Symbols: {', '.join(SYMBOLS)} | " f"Database: {DATABASE} | " f"Feed: IEX")
 
 
 """

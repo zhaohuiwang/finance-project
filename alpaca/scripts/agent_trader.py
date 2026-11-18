@@ -190,7 +190,9 @@ def main() -> None:
             except Exception as e:
                 logger.error(f"{symbol} agent error: {e}", exc_info=True)
 
-        manage_trailing_stops(trading_client, data_client, cfg)  # ← ATR Trailing Stop Management
+        manage_trailing_stops(
+            trading_client, data_client, cfg
+        )  # ← ATR Trailing Stop Management
         time.sleep(cfg.trading.check_interval)
 
 

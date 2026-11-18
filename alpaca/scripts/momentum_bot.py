@@ -1,6 +1,4 @@
-
-
-#===============================================================================
+# ===============================================================================
 # FILE: alpaca momentum trader
 
 # python3 scripts/momentum_bot.py
@@ -11,7 +9,7 @@
 # $ pkill -f momentum_bot.py
 # $ pkill -9 -f momentum_bot.py
 # $ ps aux | grep -E 'momentum_bot.py|uv run' | grep -v grep | awk '{print $2}' | xargs -r kill -9
-#===============================================================================
+# ===============================================================================
 
 import asyncio
 import datetime as dt
@@ -34,7 +32,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 
-from config import load_config  
+from config import load_config
 from utils.logger import setup_logging, get_logger
 from utils.market import is_market_hours
 from utils.notify import notify
@@ -44,6 +42,7 @@ from utils.trade_log import init_trade_log, log_trade
 try:
     from utils.risk import DailyLossGuard
 except ImportError:
+
     class DailyLossGuard:
         def __init__(self, trading_client, daily_max_loss_pct: float):
             self.trading_client = trading_client
@@ -60,7 +59,11 @@ except ImportError:
                     self.daily_start_date = today
                 account = self.trading_client.get_account()
                 current_equity = float(account.equity)
-                loss_pct = (self.daily_start_equity - current_equity) / self.daily_start_equity * 100
+                loss_pct = (
+                    (self.daily_start_equity - current_equity)
+                    / self.daily_start_equity
+                    * 100
+                )
                 if loss_pct >= self.daily_max_loss_pct:
                     logger.warning(f"🚨 DAILY LOSS LIMIT REACHED: {loss_pct:.1f}%")
                     return True
@@ -68,12 +71,14 @@ except ImportError:
             except:
                 return False
 
+
 setup_logging()
 logger = get_logger(__name__)
 
 load_dotenv()
 
 NY_TZ = pytz.timezone("America/New_York")
+
 
 # ========================= PYDANTIC CONFIG =========================
 class TelegramConfig(BaseModel):
@@ -147,6 +152,7 @@ def load_momentum_config() -> TradingConfig:
     config_path = Path("conf/momentum_config.yaml")
     if config_path.exists():
         import yaml
+
         with open(config_path) as f:
             data = yaml.safe_load(f)
         return TradingConfig(**data)
@@ -210,7 +216,7 @@ def place_trailing_sell(symbol: str, qty: int, current_price: float):
             qty,
             current_price,
             f"+{cfg.up_value}% surge detected",
-            str(order.id)
+            str(order.id),
         )
         notify(f"🔴 *TRAILING SELL* {qty} {symbol} @ ~${current_price:.2f}")
         logger.info(f"✅ Trailing Sell placed for {qty} {symbol}")
@@ -239,7 +245,7 @@ def place_trailing_buy(symbol: str, qty: int, current_price: float):
             qty,
             current_price,
             f"-{cfg.down_value}% dip detected",
-            str(order.id)
+            str(order.id),
         )
         notify(f"🟢 *TRAILING BUY* {qty} {symbol} @ ~${current_price:.2f}")
         logger.info(f"✅ Trailing Buy placed for {qty} {symbol}")
@@ -249,6 +255,7 @@ def place_trailing_buy(symbol: str, qty: int, current_price: float):
         # Fallback to market buy
         try:
             from alpaca.trading.requests import MarketOrderRequest
+
             order_data = MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
@@ -257,7 +264,14 @@ def place_trailing_buy(symbol: str, qty: int, current_price: float):
                 time_in_force=TimeInForce.DAY,
             )
             order = trading_client.submit_order(order_data)
-            log_trade(cfg.log_file, symbol, "MARKET_BUY_FALLBACK", qty, current_price, "Trailing buy fallback")
+            log_trade(
+                cfg.log_file,
+                symbol,
+                "MARKET_BUY_FALLBACK",
+                qty,
+                current_price,
+                "Trailing buy fallback",
+            )
             return True
         except Exception as fb_e:
             logger.error(f"Fallback buy also failed: {fb_e}")
@@ -267,10 +281,10 @@ def place_trailing_buy(symbol: str, qty: int, current_price: float):
 # ========================= STREAM CALLBACK =========================
 async def on_quote(data):
     try:
-        if hasattr(data, 'price'):
+        if hasattr(data, "price"):
             price = float(data.price)
         else:
-            price = float(data.close) if hasattr(data, 'close') else None
+            price = float(data.close) if hasattr(data, "close") else None
 
         if not price:
             return
@@ -286,7 +300,9 @@ async def on_quote(data):
             return
 
         position_qty = get_position_qty(cfg.symbol)
-        logger.info(f"📡 {cfg.symbol} @ ${price:.2f} | Pos: {position_qty}/{cfg.max_position_shares}")
+        logger.info(
+            f"📡 {cfg.symbol} @ ${price:.2f} | Pos: {position_qty}/{cfg.max_position_shares}"
+        )
 
         # UP MOVE → Trailing Sell
         if len(price_window) >= 10:
@@ -296,7 +312,9 @@ async def on_quote(data):
                 min_p = min(recent)
                 pct_up = (price - min_p) / min_p * 100
                 if pct_up >= cfg.up_value and position_qty > 0:
-                    logger.warning(f"🔥 +{pct_up:.1f}% surge in last {cfg.up_window_min} min!")
+                    logger.warning(
+                        f"🔥 +{pct_up:.1f}% surge in last {cfg.up_window_min} min!"
+                    )
                     place_trailing_sell(cfg.symbol, position_qty, price)
 
         # DOWN MOVE → Trailing Buy
@@ -306,10 +324,14 @@ async def on_quote(data):
             if recent:
                 max_p = max(recent)
                 pct_down = (max_p - price) / max_p * 100
-                if (pct_down >= cfg.down_value and
-                    position_qty == 0 and
-                    cfg.buy_quantity <= cfg.max_position_shares):
-                    logger.warning(f"📉 -{pct_down:.1f}% dip in last {cfg.down_window_min} min!")
+                if (
+                    pct_down >= cfg.down_value
+                    and position_qty == 0
+                    and cfg.buy_quantity <= cfg.max_position_shares
+                ):
+                    logger.warning(
+                        f"📉 -{pct_down:.1f}% dip in last {cfg.down_window_min} min!"
+                    )
                     place_trailing_buy(cfg.symbol, cfg.buy_quantity, price)
 
     except Exception as e:
@@ -321,22 +343,26 @@ def run_stream():
     try:
         stream.subscribe_quotes(on_quote, cfg.symbol)
         logger.info(f"✅ Subscribed to real-time quotes for {cfg.symbol}")
-        stream.run()          # This is the correct blocking call
+        stream.run()  # This is the correct blocking call
     except Exception as e:
         logger.error(f"Stream run failed: {e}")
         notify(f"❌ Stream Error: {e}")
-        
-        
+
+
 # ========================= MAIN =========================
 async def main():
     mode = "🟦 PAPER TRADING" if cfg.paper_trading else "🔴 LIVE REAL MONEY"
     logger.info(f"🚀 Momentum Bot Started | {cfg.symbol} | {mode}")
-    logger.info(f"UP: {cfg.up_value}% in {cfg.up_window_min}min | "
-                f"DOWN: {cfg.down_value}% in {cfg.down_window_min}min")
+    logger.info(
+        f"UP: {cfg.up_value}% in {cfg.up_window_min}min | "
+        f"DOWN: {cfg.down_value}% in {cfg.down_window_min}min"
+    )
 
-    notify(f"🚀 *Momentum Bot Started*\n"
-           f"{cfg.symbol} | {mode}\n"
-           f"Surge {cfg.up_value}% | Dip {cfg.down_value}%")
+    notify(
+        f"🚀 *Momentum Bot Started*\n"
+        f"{cfg.symbol} | {mode}\n"
+        f"Surge {cfg.up_value}% | Dip {cfg.down_value}%"
+    )
 
     init_trade_log(cfg.log_file)
 
