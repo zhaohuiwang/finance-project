@@ -529,7 +529,7 @@ def display_market():
 
     st.dataframe(
         result,
-        use_container_width=True,
+        width=True,
         hide_index=True
     )
 
@@ -600,7 +600,7 @@ def display_market():
                     "timestamp",
                     ascending=False
                 ),
-                use_container_width=True,
+                width=True,
                 hide_index=True
             )
 
