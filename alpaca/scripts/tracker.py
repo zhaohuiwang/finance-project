@@ -17,10 +17,6 @@ http://localhost:8501
 """
 
 
-
-
-
-
 import os
 import sqlite3
 import threading
@@ -40,21 +36,22 @@ from alpaca.data.live import StockDataStream
 # CONFIGURATION
 # ============================================================
 
-SYMBOLS = "QQQ,NVDA,AAPL"
-DATABASE = "outputs/market_data.db"
-PERIODS = [5, 10, 15, 30, 60]
-
-
 SYMBOLS = [
-    s.strip().upper()
-    for s in SYMBOLS.split(",")
-    if s.strip()
+    "QQQ",
+    "NVDA",
+    "AAPL",
+    "INTC",
+    "NBIS",
 ]
 
-DB_PATH = Path("output/market_data.db")
-if not DB_PATH.exists():
-    # parents=True creates any missing parent folders; exist_ok=True prevents errors if the folder already exists
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+DATABASE = Path("outputs/market_data.db")
+
+PERIODS = [5, 10, 15, 30, 60]
+
+DATABASE.parent.mkdir(
+    parents=True,
+    exist_ok=True
+)
 
 load_dotenv()
 
@@ -76,7 +73,17 @@ if not API_KEY or not API_SECRET:
 # ============================================================
 
 def get_connection():
-    return sqlite3.connect(DB_PATH, timeout=15)
+    """
+    WAL mode is particularly useful here because your dashboard is continuously reading while the WebSocket is writing.
+    """
+    conn = sqlite3.connect(
+        DATABASE,
+        timeout=15,
+        check_same_thread=False
+    )
+
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 
 def initialize_database():
@@ -109,6 +116,17 @@ def save_bar(bar):
         timezone.utc
     ).isoformat()
 
+    # 
+    trade_count = (
+        int(bar.trade_count) if bar.trade_count is not None
+        else None
+        )
+
+    vwap = (
+        float(bar.vwap) if bar.vwap is not None
+        else None
+        ) # Volume Weighted Average Price
+
     with get_connection() as conn:
         conn.execute("""
             INSERT INTO market_bars (
@@ -134,8 +152,8 @@ def save_bar(bar):
             float(bar.low),
             float(bar.close),
             float(bar.volume),
-            int(bar.trade_count or 0),
-            float(bar.vwap or 0),
+            trade_count,
+            vwap,
         ))
 
 
@@ -175,7 +193,7 @@ def calculate_indicators(df):
 
     df = df.copy()
 
-    # Moving averages over one-minute closing prices
+    # -----------Moving averages-----------
     for period in PERIODS:
 
         df[f"SMA_{period}"] = (
@@ -193,8 +211,161 @@ def calculate_indicators(df):
             ).mean()
         )
 
+    # -----------Session VWAP-----------
+    # Typical price for each one-minute bar
+    typical_price = (
+        df["high"] +
+        df["low"] +
+        df["close"]
+    ) / 3
+
+    # Cumulative volume-weighted price
+    cumulative_volume = df["volume"].cumsum()
+
+    cumulative_price_volume = (
+        typical_price * df["volume"]
+    ).cumsum()
+
+    df["VWAP"] = (
+        cumulative_price_volume /
+        cumulative_volume
+    )
+
     return df
 
+
+# ============================================================
+# SIGNAL CALCULATIONS
+# ============================================================
+def calculate_signal(df):
+    """
+    Calculate a simple bullish / neutral / bearish signal.
+
+    Signal components:
+        1. Price vs. session VWAP
+        2. EMA 5 vs. EMA 10
+        3. EMA 10 vs. EMA 30
+
+    Score:
+        +3 to +2  -> BULLISH
+        +1 to -1  -> NEUTRAL
+        -2 to -3  -> BEARISH
+    """
+
+    if df.empty or len(df) < 30:
+        return {
+            "signal": "WARMING UP",
+            "score": None,
+            "price_vs_vwap": None,
+            "ema_alignment": None,
+            "crossover": None,
+        }
+
+    latest = df.iloc[-1]
+    previous = df.iloc[-2]
+
+    price = latest["close"]
+    vwap = latest["VWAP"]
+
+    ema5 = latest["EMA_5"]
+    ema10 = latest["EMA_10"]
+    ema30 = latest["EMA_30"]
+
+    score = 0
+
+    # 1. -----------PRICE VS VWAP-----------
+
+    if pd.notna(vwap) and vwap != 0:
+
+        price_vwap_pct = (
+            (price - vwap) / vwap * 100
+        )
+
+        if price_vwap_pct > 0.10:
+            score += 1
+            price_vs_vwap = "ABOVE"
+
+        elif price_vwap_pct < -0.10:
+            score -= 1
+            price_vs_vwap = "BELOW"
+
+        else:
+            price_vs_vwap = "NEAR"
+
+    else:
+        price_vwap_pct = None
+        price_vs_vwap = "N/A"
+
+    # 2. -----------EMA ALIGNMENT-----------
+    if (
+        pd.notna(ema5)
+        and pd.notna(ema10)
+        and pd.notna(ema30)
+    ):
+
+        if ema5 > ema10:
+            score += 1
+        elif ema5 < ema10:
+            score -= 1
+
+        if ema10 > ema30:
+            score += 1
+        elif ema10 < ema30:
+            score -= 1
+
+        if ema5 > ema10 > ema30:
+            ema_alignment = "BULLISH"
+
+        elif ema5 < ema10 < ema30:
+            ema_alignment = "BEARISH"
+
+        else:
+            ema_alignment = "MIXED"
+
+    else:
+        ema_alignment = "WARMING UP"
+
+
+    # 3. -----------EMA CROSSOVER-----------
+    crossover = "NONE"
+
+    if (
+        pd.notna(previous["EMA_5"])
+        and pd.notna(previous["EMA_10"])
+        and pd.notna(ema5)
+        and pd.notna(ema10)
+    ):
+
+        if (
+            previous["EMA_5"] <= previous["EMA_10"]
+            and ema5 > ema10
+        ):
+            crossover = "BULLISH CROSS"
+
+        elif (
+            previous["EMA_5"] >= previous["EMA_10"]
+            and ema5 < ema10
+        ):
+            crossover = "BEARISH CROSS"
+
+    # 4. -----------OVERALL SIGNAL-----------
+    if score >= 2:
+        signal = "BULLISH"
+
+    elif score <= -2:
+        signal = "BEARISH"
+
+    else:
+        signal = "NEUTRAL"
+
+    return {
+        "signal": signal,
+        "score": score,
+        "price_vs_vwap": price_vs_vwap,
+        "price_vs_vwap_pct": price_vwap_pct,
+        "ema_alignment": ema_alignment,
+        "crossover": crossover,
+    }
 
 # ============================================================
 # ALPACA WEBSOCKET
@@ -247,7 +418,7 @@ def start_market_stream():
     stream.subscribe_bars(
         handle_bar,
         *SYMBOLS
-    )
+    ) # Alpaca's minute bar is an aggregate for the minute.
 
     stream.subscribe_updated_bars(
         handle_updated_bar,
@@ -293,7 +464,10 @@ st.caption(
 # Start WebSocket
 stream, stream_thread = start_market_stream()
 
-st.success("Market data stream started")
+if stream_thread.is_alive():
+    st.success("Market data stream is running")
+else:
+    st.error("Market data stream stopped")
 
 st.info(
     "This dashboard uses IEX exchange data, not "
@@ -321,9 +495,17 @@ def display_market():
 
         latest = df.iloc[-1]
 
+        signal = calculate_signal(df)
+
         row = {
             "Symbol": symbol,
             "Last Price": latest["close"],
+            "Signal": signal["signal"],
+            "Score": signal["score"],
+            "VWAP": latest["VWAP"],
+            "Price vs VWAP": signal["price_vs_vwap"],
+            "EMA Alignment": signal["ema_alignment"],
+            "Crossover": signal["crossover"],
             "Last Bar (UTC)": latest["timestamp"],
             "Bars Available": len(df),
         }
@@ -396,7 +578,14 @@ def display_market():
         )
 
         chart_data = df.set_index("timestamp")[
-            ["close", "SMA_5", "SMA_10", "SMA_15", "SMA_30"]
+            [
+                "close",
+                "VWAP",
+                "SMA_5",
+                "SMA_10",
+                "EMA_5",
+                "EMA_10",
+                ]
         ]
 
         st.line_chart(
@@ -427,6 +616,17 @@ display_market()
 
 st.caption(
     f"Symbols: {', '.join(SYMBOLS)} | "
-    f"Database: {DB_PATH} | "
+    f"Database: {DATABASE} | "
     f"Feed: IEX"
 )
+
+
+"""
+You can interpret that roughly as:
+- Price > VWAP → trading above its volume-weighted average
+- Price > SMA 5 → above its recent short-term average
+- EMA 5 > SMA 5 → recent prices are relatively strong
+- Price > SMA 30 → above its longer short-term trend
+- EMA 30 > SMA 30 → recent prices have been pulling the average upward
+
+"""

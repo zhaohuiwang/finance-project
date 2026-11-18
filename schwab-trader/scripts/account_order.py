@@ -162,7 +162,7 @@ print(account.positions)
 order_payload = build_limit_order_payload(
     symbol="NBIS",
     quantity=100,
-    limit_price=105.1,
+    limit_price=101.1,
     instruction="BUY", # ❗BUY❗ 
     session="SEAMLESS",
     duration="DAY",
@@ -201,7 +201,7 @@ order_payload = build_oto_limit_order_payload(
     symbol="NBIS",
     quantity=100,
     instructions=["BUY", "SELL"], # ❗BUY --> SELL❗
-    limit_prices=[106.2, 117.4],
+    limit_prices=[104.2, 107.4],
     # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
     sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
     durations=("DAY", "DAY"),
@@ -221,7 +221,7 @@ order_payload = build_oto_limit_order_payload(
     symbol="NBIS",
     quantity=100,
     instructions=["SELL", "BUY"], # ❗SELL --> BUY❗
-    limit_prices=[112.2, 108.2],
+    limit_prices=[125.2, 115.2],
     # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
     sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
     durations=("DAY", "DAY"),
@@ -241,7 +241,7 @@ print(json.dumps(order_data.json(), indent=4))
 
 #  ==============================================================
 # Cancel an order
-order_id = "1008684396386" # SELL 100 NBIS @117.4
+# order_id = "1008684396386" # SELL 100 NBIS @117.4
 status_code, date = cancel_order(
     client=client,
     accountHash=hashValue,
