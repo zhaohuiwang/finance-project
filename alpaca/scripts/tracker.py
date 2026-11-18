@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import altair as alt # declarative statistical visualization library
 
 from dotenv import load_dotenv
 from alpaca.data.enums import DataFeed
@@ -35,10 +36,10 @@ from alpaca.data.live import StockDataStream
 
 SYMBOLS = [
     "QQQ",
-    "NVDA",
     "AAPL",
     "INTC",
     "NBIS",
+    "NVDA",
 ]
 
 DATABASE = Path("outputs/market_data.db")
@@ -332,13 +333,13 @@ async def handle_bar(bar):
     try:
         save_bar(bar)
 
-        logging.info(
-            "%s | %s | Close: %.2f | Volume: %s",
-            bar.symbol,
-            bar.timestamp,
-            bar.close,
-            bar.volume,
-        )
+        # logging.info(
+        #     "%s | %s | Close: %.2f | Volume: %s",
+        #     bar.symbol,
+        #     bar.timestamp,
+        #     bar.close,
+        #     bar.volume,
+        # )
 
     except Exception:
         logging.exception("Error saving market bar")
@@ -419,8 +420,6 @@ st.info(
 # ============================================================
 # LIVE DISPLAY
 # ============================================================
-
-
 @st.fragment(run_every="2s")
 def display_market():
 
@@ -437,38 +436,74 @@ def display_market():
 
         latest = df.iloc[-1]
 
+        # Calculate trading signals
         signal = calculate_signal(df)
 
+        # ---------------------------------------------------------
+        # Summary row
+        # ---------------------------------------------------------
         row = {
             "Symbol": symbol,
+
+            # Current price
             "Last Price": latest["close"],
+
+            # Trading signals
             "Signal": signal["signal"],
             "Score": signal["score"],
+
+            # VWAP
             "VWAP": latest["VWAP"],
             "Price vs VWAP": signal["price_vs_vwap"],
+
+            # EMA analysis
             "EMA Alignment": signal["ema_alignment"],
             "Crossover": signal["crossover"],
+
+            # Data information
             "Last Bar (UTC)": latest["timestamp"],
             "Bars Available": len(df),
         }
 
+        # ---------------------------------------------------------
+        # Keep the original SMA / EMA summary columns
+        # ---------------------------------------------------------
         for period in PERIODS:
+
             row[f"SMA {period}m"] = latest[f"SMA_{period}"]
+
             row[f"EMA {period}m"] = latest[f"EMA_{period}"]
 
         summary.append(row)
 
+    # -------------------------------------------------------------
+    # Display summary table
+    # -------------------------------------------------------------
     if not summary:
+
         st.warning(
-            "Waiting for market data. " "Indicators will appear as bars accumulate."
+            "Waiting for market data. "
+            "Indicators will appear as bars accumulate."
         )
+
         return
 
     result = pd.DataFrame(summary)
 
     st.subheader("Current Market Indicators")
 
-    st.dataframe(result, width=True, hide_index=True)
+    st.dataframe(
+        result,
+        width="stretch",
+        hide_index=True,
+        # freeze the first Symbol column while you horizontally scroll through the other columns.
+        column_config={
+            "Symbol": st.column_config.TextColumn(
+                "Symbol",
+                pinned=True
+            )
+        }
+    )
 
     st.caption(
         "SMA/EMA values are based on completed one-minute bars. "
@@ -478,6 +513,9 @@ def display_market():
 
     st.divider()
 
+    # -------------------------------------------------------------
+    # Individual stock details
+    # -------------------------------------------------------------
     st.subheader("Individual Stock Details")
 
     for symbol in SYMBOLS:
@@ -489,43 +527,170 @@ def display_market():
 
         df = calculate_indicators(df)
 
-        st.markdown(f"### {symbol}")
-
         latest = df.iloc[-1]
 
-        col1, col2, col3 = st.columns(3)
+        # Calculate signal again for this symbol
+        signal = calculate_signal(df)
 
-        col1.metric("Latest Price", f"${latest['close']:,.2f}")
+        st.markdown(f"### {symbol}")
+
+        # ---------------------------------------------------------
+        # Signal metrics
+        # ---------------------------------------------------------
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric(
+            "Signal",
+            signal["signal"]
+        )
 
         col2.metric(
-            "5-minute SMA",
-            f"${latest['SMA_5']:,.2f}" if pd.notna(latest["SMA_5"]) else "Warming up",
+            "Score",
+            signal["score"]
         )
 
         col3.metric(
-            "10-minute SMA",
-            f"${latest['SMA_10']:,.2f}" if pd.notna(latest["SMA_10"]) else "Warming up",
+            "Latest Price",
+            f"${latest['close']:,.2f}"
         )
 
-        chart_data = df.set_index("timestamp")[
-            [
-                "close",
-                "VWAP",
-                "SMA_5",
-                "SMA_10",
-                "EMA_5",
-                "EMA_10",
-            ]
+        col4.metric(
+            "VWAP",
+            f"${latest['VWAP']:,.2f}"
+            if pd.notna(latest["VWAP"])
+            else "N/A"
+        )
+
+        # ---------------------------------------------------------
+        # SMA / EMA metrics
+        # ---------------------------------------------------------
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric(
+            "5-minute SMA",
+            f"${latest['SMA_5']:,.2f}"
+            if pd.notna(latest["SMA_5"])
+            else "Warming up"
+        )
+
+        col2.metric(
+            "10-minute SMA",
+            f"${latest['SMA_10']:,.2f}"
+            if pd.notna(latest["SMA_10"])
+            else "Warming up"
+        )
+
+        col3.metric(
+            "5-minute EMA",
+            f"${latest['EMA_5']:,.2f}"
+            if pd.notna(latest["EMA_5"])
+            else "Warming up"
+        )
+
+        col4.metric(
+            "10-minute EMA",
+            f"${latest['EMA_10']:,.2f}"
+            if pd.notna(latest["EMA_10"])
+            else "Warming up"
+        )
+
+        # ---------------------------------------------------------
+        # Chart
+        # ---------------------------------------------------------
+        # chart_data = df.set_index("timestamp")[
+        #     [
+        #         "close",
+        #         "VWAP",
+        #         "SMA_5",
+        #         "SMA_10",
+        #         "EMA_5",
+        #         "EMA_10",
+        #     ]
+        # ]
+
+        # st.line_chart(
+        #     chart_data,
+        #     height=250
+        # )
+        chart_data = df.tail(60).copy()
+
+        price_columns = [
+            "close",
+            "VWAP",
+            "SMA_5",
+            "SMA_10",
+            "EMA_5",
+            "EMA_10",
         ]
 
-        st.line_chart(chart_data, height=250)
 
+        # Calculate a tight Y-axis range from the displayed data
+        price_min = chart_data[price_columns].min().min()
+        price_max = chart_data[price_columns].max().max()
+
+        price_range = price_max - price_min
+
+        # Add a small margin around the actual prices
+        padding = max(price_range * 0.20, 0.05)
+
+        y_min = price_min - padding
+        y_max = price_max + padding
+
+        plot_data = chart_data[
+            ["timestamp"] + price_columns
+        ].melt(
+            id_vars="timestamp",
+            var_name="Indicator",
+            value_name="Price"
+        )
+
+        chart = (
+            alt.Chart(plot_data)
+            .mark_line()
+            .encode(
+                x=alt.X(
+                    "timestamp:T",
+                    title="Time"
+                ),
+                y=alt.Y(
+                    "Price:Q",
+                    title="Price",
+                    scale=alt.Scale(
+                        domain=[y_min, y_max]
+                    )
+                ),
+                color=alt.Color(
+                    "Indicator:N",
+                    title="Indicator"
+                ),
+                tooltip=[
+                    alt.Tooltip("timestamp:T", title="Time"),
+                    alt.Tooltip("Indicator:N"),
+                    alt.Tooltip("Price:Q", format=".2f"),
+                ],
+            )
+            .properties(
+                height=350
+            )
+        )
+
+        st.altair_chart(
+            chart,
+            width="stretch"
+        )
+
+        # ---------------------------------------------------------
+        # Historical data
+        # ---------------------------------------------------------
         with st.expander(f"{symbol} historical data"):
 
             st.dataframe(
-                df.tail(100).sort_values("timestamp", ascending=False),
-                width=True,
-                hide_index=True,
+                df.tail(100).sort_values(
+                    "timestamp",
+                    ascending=False
+                ),
+                width="stretch",
+                hide_index=True
             )
 
         st.divider()
