@@ -39,14 +39,18 @@ from schwab_trader.orders.utils import (
     get_orders,
 )
 
-# Specified an accout number, instiate a client, the client will fetch the matching account hashValue for later identification
-# From account number (accountNumber) to account hash (hashValue)
+# ========================================================================
+# ⚙️ 🔧 Specified an accout number. The client can match the account hash (hashValue)to the account number (accountNumber).
+# ========================================================================
+
 accountNumber = "29308909"
 
 hashValue = get_hashvalue(client, accountNumber)
 print(hashValue)
+
+
 # ========================================================================
-# Account Summary
+# 📋 💡 Account Summary
 # ========================================================================
 
 response = client.linked_accounts()
@@ -64,21 +68,42 @@ data = response.json()
 print(json.dumps(data, indent=4))
 
 
-# ensure order total are within the buying power limit of the account
-# stream account balance and positions data to make real-time decision on order placement and management
-
 # ========================================================================
-# Place an equity order
+# 📝 Check existing orders
+# ========================================================================
+from_time, to_time = get_utc_time_range(
+    offset=dt.timedelta(days=1, hours=8, minutes=0)
+    )
+
+orders = client.account_orders(
+    hashValue,
+    fromEnteredTime=from_time,
+    toEnteredTime=to_time,
+    # status="EXPIRED",
+    # status="PENDING_ACTIVATION",
+    status="WORKING",
+    # status="FILLED",
+).json()
+
+print(json.dumps(orders, indent=4))
+
+# 💼 Check account holding positions
+account = SchwabAccount(client, hashValue)
+print(account.positions)
+
+
+#  ==============================================================
+# Build an order payload
+# 🚧 TODO: This feature is still under development.
+# ❗ Important: Validate user input.
 
 # Session:
 # NORMAL    Regular hours order
 # AM        Pre-market buy/sell
 # PM        After-hours (4–8 pm ET)
 # SEAMLESS  24/5 overnight continuous
-# ========================================================================
+#  ==============================================================
 
-# create an order configuration dictionary
-# Buy order configurations
 order_payload = build_market_order_payload(
     symbol="THISISADEMO",
     quantity=1,
@@ -90,11 +115,10 @@ order_payload = build_limit_order_payload(
     symbol="THISISADEMO",
     quantity=300,
     limit_price=278.4,
-    instruction="SELL",
+    instruction="SELL", # "BUY" | "SELL"
     session="NORMAL",
     duration="DAY",
 )
-
 
 order_payload = build_oto_limit_order_payload(
     symbol="THISISADEMO",
@@ -119,115 +143,65 @@ order_payload = build_oto_limit_order_payload(
 order_payload = build_trailing_stop_order_payload(
     symbol="THISISADEMO",
     quantity=1,
-    instruction="BUY",  # "BUY" | "SELL"
+    instruction="SELL",  # "BUY" | "SELL"
     stop_price_link_basis="BID",
     stop_price_link_type="PERCENT",  # "VALUE" | "PERCENT" | "TICK"
-    stop_price_offset=2.0,
+    stop_price_offset=0.5,
     session="NORMAL",
     duration="DAY",
 )
 
+#  --------------------------------------------------------------
+#  📌 Specific order case or concrete example
+#  --------------------------------------------------------------
 
-# ========================================================================
-# Check orders
-# ========================================================================
-from_time, to_time = get_utc_time_range(
-    offset=dt.timedelta(days=1, hours=8, minutes=0)
-    )
-
-orders = client.account_orders(
-    hashValue,
-    fromEnteredTime=from_time,
-    toEnteredTime=to_time,
-    # status="EXPIRED",
-    # status="PENDING_ACTIVATION",
-    status="WORKING",
-    # status="FILLED",
-).json()
-
-print(json.dumps(orders, indent=4))
-
-# Check account holding positions
-account = SchwabAccount(client, hashValue)
-print(account.positions)
-
-
-#  ==============================================================
-# submit an order 
-# 🚧 TODO: This feature is still under development.
-# ❗ Important: Validate user input.
-#  ==============================================================
-
-#  Build an 🟢 order payload
+#  An 🟢 order payload
 order_payload = build_limit_order_payload(
     symbol="NBIS",
     quantity=100,
-    limit_price=101.1,
+    limit_price=105.1,
     instruction="BUY", # ❗BUY❗ 
     session="SEAMLESS",
     duration="DAY",
 )
 
-# Submit an 🟢 order
-status, date, order_id = place_order(
-    client=client,
-    accountHash=hashValue,
-    order=order_payload,
-)
-print(status, date, order_id)
-
-#  ==============================================================
-# Build an 🔴 order payload
+# An 🔴 order payload
 order_payload = build_limit_order_payload(
     symbol="NBIS",
     quantity=100,
-    limit_price=107.3,
+    limit_price=104.3,
     instruction="SELL", # ❗SELL❗
     session="SEAMLESS",
     duration="DAY",
 )
 
-# Submit an 🔴 order
-status, date, order_id = place_order(
-    client=client,
-    accountHash=hashValue,
-    order=order_payload,
-)
-print(status, date, order_id)
-
-#  ==============================================================
 # Build an 🟢 --> 🔴 order payload
 order_payload = build_oto_limit_order_payload(
     symbol="NBIS",
     quantity=100,
     instructions=["BUY", "SELL"], # ❗BUY --> SELL❗
-    limit_prices=[104.2, 107.4],
+    limit_prices=[107.2, 112.4],
     # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
     sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
     durations=("DAY", "DAY"),
 )
 
-# Submit an 🟢 --> 🔴 order
-status, date, order_id = place_order(
-    client=client,
-    accountHash=hashValue,
-    order=order_payload,
-)
-print(status, date, order_id)
-
-#  ==============================================================
-# Build an 🔴 --> 🟢 order payload
+# An 🔴 --> 🟢 order payload
 order_payload = build_oto_limit_order_payload(
     symbol="NBIS",
     quantity=100,
     instructions=["SELL", "BUY"], # ❗SELL --> BUY❗
-    limit_prices=[125.2, 115.2],
+    limit_prices=[108.8, 105.3],
     # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
     sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
     durations=("DAY", "DAY"),
 )
 
-# Submit an 🔴 --> 🟢 order
+
+#  ==============================================================
+# ✅📤✈️ submit an order 
+#  ==============================================================
+
 status, date, order_id = place_order(
     client=client,
     accountHash=hashValue,
@@ -240,8 +214,8 @@ order_data = client.order_details(hashValue, order_id)
 print(json.dumps(order_data.json(), indent=4))
 
 #  ==============================================================
-# Cancel an order
-# order_id = "1008684396386" # SELL 100 NBIS @117.4
+# ❌✈️ Cancel an order
+# order_id = "1008730451410"
 status_code, date = cancel_order(
     client=client,
     accountHash=hashValue,
@@ -267,6 +241,18 @@ for order in orders:
     # print(json.dumps(order, indent=4))
     # TypeError: Object of type datetime is not JSON serializable
     pprint.pprint(orders, indent=2, sort_dicts=False)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # ========================================================================
