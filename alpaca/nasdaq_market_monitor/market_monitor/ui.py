@@ -67,6 +67,40 @@ def display_market(
     status_snapshot = status.get()
     idle = _is_idle(status_snapshot)
 
+    # Idle banner – still show the last known data below
+    if idle:
+        # st.warning(
+        #     f"💤 Idle mode – no new bars for more than {IDLE_AFTER_SECONDS}s. "
+        #     "Showing last known data. Full live updates will resume automatically "
+        #     "when the next bar arrives. The WebSocket connection stays open and ready."
+        # )
+        st.markdown(
+            f"""
+            <div style="
+                background: linear-gradient(90deg, #fff3cd 0%, #ffe69c 100%);
+                border: 2px solid #ffc107;
+                border-left: 8px solid #e0a800;
+                border-radius: 8px;
+                padding: 14px 18px;
+                margin: 10px 0 16px 0;
+                font-size: 1.05rem;
+                color: #664d03;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            ">
+                <strong style="font-size: 1.15rem;">💤 IDLE MODE</strong>
+                &nbsp;·&nbsp; No new bars for more than <strong>{IDLE_AFTER_SECONDS}s</strong>.
+                Showing last known data.
+                Live updates will resume automatically when the next bar arrives.
+                <br>
+                <span style="font-size: 0.9rem; opacity: 0.85;">
+                    WebSocket connection remains open and ready.
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # Streaming bar status banner    
     col_a, col_b, col_c = st.columns([2, 2, 3])
 
     with col_a:
@@ -100,16 +134,7 @@ def display_market(
                 f"Bars received this session: {status_snapshot['bars_received']}"
             )
 
-    # ------------------------------------------------------------------
-    # Idle banner – still show the last known data below
-    # ------------------------------------------------------------------
-    if idle:
-        st.warning(
-            f"💤 Idle mode – no new bars for more than {IDLE_AFTER_SECONDS}s. "
-            "Showing last known data. Full live updates will resume automatically "
-            "when the next bar arrives. The WebSocket connection stays open and ready."
-        )
-
+    # Data info banner
     st.info(
         "This dashboard uses IEX exchange data, not the consolidated US market feed."
     )
