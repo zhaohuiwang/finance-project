@@ -456,13 +456,14 @@ def start_market_stream():
             )
 
     def run_retention():
-        """Delete bars older than RETENTION_DAYS every hour."""
+        """Delete bars older than RETENTION_DAYS every hour. `while True:` ensures the block run repeatedly, for as long as the program is running. try/except block ensures no exception termination. """
         while True:
-            time.sleep(60 * 60)  # every 60 minutes
             try:
                 cleanup_old_bars(RETENTION_DAYS)
-            except Exception:
-                logging.exception("Periodic retention cleanup failed")
+            except Exception as e:
+                logging.exception(f"Periodic retention cleanup failed: {e}")
+            
+            time.sleep(60 * 60)  # every 60 minutes
 
     thread = threading.Thread(
         target=run_stream, daemon=True, name="alpaca-market-stream"

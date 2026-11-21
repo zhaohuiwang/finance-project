@@ -1,116 +1,5 @@
-# """Alpaca WebSocket stream and shared status."""
 
-# import logging
-# import threading
-# import time
-# from datetime import datetime, timezone
-
-# import streamlit as st
-# from alpaca.data.enums import DataFeed
-# from alpaca.data.live import StockDataStream
-
-# from .config import API_KEY, API_SECRET, SYMBOLS, RETENTION_DAYS
-# from .db import get_db
-
-# logger = logging.getLogger(__name__)
-
-# # Shared status visible to both the WebSocket thread and the UI
-# _status = {
-#     "last_bar_time": None,
-#     "last_error": None,
-#     "last_error_time": None,
-#     "bars_received": 0,
-# }
-# _status_lock = threading.Lock()
-# _stream_thread: threading.Thread | None = None
-
-
-# def update_status(*, increment_bars: bool = False, **kwargs):
-#     with _status_lock:
-#         if increment_bars:
-#             _status["bars_received"] += 1
-#         _status.update(kwargs)
-
-
-# def get_status() -> dict:
-#     with _status_lock:
-#         return dict(_status)
-
-
-# def stream_is_alive() -> bool:
-#     return _stream_thread is not None and _stream_thread.is_alive()
-
-
-# async def _handle_bar(bar):
-#     """Handles both original bars and updated bars."""
-#     try:
-#         get_db.save_bar(bar)
-#         update_status(
-#             last_bar_time=bar.timestamp.astimezone(timezone.utc),
-#             last_error=None,
-#             increment_bars=True,
-#         )
-#     except Exception as e:
-#         logger.exception("Error saving/updating market bar")
-#         update_status(
-#             last_error=str(e),
-#             last_error_time=datetime.now(timezone.utc),
-#         )
-
-
-# @st.cache_resource
-# def start_market_stream():
-#     """
-#     Start one persistent WebSocket connection.
-#     Streamlit reruns will reuse this connection.
-#     """
-#     global _stream_thread
-
-#     if not API_KEY or not API_SECRET:
-#         raise RuntimeError("Missing Alpaca API credentials")
-
-#     get_db.initialize_database()
-#     get_db.cleanup_old_bars(RETENTION_DAYS)
-
-#     stream = StockDataStream(API_KEY, API_SECRET, feed=DataFeed.IEX)
-
-#     # Both original and updated bars go through the same handler
-#     stream.subscribe_bars(_handle_bar, *SYMBOLS)
-#     stream.subscribe_updated_bars(_handle_bar, *SYMBOLS)
-
-#     def run_stream():
-#         try:
-#             logger.info("Starting Alpaca WebSocket...")
-#             stream.run()
-#         except Exception as e:
-#             logger.exception("Market stream stopped unexpectedly")
-#             update_status(
-#                 last_error=str(e),
-#                 last_error_time=datetime.now(timezone.utc),
-#             )
-
-#     def run_retention():
-#         while True:
-#             time.sleep(60 * 60)
-#             try:
-#                 get_db.cleanup_old_bars(RETENTION_DAYS)
-#             except Exception:
-#                 logger.exception("Periodic retention cleanup failed")
-
-#     _stream_thread = threading.Thread(
-#         target=run_stream, daemon=True, name="alpaca-market-stream"
-#     )
-#     _stream_thread.start()
-
-#     retention_thread = threading.Thread(
-#         target=run_retention, daemon=True, name="retention-cleanup"
-#     )
-#     retention_thread.start()
-
-#     return stream
-
-
-"""Alpaca WebSocket stream and shared status (class-based)."""
+"""Alpaca WebSocket stream and shared status."""
 
 from __future__ import annotations
 
@@ -236,12 +125,14 @@ class MarketStream:
                 )
 
         def run_retention():
+            """Delete bars older than RETENTION_DAYS every hour. `while True:` ensures the block run repeatedly, for as long as the program is running. try/except block ensures no exception termination. """
             while True:
-                time.sleep(60 * 60)  # every hour
                 try:
                     db.cleanup_old_bars(RETENTION_DAYS)
-                except Exception:
-                    logger.exception("Periodic retention cleanup failed")
+                except Exception as e:
+                    logger.exception(f"Periodic retention cleanup failed: {e}")
+
+                time.sleep(60 * 60)  # every hour
 
         self._stream_thread = threading.Thread(
             target=run_stream,

@@ -157,9 +157,10 @@ order_payload = build_trailing_stop_order_payload(
 
 #  An 🟢 order payload
 order_payload = build_limit_order_payload(
-    symbol="NBIS",
-    quantity=100,
-    limit_price=105.1,
+    # symbol="NBIS",
+    symbol="SNDK",
+    quantity=200,
+    limit_price=40.3,
     instruction="BUY", # ❗BUY❗ 
     session="SEAMLESS",
     duration="DAY",
@@ -167,9 +168,10 @@ order_payload = build_limit_order_payload(
 
 # An 🔴 order payload
 order_payload = build_limit_order_payload(
-    symbol="NBIS",
+    # symbol="NBIS",
+    symbol="SNDK",
     quantity=100,
-    limit_price=104.3,
+    limit_price=86.3,
     instruction="SELL", # ❗SELL❗
     session="SEAMLESS",
     duration="DAY",
@@ -177,10 +179,10 @@ order_payload = build_limit_order_payload(
 
 # Build an 🟢 --> 🔴 order payload
 order_payload = build_oto_limit_order_payload(
-    symbol="NBIS",
+    symbol="SNDK",
     quantity=100,
     instructions=["BUY", "SELL"], # ❗BUY --> SELL❗
-    limit_prices=[107.2, 112.4],
+    limit_prices=[82.2, 84.4],
     # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
     sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
     durations=("DAY", "DAY"),
@@ -191,7 +193,7 @@ order_payload = build_oto_limit_order_payload(
     symbol="NBIS",
     quantity=100,
     instructions=["SELL", "BUY"], # ❗SELL --> BUY❗
-    limit_prices=[108.8, 105.3],
+    limit_prices=[98.8, 92.3],
     # sessions=("NORMAL", "NORMAL"), # 9:30 AM-4:00 PM ET
     sessions=("SEAMLESS", "SEAMLESS"),  # 7:00 AM-8:00 PM ET
     durations=("DAY", "DAY"),
@@ -215,7 +217,7 @@ print(json.dumps(order_data.json(), indent=4))
 
 #  ==============================================================
 # ❌✈️ Cancel an order
-# order_id = "1008730451410"
+# order_id = "1008751626391"
 status_code, date = cancel_order(
     client=client,
     accountHash=hashValue,
