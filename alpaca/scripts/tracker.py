@@ -9,8 +9,8 @@ This application:
     Refreshes the dashboard every two seconds.
 
 SMA:    Simple Moving Average (arithmetic mean).
-EMA:    Simple Moving Average (weighted arithmetic mean).
-VWAP:   Volume-Weighted Average Price (volume-weighted arithmetic mean). 
+EMA:    Exponential Moving Average (weighted arithmetic mean).
+VWAP:   Volume-Weighted Average Price (volume-weighted arithmetic mean).
 
 Run the application:
 streamlit run scripts/tracker.py
@@ -22,6 +22,7 @@ import os
 import sqlite3
 import threading
 import logging
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -39,16 +40,17 @@ from alpaca.data.live import StockDataStream
 # ============================================================
 
 SYMBOLS = [
-    "QQQ", # ← this is the Nasdaq-100 proxy
+    "QQQ",  # ← Nasdaq 100 Index ETF (QQQ)
     "AAPL",
     "INTC",
     "NBIS",
     "NVDA",
+    "SNDK",
 ]
 
 DATABASE = Path("outputs/market_data.db")
 PERIODS = [5, 10, 15, 30, 60]
-RETENTION_DAYS = 7                    # keep only this many calendar days
+RETENTION_DAYS = 7  # keep only this many calendar days
 EASTERN = ZoneInfo("America/New_York")
 
 DATABASE.parent.mkdir(parents=True, exist_ok=True)
@@ -67,11 +69,12 @@ if not API_KEY or not API_SECRET:
 
 # Shared status visible to both the WebSocket thread and the UI
 _status = {
-    "last_bar_time": None,       # UTC datetime of most recent bar
-    "last_error": None,          # last exception message
+    "last_bar_time": None,  # UTC datetime of most recent bar
+    "last_error": None,  # last exception message
     "last_error_time": None,
     "bars_received": 0,
 }
+# Only one thread at a time executes a particular section of code.
 _status_lock = threading.Lock()
 
 
@@ -133,7 +136,9 @@ def cleanup_old_bars(days: int = RETENTION_DAYS):
         )
         deleted = cur.rowcount
     if deleted:
-        logging.info("Retention cleanup: removed %s old bars (older than %s days)", deleted, days)
+        logging.info(
+            "Retention cleanup: removed %s old bars (older than %s days)", deleted, days
+        )
     return deleted
 
 
@@ -178,9 +183,24 @@ def save_bar(bar):
     # Update shared status
     update_status(
         last_bar_time=bar.timestamp.astimezone(timezone.utc),
-        bars_received=_status["bars_received"] + 1,
         last_error=None,
     )
+
+    with _status_lock:
+        _status["bars_received"] += 1
+
+    # Note: `bars_received=_status["bars_received"] + 1,` Do not simply put this statement inside the update_status(). It can lose increments under concurrent bar arrivals, as _status["bars_received"] read outside the lock. You start a dedicated background thread:
+    # stream = StockDataStream(API_KEY, API_SECRET, feed=DataFeed.IEX)
+    # stream.subscribe_bars(handle_bar, *SYMBOLS)
+    # stream.subscribe_updated_bars(handle_updated_bar, *SYMBOLS)
+    # stream.run() # --->>>  as in  def run_stream():
+    # thread = threading.Thread(target=run_stream, daemon=True, name="alpaca-market-stream")
+    # Inside that thread the Alpaca StockDataStream receives messages and calls your handlers:
+    # async def handle_bar(bar): ...
+    # async def handle_updated_bar(bar): ...
+    # Those handlers both call save_bar → update_status(...). Even though the handlers are marked async, the underlying WebSocket library can deliver multiple bars (or an original bar + an updated bar) in rapid succession. When that happens, two (or more) calls to save_bar can be in flight at the same time and both try to do:
+    # bars_received = _status["bars_received"] + 1
+    # Because the read happens before the lock is acquired, both can see the same value, both compute the same new value, and one of the increments is lost.That’s the classic “lost update” race.
 
 
 def get_bars(symbol, limit=500):
@@ -235,9 +255,7 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # Cumulative volume and cumulative (typical_price * volume) within each session day
     df["_cum_vol"] = df.groupby("_session_date")["volume"].cumsum()
     df["_cum_tp_vol"] = (
-        (typical_price * df["volume"])
-        .groupby(df["_session_date"])
-        .cumsum()
+        (typical_price * df["volume"]).groupby(df["_session_date"]).cumsum()
     )
 
     df["VWAP"] = df["_cum_tp_vol"] / df["_cum_vol"]
@@ -381,7 +399,9 @@ def calculate_signal(df: pd.DataFrame) -> dict:
 # ALPACA WEBSOCKET
 # ============================================================
 
+
 async def handle_bar(bar):
+    """Normal miniute bar which is subject to change or update, containing symbol, open, high, low, close, volume, and timestamp."""
     try:
         save_bar(bar)
     except Exception as e:
@@ -393,7 +413,7 @@ async def handle_bar(bar):
 
 
 async def handle_updated_bar(bar):
-    """Alpaca sends updated bars when late trades change a previously emitted minute bar."""
+    """Alpaca sends updated bars when late trades change a previously emitted minute bar. Alpaca's SDK internally treats these as separate WebSocket message types: 'bars' versus 'updatedBars'"""
     try:
         save_bar(bar)
     except Exception as e:
@@ -404,6 +424,9 @@ async def handle_updated_bar(bar):
         )
 
 
+# Note: You can collapse the above two functions as they have the idential logic here. Keeping two separate functions is only useful if you later want different logic (logging, metrics, etc.) for original vs. updated bars.
+
+
 @st.cache_resource
 def start_market_stream():
     """
@@ -411,11 +434,14 @@ def start_market_stream():
     Streamlit reruns will reuse this connection.
     """
     initialize_database()
-    cleanup_old_bars(RETENTION_DAYS)          # run retention on startup
+    cleanup_old_bars(RETENTION_DAYS)  # run retention on startup
 
     stream = StockDataStream(API_KEY, API_SECRET, feed=DataFeed.IEX)
 
+    # Receive the normal minute bars
     stream.subscribe_bars(handle_bar, *SYMBOLS)
+
+    # Receive updates/corrections to previously emitted minute bars
     stream.subscribe_updated_bars(handle_updated_bar, *SYMBOLS)
 
     def run_stream():
@@ -429,13 +455,26 @@ def start_market_stream():
                 last_error_time=datetime.now(timezone.utc),
             )
 
+    def run_retention():
+        """Delete bars older than RETENTION_DAYS every hour."""
+        while True:
+            time.sleep(60 * 60)  # every 60 minutes
+            try:
+                cleanup_old_bars(RETENTION_DAYS)
+            except Exception:
+                logging.exception("Periodic retention cleanup failed")
+
     thread = threading.Thread(
         target=run_stream, daemon=True, name="alpaca-market-stream"
     )
     thread.start()
 
-    return stream, thread
+    retention_thread = threading.Thread(
+        target=run_retention, daemon=True, name="retention-cleanup"
+    )
+    retention_thread.start()
 
+    return stream, thread
 
 
 # ============================================================
@@ -473,7 +512,9 @@ def display_market():
         else:
             st.caption(f"Bars received this session: {status['bars_received']}")
 
-    st.info("This dashboard uses IEX exchange data, not the consolidated US market feed.")
+    st.info(
+        "This dashboard uses IEX exchange data, not the consolidated US market feed."
+    )
 
     # ---- Summary table and individual stock details ----
     summary = []
@@ -497,28 +538,49 @@ def display_market():
             "EMA Alignment": signal["ema_alignment"],
             "Crossover": signal["crossover"],
             "Bars": signal["bars"],
-            "Last Bar (UTC)": latest["timestamp"],
+            "Last Bar (EST)": latest["timestamp"].tz_convert(EASTERN),
         }
 
+        # Combine SMA + EMA into a single cell per period
         for period in PERIODS:
-            row[f"SMA {period}m"] = latest[f"SMA_{period}"]
-            row[f"EMA {period}m"] = latest[f"EMA_{period}"]
+            sma = latest.get(f"SMA_{period}")
+            ema = latest.get(f"EMA_{period}")
+
+            if pd.notna(sma) and pd.notna(ema):
+                row[f"{period}m"] = f"{sma:,.2f} / {ema:,.2f}"
+            elif pd.notna(sma):
+                row[f"{period}m"] = f"{sma:,.2f} / —"
+            elif pd.notna(ema):
+                row[f"{period}m"] = f"— / {ema:,.2f}"
+            else:
+                row[f"{period}m"] = "warming up"
+        # If separate cells
+        #     for period in PERIODS:
+        #         row[f"SMA {period}m"] = latest[f"SMA_{period}"]
+        #         row[f"EMA {period}m"] = latest[f"EMA_{period}"]
 
         summary.append(row)
 
     if not summary:
-        st.warning("Waiting for market data. Indicators will appear as bars accumulate.")
+        st.warning(
+            "Waiting for market data. Indicators will appear as bars accumulate."
+        )
         return
 
     result = pd.DataFrame(summary)
 
     preferred_order = [
-        "Symbol", "Last Price", "Signal", "Score", "VWAP",
-        "Price vs VWAP", "EMA Alignment", "Crossover", "Bars", "Last Bar (UTC)",
-    ] + [c for c in result.columns if c not in {
-        "Symbol", "Last Price", "Signal", "Score", "VWAP",
-        "Price vs VWAP", "EMA Alignment", "Crossover", "Bars", "Last Bar (UTC)"
-    }]
+        "Symbol",
+        "Last Price",
+        "Signal",
+        "Score",
+        "VWAP",
+        "Price vs VWAP",
+        "EMA Alignment",
+        "Crossover",
+        "Bars",
+        "Last Bar (EST)",
+    ] + [f"{p}m" for p in PERIODS]
 
     result = result[[c for c in preferred_order if c in result.columns]]
 
@@ -540,22 +602,31 @@ def display_market():
 
     st.dataframe(
         styled,
-        width="stretch",
+        width="stretch",  # makes the whole table use the available page width
         hide_index=True,
         column_config={
-            "Symbol": st.column_config.TextColumn("Symbol", pinned=True, width="small"),
-            "Last Price": st.column_config.NumberColumn("Last Price", format="$%.2f"),
-            "VWAP": st.column_config.NumberColumn("VWAP", format="$%.2f"),
+            "Symbol": st.column_config.TextColumn(
+                "Symbol",
+                pinned=True,  # stay even when you move the slide bar
+                # width="small" # config individual column widths
+            ),
+            "Last Price": st.column_config.NumberColumn("Last Price", format="%.2f"),
+            "VWAP": st.column_config.NumberColumn("VWAP", format="%.2f"),
             "Score": st.column_config.NumberColumn("Score", format="%d"),
             "Bars": st.column_config.NumberColumn("Bars", format="%d"),
-            "Last Bar (UTC)": st.column_config.DatetimeColumn("Last Bar (UTC)", format="HH:mm:ss"),
-            **{f"SMA {p}m": st.column_config.NumberColumn(f"SMA {p}m", format="$%.2f") for p in PERIODS},
-            **{f"EMA {p}m": st.column_config.NumberColumn(f"EMA {p}m", format="$%.2f") for p in PERIODS},
+            "Last Bar (EST)": st.column_config.DatetimeColumn(
+                "Last Bar (EST)",
+                format="HH:mm:ss",
+            ),
+            **{
+                f"{p}m": st.column_config.TextColumn(f"{p}m\nSMA | EMA")
+                for p in PERIODS
+            },
         },
     )
 
     st.caption(
-        "SMA/EMA values are based on completed one-minute bars. "
+        "All prices are in USD ($). SMA/EMA values are based on completed one-minute bars. "
         "Session VWAP resets at the start of each calendar day (US/Eastern). "
         "The dashboard refreshes every two seconds; new bars normally arrive once per minute."
     )
@@ -579,21 +650,40 @@ def display_market():
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Signal", signal["signal"])
         col2.metric("Score", signal["score"] if signal["score"] is not None else "—")
-        col3.metric("Latest Price", f"${latest['close']:,.2f}")
+        col3.metric("Latest Price", f"{latest['close']:,.2f}")
         col4.metric(
             "Session VWAP",
-            f"${latest['VWAP']:,.2f}" if pd.notna(latest["VWAP"]) else "N/A",
+            f"{latest['VWAP']:,.2f}" if pd.notna(latest["VWAP"]) else "N/A",
         )
 
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("5-minute SMA", f"${latest['SMA_5']:,.2f}" if pd.notna(latest["SMA_5"]) else "Warming up")
-        col2.metric("10-minute SMA", f"${latest['SMA_10']:,.2f}" if pd.notna(latest["SMA_10"]) else "Warming up")
-        col3.metric("5-minute EMA", f"${latest['EMA_5']:,.2f}" if pd.notna(latest["EMA_5"]) else "Warming up")
-        col4.metric("10-minute EMA", f"${latest['EMA_10']:,.2f}" if pd.notna(latest["EMA_10"]) else "Warming up")
+        col1.metric(
+            "5-minute SMA",
+            f"{latest['SMA_5']:,.2f}" if pd.notna(latest["SMA_5"]) else "Warming up",
+        )
+        col2.metric(
+            "10-minute SMA",
+            f"{latest['SMA_10']:,.2f}" if pd.notna(latest["SMA_10"]) else "Warming up",
+        )
+        col3.metric(
+            "5-minute EMA",
+            f"{latest['EMA_5']:,.2f}" if pd.notna(latest["EMA_5"]) else "Warming up",
+        )
+        col4.metric(
+            "10-minute EMA",
+            f"{latest['EMA_10']:,.2f}" if pd.notna(latest["EMA_10"]) else "Warming up",
+        )
 
         # Chart
         chart_data = df.tail(60).copy()
-        price_columns = ["close", "VWAP", "SMA_5", "SMA_10", "EMA_5", "EMA_10"]
+        price_columns = [
+            "close",
+            "VWAP",
+            # "SMA_5",
+            # "SMA_10",
+            "EMA_5",
+            "EMA_10",
+        ]
         available = [c for c in price_columns if c in chart_data.columns]
 
         price_min = chart_data[available].min().min()
@@ -612,7 +702,9 @@ def display_market():
             .mark_line()
             .encode(
                 x=alt.X("timestamp:T", title="Time"),
-                y=alt.Y("Price:Q", title="Price", scale=alt.Scale(domain=[y_min, y_max])),
+                y=alt.Y(
+                    "Price:Q", title="Price", scale=alt.Scale(domain=[y_min, y_max])
+                ),
                 color=alt.Color("Indicator:N", title="Indicator"),
                 tooltip=[
                     alt.Tooltip("timestamp:T", title="Time"),
