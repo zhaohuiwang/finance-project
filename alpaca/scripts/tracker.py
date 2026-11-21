@@ -4,7 +4,7 @@ This application:
     Subscribes to one-minute bars.
     Processes updated bars.
     Calculates SMA and EMA.
-    Stores bars in SQLite (with retention).
+    Stores equity bars in one SQLite DB and VIX bars in a separate DB.
     Displays the latest prices and indicators.
     Refreshes the dashboard every two seconds.
 
@@ -12,8 +12,8 @@ SMA:    Simple Moving Average (arithmetic mean).
 EMA:    Exponential Moving Average (weighted arithmetic mean).
 VWAP:   Volume-Weighted Average Price (volume-weighted arithmetic mean).
 
-Run the application:
-streamlit run scripts/tracker.py
+Run:
+    streamlit run scripts/tracker.py
 
 http://localhost:8501
 """
@@ -48,12 +48,19 @@ SYMBOLS = [
     "SNDK",
 ]
 
-DATABASE = Path("outputs/market_data.db")
+VIX_SYMBOL = "VIXY"  # VIX proxy (Alpaca has no true VIX data)
 PERIODS = [5, 10, 15, 30, 60]
-RETENTION_DAYS = 7  # keep only this many calendar days
+
+RETENTION_DAYS = 7  # equity bars
+VIX_RETENTION_DAYS = 60  # longer history for VIX
+
 EASTERN = ZoneInfo("America/New_York")
 
+DATABASE = Path("outputs/market_data.db")  # equity
+VIX_DATABASE = Path("outputs/vix_data.db")  # VIX only
+
 DATABASE.parent.mkdir(parents=True, exist_ok=True)
+VIX_DATABASE.parent.mkdir(parents=True, exist_ok=True)
 
 load_dotenv()
 
@@ -67,7 +74,7 @@ if not API_KEY or not API_SECRET:
     st.stop()
 
 
-# Shared status visible to both the WebSocket thread and the UI
+# Shared status
 _status = {
     "last_bar_time": None,  # UTC datetime of most recent bar
     "last_error": None,  # last exception message
@@ -78,8 +85,10 @@ _status = {
 _status_lock = threading.Lock()
 
 
-def update_status(**kwargs):
+def update_status(*, increment_bars: bool = False, **kwargs):
     with _status_lock:
+        if increment_bars:
+            _status["bars_received"] += 1
         _status.update(kwargs)
 
 
@@ -89,22 +98,19 @@ def get_status():
 
 
 # ============================================================
-# DATABASE
+# DATABASE HELPERS
 # ============================================================
 
 
-def get_connection():
-    """
-    WAL mode is particularly useful here because the dashboard is
-    continuously reading while the WebSocket is writing.
-    """
-    conn = sqlite3.connect(DATABASE, timeout=15, check_same_thread=False)
+def get_connection(db_path: Path):
+    """WAL mode is particularly useful here because the dashboard is continuously reading while the WebSocket is writing."""
+    conn = sqlite3.connect(db_path, timeout=15, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
-def initialize_database():
-    with get_connection() as conn:
+def initialize_database(db_path: Path):
+    with get_connection(db_path) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS market_bars (
                 symbol TEXT NOT NULL,
@@ -119,17 +125,16 @@ def initialize_database():
                 PRIMARY KEY (symbol, timestamp)
             )
         """)
-
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_market_symbol_time
             ON market_bars(symbol, timestamp)
         """)
 
 
-def cleanup_old_bars(days: int = RETENTION_DAYS):
+def cleanup_old_bars(db_path: Path, days: int):
     """Delete bars older than `days` calendar days (UTC)."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    with get_connection() as conn:
+    with get_connection(db_path) as conn:
         cur = conn.execute(
             "DELETE FROM market_bars WHERE timestamp < ?",
             (cutoff,),
@@ -137,19 +142,21 @@ def cleanup_old_bars(days: int = RETENTION_DAYS):
         deleted = cur.rowcount
     if deleted:
         logging.info(
-            "Retention cleanup: removed %s old bars (older than %s days)", deleted, days
+            "Retention cleanup (%s): removed %s old bars (>%s days)",
+            db_path.name,
+            deleted,
+            days,
         )
     return deleted
 
 
-def save_bar(bar):
+def save_bar(bar, db_path: Path):
     """Insert or update a one-minute bar."""
     timestamp = bar.timestamp.astimezone(timezone.utc).isoformat()
-
     trade_count = int(bar.trade_count) if bar.trade_count is not None else None
     vwap = float(bar.vwap) if bar.vwap is not None else None
 
-    with get_connection() as conn:
+    with get_connection(db_path) as conn:
         conn.execute(
             """
             INSERT INTO market_bars (
@@ -188,7 +195,6 @@ def save_bar(bar):
 
     with _status_lock:
         _status["bars_received"] += 1
-
     # Note: `bars_received=_status["bars_received"] + 1,` Do not simply put this statement inside the update_status(). It can lose increments under concurrent bar arrivals, as _status["bars_received"] read outside the lock. You start a dedicated background thread:
     # stream = StockDataStream(API_KEY, API_SECRET, feed=DataFeed.IEX)
     # stream.subscribe_bars(handle_bar, *SYMBOLS)
@@ -203,8 +209,8 @@ def save_bar(bar):
     # Because the read happens before the lock is acquired, both can see the same value, both compute the same new value, and one of the increments is lost.That’s the classic “lost update” race.
 
 
-def get_bars(symbol, limit=500):
-    with get_connection() as conn:
+def get_bars(symbol: str, db_path: Path, limit: int = 500) -> pd.DataFrame:
+    with get_connection(db_path) as conn:
         df = pd.read_sql_query(
             """
             SELECT *
@@ -225,8 +231,26 @@ def get_bars(symbol, limit=500):
     return df
 
 
+def get_daily_closes(symbol: str, db_path: Path, days: int) -> pd.DataFrame:
+    """Last close of each calendar day (US/Eastern)."""
+    df = get_bars(symbol, db_path, limit=days * 450)
+    if df.empty:
+        return pd.DataFrame(columns=["date", "close"])
+
+    eastern = df["timestamp"].dt.tz_convert(EASTERN)
+    df = df.copy()
+    df["date"] = eastern.dt.date
+
+    daily = (
+        df.sort_values("timestamp")
+        .groupby("date", as_index=False)
+        .last()[["date", "close"]]
+    )
+    return daily.tail(days).reset_index(drop=True)
+
+
 # ============================================================
-# MOVING AVERAGE + SESSION VWAP CALCULATIONS
+# INDICATORS + SIGNALS
 # ============================================================
 
 
@@ -245,47 +269,38 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
             df["close"].ewm(span=period, adjust=False, min_periods=period).mean()
         )
 
-    # ----------- Session VWAP (resets each calendar day in US/Eastern) -----------
+    # --- Session VWAP (resets each calendar day in US/Eastern) ----
     # Convert to Eastern so the daily boundary matches the regular trading session
     eastern_ts = df["timestamp"].dt.tz_convert(EASTERN)
     df["_session_date"] = eastern_ts.dt.date
 
     typical_price = (df["high"] + df["low"] + df["close"]) / 3.0
-
     # Cumulative volume and cumulative (typical_price * volume) within each session day
     df["_cum_vol"] = df.groupby("_session_date")["volume"].cumsum()
     df["_cum_tp_vol"] = (
         (typical_price * df["volume"]).groupby(df["_session_date"]).cumsum()
     )
-
     df["VWAP"] = df["_cum_tp_vol"] / df["_cum_vol"]
-
     # Clean up helper columns
     df = df.drop(columns=["_session_date", "_cum_vol", "_cum_tp_vol"])
-
     return df
 
 
 # ============================================================
 # SIGNAL CALCULATIONS
 # ============================================================
-
-
 def calculate_signal(df: pd.DataFrame) -> dict:
     """
-    Calculate a simple bullish / neutral / bearish signal.
-
+    Calculate a simple bullish / neutral / bearish signa
     Components:
         1. Price vs. session VWAP
         2. EMA 5 vs. EMA 10
         3. EMA 10 vs. EMA 30
-
     Score:
         +3 to +2  -> BULLISH
         +1 to -1  -> NEUTRAL
         -2 to -3  -> BEARISH
     """
-
     n = len(df)
     if df.empty:
         return {
@@ -305,7 +320,6 @@ def calculate_signal(df: pd.DataFrame) -> dict:
 
     price = latest["close"]
     vwap = latest.get("VWAP")
-
     ema5 = latest.get("EMA_5")
     ema10 = latest.get("EMA_10")
     ema30 = latest.get("EMA_30")
@@ -316,7 +330,6 @@ def calculate_signal(df: pd.DataFrame) -> dict:
     ema_alignment = "WARMING UP"
     crossover = "NONE"
     warmup = n < 30
-
     # 1. Price vs Session VWAP
     if pd.notna(vwap) and vwap != 0:
         price_vwap_pct = (price - vwap) / vwap * 100.0
@@ -328,14 +341,12 @@ def calculate_signal(df: pd.DataFrame) -> dict:
             price_vs_vwap = "BELOW"
         else:
             price_vs_vwap = "NEAR"
-
     # 2. EMA Alignment (only when enough history)
     if n >= 30 and pd.notna(ema5) and pd.notna(ema10) and pd.notna(ema30):
         if ema5 > ema10:
             score += 1
         elif ema5 < ema10:
             score -= 1
-
         if ema10 > ema30:
             score += 1
         elif ema10 < ema30:
@@ -395,6 +406,57 @@ def calculate_signal(df: pd.DataFrame) -> dict:
     }
 
 
+def calculate_vix_signal(daily_vix: pd.DataFrame) -> dict:
+    """Simple VIX regime from daily closes."""
+    if daily_vix.empty or len(daily_vix) < 3:
+        return {
+            "signal": "NO DATA",
+            "level": None,
+            "latest": None,
+            "change_3d_pct": None,
+            "vs_mean": None,
+            "days": len(daily_vix),
+        }
+
+    closes = daily_vix["close"].astype(float)
+    latest = float(closes.iloc[-1])
+    mean = float(closes.mean())
+    change_3d = (
+        (latest / float(closes.iloc[-3]) - 1.0) * 100.0 if len(closes) >= 3 else None
+    )
+
+    # Level classification
+    if latest < 15:
+        level = "LOW"
+    elif latest < 25:
+        level = "NORMAL"
+    elif latest < 35:
+        level = "ELEVATED"
+    else:
+        level = "HIGH"
+
+    # Simple composite signal
+    if level in ("HIGH", "ELEVATED") and change_3d is not None and change_3d > 5:
+        signal = "RISING FEAR"
+    elif level == "HIGH":
+        signal = "HIGH VOL"
+    elif level == "LOW" and change_3d is not None and change_3d < -5:
+        signal = "COMPLACENCY"
+    elif level == "LOW":
+        signal = "LOW VOL"
+    else:
+        signal = "NEUTRAL VOL"
+
+    return {
+        "signal": signal,
+        "level": level,
+        "latest": latest,
+        "change_3d_pct": change_3d,
+        "vs_mean": (latest / mean - 1.0) * 100.0,
+        "days": len(daily_vix),
+    }
+
+
 # ============================================================
 # ALPACA WEBSOCKET
 # ============================================================
@@ -403,7 +465,10 @@ def calculate_signal(df: pd.DataFrame) -> dict:
 async def handle_bar(bar):
     """Normal miniute bar which is subject to change or update, containing symbol, open, high, low, close, volume, and timestamp."""
     try:
-        save_bar(bar)
+        if bar.symbol == VIX_SYMBOL:
+            save_bar(bar, VIX_DATABASE)
+        else:
+            save_bar(bar, DATABASE)
     except Exception as e:
         logging.exception("Error saving market bar")
         update_status(
@@ -429,20 +494,17 @@ async def handle_updated_bar(bar):
 
 @st.cache_resource
 def start_market_stream():
-    """
-    Start one persistent WebSocket connection.
-    Streamlit reruns will reuse this connection.
-    """
-    initialize_database()
-    cleanup_old_bars(RETENTION_DAYS)  # run retention on startup
+    """Start one persistent WebSocket connection. Streamlit reruns will reuse this connection."""
+    initialize_database(DATABASE)
+    initialize_database(VIX_DATABASE)
+    cleanup_old_bars(DATABASE, RETENTION_DAYS)
+    cleanup_old_bars(VIX_DATABASE, VIX_RETENTION_DAYS)
 
     stream = StockDataStream(API_KEY, API_SECRET, feed=DataFeed.IEX)
 
-    # Receive the normal minute bars
-    stream.subscribe_bars(handle_bar, *SYMBOLS)
-
-    # Receive updates/corrections to previously emitted minute bars
-    stream.subscribe_updated_bars(handle_updated_bar, *SYMBOLS)
+    all_symbols = SYMBOLS + [VIX_SYMBOL]
+    stream.subscribe_bars(handle_bar, *all_symbols)
+    stream.subscribe_updated_bars(handle_bar, *all_symbols)
 
     def run_stream():
         try:
@@ -456,13 +518,13 @@ def start_market_stream():
             )
 
     def run_retention():
-        """Delete bars older than RETENTION_DAYS every hour. `while True:` ensures the block run repeatedly, for as long as the program is running. try/except block ensures no exception termination. """
+        """Delete bars older than RETENTION_DAYS every hour. `while True:` ensures the block run repeatedly, for as long as the program is running. try/except block ensures no exception termination."""
         while True:
             try:
-                cleanup_old_bars(RETENTION_DAYS)
-            except Exception as e:
-                logging.exception(f"Periodic retention cleanup failed: {e}")
-            
+                cleanup_old_bars(DATABASE, RETENTION_DAYS)
+                cleanup_old_bars(VIX_DATABASE, VIX_RETENTION_DAYS)
+            except Exception:
+                logging.exception("Periodic retention cleanup failed")
             time.sleep(60 * 60)  # every 60 minutes
 
     thread = threading.Thread(
@@ -481,9 +543,10 @@ def start_market_stream():
 # ============================================================
 # LIVE DISPLAY
 # ============================================================
+
+
 @st.fragment(run_every=timedelta(seconds=2))
 def display_market():
-
     # ---- Status bar ----
     status = get_status()
     col_a, col_b, col_c = st.columns([2, 2, 3])
@@ -517,11 +580,37 @@ def display_market():
         "This dashboard uses IEX exchange data, not the consolidated US market feed."
     )
 
-    # ---- Summary table and individual stock details ----
-    summary = []
+    # ---- VIX Regime ----
+    vix_daily = get_daily_closes(VIX_SYMBOL, VIX_DATABASE, VIX_RETENTION_DAYS)
+    vix_signal = calculate_vix_signal(vix_daily)
 
+    st.subheader("VIX Regime (via VIXY)")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Signal", vix_signal["signal"])
+    c2.metric("Latest", f"{vix_signal['latest']:.2f}" if vix_signal["latest"] else "—")
+    c3.metric(
+        "3-day Δ",
+        (
+            f"{vix_signal['change_3d_pct']:+.1f}%"
+            if vix_signal["change_3d_pct"] is not None
+            else "—"
+        ),
+    )
+    c4.metric(
+        "vs mean",
+        f"{vix_signal['vs_mean']:+.1f}%" if vix_signal["vs_mean"] is not None else "—",
+    )
+    if not vix_daily.empty:
+        st.caption(
+            f"Based on last {vix_signal['days']} daily closes · Retention: {VIX_RETENTION_DAYS} days"
+        )
+
+    st.divider()
+
+    # ---- Equity summary table ----
+    summary = []
     for symbol in SYMBOLS:
-        df = get_bars(symbol)
+        df = get_bars(symbol, DATABASE)
         if df.empty:
             continue
 
@@ -546,7 +635,6 @@ def display_market():
         for period in PERIODS:
             sma = latest.get(f"SMA_{period}")
             ema = latest.get(f"EMA_{period}")
-
             if pd.notna(sma) and pd.notna(ema):
                 row[f"{period}m"] = f"{sma:,.2f} / {ema:,.2f}"
             elif pd.notna(sma):
@@ -556,9 +644,9 @@ def display_market():
             else:
                 row[f"{period}m"] = "warming up"
         # If separate cells
-        #     for period in PERIODS:
-        #         row[f"SMA {period}m"] = latest[f"SMA_{period}"]
-        #         row[f"EMA {period}m"] = latest[f"EMA_{period}"]
+        # for period in PERIODS:
+        #     row[f"SMA {period}m"] = latest[f"SMA_{period}"]
+        #     row[f"EMA {period}m"] = latest[f"EMA_{period}"]
 
         summary.append(row)
 
@@ -569,7 +657,6 @@ def display_market():
         return
 
     result = pd.DataFrame(summary)
-
     preferred_order = [
         "Symbol",
         "Last Price",
@@ -582,7 +669,6 @@ def display_market():
         "Bars",
         "Last Bar (EST)",
     ] + [f"{p}m" for p in PERIODS]
-
     result = result[[c for c in preferred_order if c in result.columns]]
 
     st.subheader("Current Market Indicators")
@@ -616,8 +702,7 @@ def display_market():
             "Score": st.column_config.NumberColumn("Score", format="%d"),
             "Bars": st.column_config.NumberColumn("Bars", format="%d"),
             "Last Bar (EST)": st.column_config.DatetimeColumn(
-                "Last Bar (EST)",
-                format="HH:mm:ss",
+                "Last Bar (EST)", format="HH:mm:ss"
             ),
             **{
                 f"{p}m": st.column_config.TextColumn(f"{p}m\nSMA | EMA")
@@ -629,16 +714,15 @@ def display_market():
     st.caption(
         "All prices are in USD ($). SMA/EMA values are based on completed one-minute bars. "
         "Session VWAP resets at the start of each calendar day (US/Eastern). "
-        "The dashboard refreshes every two seconds; new bars normally arrive once per minute."
+        f"Equity retention: {RETENTION_DAYS} days · VIX retention: {VIX_RETENTION_DAYS} days."
     )
 
     st.divider()
 
-    # Individual stock details
+    # Individual stock details (same as original)
     st.subheader("Individual Stock Details")
-
     for symbol in SYMBOLS:
-        df = get_bars(symbol)
+        df = get_bars(symbol, DATABASE)
         if df.empty:
             continue
 
@@ -658,14 +742,17 @@ def display_market():
         )
 
         col1, col2, col3, col4 = st.columns(4)
+
         col1.metric(
             "5-minute SMA",
             f"{latest['SMA_5']:,.2f}" if pd.notna(latest["SMA_5"]) else "Warming up",
         )
+
         col2.metric(
             "10-minute SMA",
             f"{latest['SMA_10']:,.2f}" if pd.notna(latest["SMA_10"]) else "Warming up",
         )
+
         col3.metric(
             "5-minute EMA",
             f"{latest['EMA_5']:,.2f}" if pd.notna(latest["EMA_5"]) else "Warming up",
@@ -736,22 +823,19 @@ st.set_page_config(page_title="NASDAQ Market Monitor", page_icon="📈", layout=
 st.title("NASDAQ Live Market Monitor")
 
 st.caption(
-    "Market data: Alpaca IEX | Moving averages calculated from one-minute bars | "
-    f"Session VWAP resets daily (US/Eastern) | Retention: last {RETENTION_DAYS} days"
+    "Market data: Alpaca IEX | Moving averages from one-minute bars | "
+    f"Session VWAP resets daily (US/Eastern) | "
+    f"Equity retention: {RETENTION_DAYS} days | VIX retention: {VIX_RETENTION_DAYS} days"
 )
 
-# Start WebSocket
 stream, stream_thread = start_market_stream()
 display_market()
-
 
 # ============================================================
 # FOOTER
 # ============================================================
-
 st.caption(
-    f"Symbols: {', '.join(SYMBOLS)} | "
-    f"Database: {DATABASE} | "
-    f"Feed: IEX | "
-    f"Retention: {RETENTION_DAYS} days"
+    f"Symbols: {', '.join(SYMBOLS)} + {VIX_SYMBOL} | "
+    f"Equity DB: {DATABASE} | VIX DB: {VIX_DATABASE} | "
+    f"Feed: IEX"
 )

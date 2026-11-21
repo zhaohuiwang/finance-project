@@ -1,0 +1,46 @@
+# =============================================================================
+# NASDAQ Live Market Monitor – Configuration
+# =============================================================================
+# Edit this file to change symbols, periods, retention, etc. without touching
+# any Python code.  Restart the Streamlit app after changes.
+
+[symbols]
+equity = [
+    "QQQ",   # Nasdaq 100 Index ETF
+    "AAPL",
+    "INTC",
+    "NBIS",
+    "NVDA",
+    "SNDK",
+]
+vix = "VIXY"          # VIX proxy (Alpaca has no true VIX data)
+
+[indicators]
+# Periods (in minutes) used for both SMA and EMA
+periods = [5, 10, 15, 30, 60]
+
+[retention]
+equity_days = 7       # how long to keep equity minute bars
+vix_days    = 60      # longer history for VIX regime analysis
+
+[database]
+equity_path = "outputs/market_data.db"
+vix_path    = "outputs/vix_data.db"
+
+[stream]
+# How often (seconds) the dashboard fragment auto-refreshes
+ui_refresh_seconds = 2
+
+# How often (seconds) the retention cleanup thread runs
+retention_interval_seconds = 3600
+
+# After this many seconds with no new bar, the UI switches to a lightweight
+# "idle" view (status only) to save CPU.  Full charts/tables resume as soon
+# as a new bar arrives.
+idle_after_seconds = 120
+
+[metrics]
+# Optional Prometheus metrics endpoint
+enabled = true
+host    = "0.0.0.0"
+port    = 9100
