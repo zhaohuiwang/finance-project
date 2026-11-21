@@ -58,9 +58,10 @@ def display_market(
     Main live dashboard fragment.  Designed to be called from a
     @st.fragment(run_every=...) decorator so it refreshes automatically.
 
-    When no new bar has arrived for IDLE_AFTER_SECONDS the function
-    switches to a lightweight "idle" view (status only) to keep CPU
-    usage near zero outside market hours.
+    When no new bar has arrived for IDLE_AFTER_SECONDS a clear "Idle mode"
+    banner is shown at the top, but the last known data (tables, signals,
+    charts) remains visible.  Live updates resume automatically as soon as
+    the next bar arrives.
     """
     # ---- Status bar ----
     status_snapshot = status.get()
@@ -100,18 +101,14 @@ def display_market(
             )
 
     # ------------------------------------------------------------------
-    # Idle mode – skip all heavy work (indicators, charts, tables)
+    # Idle banner – still show the last known data below
     # ------------------------------------------------------------------
     if idle:
-        st.info(
+        st.warning(
             f"💤 Idle mode – no new bars for more than {IDLE_AFTER_SECONDS}s. "
-            "Full dashboard will resume automatically when the next bar arrives. "
-            "The WebSocket connection stays open and ready."
+            "Showing last known data. Full live updates will resume automatically "
+            "when the next bar arrives. The WebSocket connection stays open and ready."
         )
-        st.caption(
-            "This dashboard uses IEX exchange data, not the consolidated US market feed."
-        )
-        return
 
     st.info(
         "This dashboard uses IEX exchange data, not the consolidated US market feed."
@@ -138,11 +135,7 @@ def display_market(
     )
     c4.metric(
         "vs mean",
-        (
-            f"{vix_signal.vs_mean:+.1f}%"
-            if vix_signal.vs_mean is not None
-            else "—"
-        ),
+        (f"{vix_signal.vs_mean:+.1f}%" if vix_signal.vs_mean is not None else "—"),
     )
     if not vix_daily.empty:
         st.caption(
@@ -237,9 +230,7 @@ def display_market(
                 "Symbol",
                 pinned=True,  # stay even when you move the slide bar
             ),
-            "Last Price": st.column_config.NumberColumn(
-                "Last Price", format="%.2f"
-            ),
+            "Last Price": st.column_config.NumberColumn("Last Price", format="%.2f"),
             "VWAP": st.column_config.NumberColumn("VWAP", format="%.2f"),
             "Score": st.column_config.NumberColumn("Score", format="%d"),
             "Bars": st.column_config.NumberColumn("Bars", format="%d"),
@@ -291,11 +282,7 @@ def display_market(
 
         col1.metric(
             "5-minute SMA",
-            (
-                f"{latest['SMA_5']:,.2f}"
-                if pd.notna(latest["SMA_5"])
-                else "Warming up"
-            ),
+            (f"{latest['SMA_5']:,.2f}" if pd.notna(latest["SMA_5"]) else "Warming up"),
         )
         col2.metric(
             "10-minute SMA",
@@ -307,11 +294,7 @@ def display_market(
         )
         col3.metric(
             "5-minute EMA",
-            (
-                f"{latest['EMA_5']:,.2f}"
-                if pd.notna(latest["EMA_5"])
-                else "Warming up"
-            ),
+            (f"{latest['EMA_5']:,.2f}" if pd.notna(latest["EMA_5"]) else "Warming up"),
         )
         col4.metric(
             "10-minute EMA",

@@ -63,8 +63,7 @@ class BarDatabase:
     def initialize(self) -> None:
         """Create the market_bars table and its index if they do not exist."""
         with self._get_connection() as conn:
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS market_bars (
                     symbol      TEXT NOT NULL,
                     timestamp   TEXT NOT NULL,
@@ -77,14 +76,11 @@ class BarDatabase:
                     vwap        REAL,
                     PRIMARY KEY (symbol, timestamp)
                 )
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_market_symbol_time
                 ON market_bars(symbol, timestamp)
-                """
-            )
+                """)
 
     # ------------------------------------------------------------------
     # Retention
@@ -128,9 +124,7 @@ class BarDatabase:
         messages from Alpaca correctly overwrite the previous values.
         """
         timestamp = bar.timestamp.astimezone(timezone.utc).isoformat()
-        trade_count = (
-            int(bar.trade_count) if bar.trade_count is not None else None
-        )
+        trade_count = int(bar.trade_count) if bar.trade_count is not None else None
         vwap = float(bar.vwap) if bar.vwap is not None else None
 
         with self._get_connection() as conn:

@@ -39,9 +39,7 @@ class IndicatorCalculator:
                 df["close"].rolling(window=period, min_periods=period).mean()
             )
             df[f"EMA_{period}"] = (
-                df["close"]
-                .ewm(span=period, adjust=False, min_periods=period)
-                .mean()
+                df["close"].ewm(span=period, adjust=False, min_periods=period).mean()
             )
 
         # --- Session VWAP (resets each calendar day in US/Eastern) ----
@@ -56,9 +54,7 @@ class IndicatorCalculator:
         # within each session day
         df["_cum_vol"] = df.groupby("_session_date")["volume"].cumsum()
         df["_cum_tp_vol"] = (
-            (typical_price * df["volume"])
-            .groupby(df["_session_date"])
-            .cumsum()
+            (typical_price * df["volume"]).groupby(df["_session_date"]).cumsum()
         )
         df["VWAP"] = df["_cum_tp_vol"] / df["_cum_vol"]
 
