@@ -293,7 +293,7 @@ st.caption(
 )
 
 # Start WebSocket (cached across Streamlit reruns)
-stream.start_market_stream()
+stream = get_market_stream()
 display_market()
 
 # ---- Footer ----
