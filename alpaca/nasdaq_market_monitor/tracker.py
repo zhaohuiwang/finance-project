@@ -18,6 +18,10 @@ Run:
     streamlit run nasdaq_market_monitor/tracker.py
 
 http://localhost:8501
+
+If metrics are enabled (default), Prometers scrapes are available at  
+http://localhost:9100/metrics
+
 """
 
 from __future__ import annotations
