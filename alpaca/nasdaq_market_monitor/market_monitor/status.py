@@ -23,8 +23,8 @@ class StatusManager:
 
     def __init__(self) -> None:
         self._status: dict[str, Any] = {
-            "last_bar_time": None,  # UTC datetime of most recent bar
-            "last_error": None,  # last exception message
+            "last_bar_time": None,      # UTC datetime of most recent bar
+            "last_error": None,         # last exception message
             "last_error_time": None,
             "bars_received": 0,
         }

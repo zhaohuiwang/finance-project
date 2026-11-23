@@ -30,6 +30,7 @@ vix_path    = "outputs/vix_data.db"
 [stream]
 # How often (seconds) the dashboard fragment auto-refreshes
 ui_refresh_seconds = 2
+display_timezone = "EST"    # or "UTC"
 
 # How often (seconds) the retention cleanup thread runs
 retention_interval_seconds = 3600

@@ -15,7 +15,7 @@ EMA:    Exponential Moving Average (weighted arithmetic mean).
 VWAP:   Volume-Weighted Average Price (volume-weighted arithmetic mean).
 
 Run:
-    streamlit run tracker.py
+    streamlit run nasdaq_market_monitor/tracker.py
 
 http://localhost:8501
 """

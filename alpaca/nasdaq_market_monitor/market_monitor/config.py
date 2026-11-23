@@ -52,6 +52,35 @@ VIX_RETENTION_DAYS: int = int(_raw["retention"]["vix_days"])
 # ---------------------------------------------------------------------------
 
 EASTERN = ZoneInfo("America/New_York")
+UTC = ZoneInfo("UTC")
+
+# Display timezone chosen in config.toml.
+# Allowed values: "EST" or "UTC"
+_display_tz_name = str(_raw.get("stream", {}).get("display_timezone", "EST")).upper()
+if _display_tz_name == "UTC":
+    DISPLAY_TZ = UTC
+    DISPLAY_TZ_LABEL = "UTC"
+else:
+    DISPLAY_TZ = EASTERN
+    DISPLAY_TZ_LABEL = "EST"
+
+
+def to_display_tz(ts):
+    """
+    Convert a timezone-aware datetime (or pandas Timestamp) to the
+    configured display timezone.
+
+    Usage:
+        ts_display = to_display_tz(some_utc_timestamp)
+        label = DISPLAY_TZ_LABEL   # "EST" or "UTC"
+    """
+    if ts is None:
+        return None
+    # pandas Timestamp or datetime both support .astimezone / tz_convert
+    if hasattr(ts, "tz_convert"):
+        return ts.tz_convert(DISPLAY_TZ)
+    return ts.astimezone(DISPLAY_TZ)
+
 
 # ---------------------------------------------------------------------------
 # Database paths

@@ -23,6 +23,9 @@ from .config import (
     DATABASE,
     VIX_DATABASE,
     IDLE_AFTER_SECONDS,
+    DISPLAY_TZ,
+    DISPLAY_TZ_LABEL,
+    to_display_tz,
 )
 from .database import BarDatabase
 from .indicators import IndicatorCalculator
@@ -67,13 +70,50 @@ def display_market(
     status_snapshot = status.get()
     idle = _is_idle(status_snapshot)
 
+    col_a, col_b, col_c = st.columns([2, 2, 3])
+
+    with col_a:
+        if stream.stream_thread and stream.stream_thread.is_alive():
+            if idle:
+                st.warning("Stream alive · idle (no new bars)")
+            else:
+                st.success("Market data stream is running")
+        else:
+            st.error("Market data stream stopped")
+
+    with col_b:
+        if status_snapshot["last_bar_time"]:
+            age = datetime.now(timezone.utc) - status_snapshot["last_bar_time"]
+            age_s = int(age.total_seconds())
+            last_bar_disp = to_display_tz(status_snapshot["last_bar_time"])
+            st.info(
+                f"Last bar: {last_bar_disp.strftime('%H:%M:%S')} {DISPLAY_TZ_LABEL}  "
+                f"({age_s}s ago)"
+            )
+        else:
+            st.warning("Waiting for first bar…")
+
+    with col_c:
+        if status_snapshot["last_error"]:
+            err_time = status_snapshot["last_error_time"]
+            err_disp = (
+                to_display_tz(err_time).strftime("%H:%M:%S")
+                if err_time is not None
+                else "—"
+            )
+            st.error(
+                f"Last error ({err_disp} {DISPLAY_TZ_LABEL}): "
+                f"{status_snapshot['last_error']}"
+            )
+        else:
+            st.caption(
+                f"Bars received this session: {status_snapshot['bars_received']}"
+            )
+
+    # ------------------------------------------------------------------
     # Idle banner – still show the last known data below
+    # ------------------------------------------------------------------
     if idle:
-        # st.warning(
-        #     f"💤 Idle mode – no new bars for more than {IDLE_AFTER_SECONDS}s. "
-        #     "Showing last known data. Full live updates will resume automatically "
-        #     "when the next bar arrives. The WebSocket connection stays open and ready."
-        # )
         st.markdown(
             f"""
             <div style="
@@ -100,41 +140,6 @@ def display_market(
             unsafe_allow_html=True,
         )
 
-    # Streaming bar status banner    
-    col_a, col_b, col_c = st.columns([2, 2, 3])
-
-    with col_a:
-        if stream.stream_thread and stream.stream_thread.is_alive():
-            if idle:
-                st.warning("Stream alive · idle (no new bars)")
-            else:
-                st.success("Market data stream is running")
-        else:
-            st.error("Market data stream stopped")
-
-    with col_b:
-        if status_snapshot["last_bar_time"]:
-            age = datetime.now(timezone.utc) - status_snapshot["last_bar_time"]
-            age_s = int(age.total_seconds())
-            st.info(
-                f"Last bar: {status_snapshot['last_bar_time'].strftime('%H:%M:%S')} UTC  "
-                f"({age_s}s ago)"
-            )
-        else:
-            st.warning("Waiting for first bar…")
-
-    with col_c:
-        if status_snapshot["last_error"]:
-            st.error(
-                f"Last error ({status_snapshot['last_error_time'].strftime('%H:%M:%S')} UTC): "
-                f"{status_snapshot['last_error']}"
-            )
-        else:
-            st.caption(
-                f"Bars received this session: {status_snapshot['bars_received']}"
-            )
-
-    # Data info banner
     st.info(
         "This dashboard uses IEX exchange data, not the consolidated US market feed."
     )
@@ -160,7 +165,11 @@ def display_market(
     )
     c4.metric(
         "vs mean",
-        (f"{vix_signal.vs_mean:+.1f}%" if vix_signal.vs_mean is not None else "—"),
+        (
+            f"{vix_signal.vs_mean:+.1f}%"
+            if vix_signal.vs_mean is not None
+            else "—"
+        ),
     )
     if not vix_daily.empty:
         st.caption(
@@ -191,7 +200,7 @@ def display_market(
             "EMA Alignment": signal.ema_alignment,
             "Crossover": signal.crossover,
             "Bars": signal.bars,
-            "Last Bar (EST)": latest["timestamp"].tz_convert(EASTERN),
+            f"Last Bar ({DISPLAY_TZ_LABEL})": to_display_tz(latest["timestamp"]),
         }
 
         # Combine SMA + EMA into a single cell per period
@@ -216,6 +225,7 @@ def display_market(
         return
 
     result = pd.DataFrame(summary)
+    last_bar_col = f"Last Bar ({DISPLAY_TZ_LABEL})"
     preferred_order = [
         "Symbol",
         "Last Price",
@@ -226,7 +236,7 @@ def display_market(
         "EMA Alignment",
         "Crossover",
         "Bars",
-        "Last Bar (EST)",
+        last_bar_col,
     ] + [f"{p}m" for p in PERIODS]
     result = result[[c for c in preferred_order if c in result.columns]]
 
@@ -255,12 +265,14 @@ def display_market(
                 "Symbol",
                 pinned=True,  # stay even when you move the slide bar
             ),
-            "Last Price": st.column_config.NumberColumn("Last Price", format="%.2f"),
+            "Last Price": st.column_config.NumberColumn(
+                "Last Price", format="%.2f"
+            ),
             "VWAP": st.column_config.NumberColumn("VWAP", format="%.2f"),
             "Score": st.column_config.NumberColumn("Score", format="%d"),
             "Bars": st.column_config.NumberColumn("Bars", format="%d"),
-            "Last Bar (EST)": st.column_config.DatetimeColumn(
-                "Last Bar (EST)", format="HH:mm:ss"
+            last_bar_col: st.column_config.DatetimeColumn(
+                last_bar_col, format="HH:mm:ss"
             ),
             **{
                 f"{p}m": st.column_config.TextColumn(f"{p}m\nSMA | EMA")
@@ -307,7 +319,11 @@ def display_market(
 
         col1.metric(
             "5-minute SMA",
-            (f"{latest['SMA_5']:,.2f}" if pd.notna(latest["SMA_5"]) else "Warming up"),
+            (
+                f"{latest['SMA_5']:,.2f}"
+                if pd.notna(latest["SMA_5"])
+                else "Warming up"
+            ),
         )
         col2.metric(
             "10-minute SMA",
@@ -319,7 +335,11 @@ def display_market(
         )
         col3.metric(
             "5-minute EMA",
-            (f"{latest['EMA_5']:,.2f}" if pd.notna(latest["EMA_5"]) else "Warming up"),
+            (
+                f"{latest['EMA_5']:,.2f}"
+                if pd.notna(latest["EMA_5"])
+                else "Warming up"
+            ),
         )
         col4.metric(
             "10-minute EMA",
@@ -330,8 +350,9 @@ def display_market(
             ),
         )
 
-        # Chart
+        # Chart – convert timestamps to the configured display timezone
         chart_data = df.tail(60).copy()
+        chart_data["timestamp"] = chart_data["timestamp"].dt.tz_convert(DISPLAY_TZ)
         price_columns = [
             "close",
             "VWAP",
@@ -359,7 +380,7 @@ def display_market(
             alt.Chart(plot_data)
             .mark_line()
             .encode(
-                x=alt.X("timestamp:T", title="Time"),
+                x=alt.X("timestamp:T", title=f"Time ({DISPLAY_TZ_LABEL})"),
                 y=alt.Y(
                     "Price:Q",
                     title="Price",
@@ -367,7 +388,7 @@ def display_market(
                 ),
                 color=alt.Color("Indicator:N", title="Indicator"),
                 tooltip=[
-                    alt.Tooltip("timestamp:T", title="Time"),
+                    alt.Tooltip("timestamp:T", title=f"Time ({DISPLAY_TZ_LABEL})"),
                     alt.Tooltip("Indicator:N"),
                     alt.Tooltip("Price:Q", format=".2f"),
                 ],
@@ -377,8 +398,10 @@ def display_market(
         st.altair_chart(chart, width="stretch")
 
         with st.expander(f"{symbol} historical data"):
+            hist = df.tail(100).sort_values("timestamp", ascending=False).copy()
+            hist["timestamp"] = hist["timestamp"].dt.tz_convert(DISPLAY_TZ)
             st.dataframe(
-                df.tail(100).sort_values("timestamp", ascending=False),
+                hist,
                 width="stretch",
                 hide_index=True,
             )

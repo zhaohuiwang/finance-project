@@ -88,7 +88,9 @@ class MarketDataStream:
         vix_symbol: str = VIX_SYMBOL,
     ) -> None:
         if not API_KEY or not API_SECRET:
-            raise RuntimeError("Missing Alpaca API credentials. Check your .env file.")
+            raise RuntimeError(
+                "Missing Alpaca API credentials. Check your .env file."
+            )
 
         self.equity_db = equity_db
         self.vix_db = vix_db
@@ -164,7 +166,9 @@ class MarketDataStream:
         self.equity_db.cleanup_old_bars()
         self.vix_db.cleanup_old_bars()
 
-        self._stream = StockDataStream(API_KEY, API_SECRET, feed=DataFeed.IEX)
+        self._stream = StockDataStream(
+            API_KEY, API_SECRET, feed=DataFeed.IEX
+        )
         self._stream.subscribe_bars(self._handle_bar, *self.all_symbols)
         self._stream.subscribe_updated_bars(self._handle_bar, *self.all_symbols)
 
