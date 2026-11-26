@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 # ==========================================================
 
 client = schwabdev.Client(
-    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+    os.getenv("SCHWAB_API_KEY"), os.getenv("SCHWAB_API_SECRET"), os.getenv("SCHWAB_CALLBACK_URL")
 )
 
 stream = schwabdev.Stream(client)

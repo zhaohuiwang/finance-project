@@ -6,7 +6,7 @@ Real-time screener using schwabdev 4.x streaming.
 Requirements:
   pip install schwabdev python-dotenv rich pyyaml
 
-Credentials live in .env (APP_KEY / APP_SECRET).
+Credentials live in .env (SCHWAB_API_KEY / SCHWAB_API_SECRET).
 Optional non-secret settings can live in config.yaml.
 
 # Make sure these are installed
@@ -119,8 +119,8 @@ class Settings:
                 return env_val
             return file_cfg.get(key, default)
 
-        app_key = get("app_key") or get("APP_KEY")
-        app_secret = get("app_secret") or get("APP_SECRET")
+        app_key = get("app_key") or get("SCHWAB_API_KEY")
+        app_secret = get("app_secret") or get("SCHWAB_API_SECRET")
 
         if not app_key or not app_secret:
             raise SystemExit(
@@ -151,7 +151,7 @@ class Settings:
             app_key=str(app_key),
             app_secret=str(app_secret),
             callback_url=str(
-                get("callback_url") or get("CALLBACK_URL") or "https://127.0.0.1:8182"
+                get("callback_url") or get("SCHWAB_CALLBACK_URL") or "https://127.0.0.1:8182"
             ),
             universes=universes,
             frequency=as_int(get("frequency"), 5),

@@ -70,7 +70,7 @@ class TradingBot:
         """
         init_db()
         self.client = schwabdev.Client(
-            os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+            os.getenv("SCHWAB_API_KEY"), os.getenv("SCHWAB_API_SECRET"), os.getenv("SCHWAB_CALLBACK_URL")
         )
         self.config_path = config_path
         self.mode = mode

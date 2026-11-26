@@ -33,6 +33,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s"
 )
 logger = logging.getLogger(__name__)
+# Recommendataion: Use f-string for almost everything else and logger.info("msg %s, value") when writting log statements.
 
 
 # ========================= SCHWAB AUTH SETUP =========================
@@ -41,45 +42,54 @@ DEFAULT_TOKENS_PATH = Path(
 ).expanduser()  # The .expanduser() method replaces a leading tilde (~) or ~user in a file path with the user's home directory.
 
 
-def initialize_client(tokens_path: str | Path):
-    """Initialize the Schwab client using the specified tokens database."""
+def initialize_client(
+    tokens_path: str | Path = DEFAULT_TOKENS_PATH,
+) -> schwabdev.Client:
+    """
+    Initialize the Schwab client using credentials from environment variables
+    and the specified tokens database.
+    """
+    tokens_path = Path(tokens_path).expanduser()
+
+    app_key = os.getenv("SCHWAB_API_KEY") or os.getenv("APP_KEY")
+    app_secret = os.getenv("SCHWAB_API_SECRET") or os.getenv("APP_SECRET")
+    callback_url = os.getenv("SCHWAB_CALLBACK_URL") or os.getenv("CALLBACK_URL")
+
+    missing = [
+        name
+        for name, value in [
+            ("SCHWAB_API_KEY / APP_KEY", app_key),
+            ("SCHWAB_API_SECRET / APP_SECRET", app_secret),
+            ("SCHWAB_CALLBACK_URL / CALLBACK_URL", callback_url),
+        ]
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            f"Missing required environment variable(s): {', '.join(missing)}"
+        )
+
+    logger.info("Initializing Schwab Client")
+    logger.info("Tokens database: %s", tokens_path)
+    logger.info("Tokens database exists: %s", tokens_path.exists())
+
     try:
-        tokens_path = Path(tokens_path).expanduser()
-
-        app_key = os.getenv("APP_KEY")
-        app_secret = os.getenv("APP_SECRET")
-        callback_url = os.getenv("CALLBACK_URL")
-
-        if not app_key:
-            raise RuntimeError("APP_KEY is not set")
-
-        if not app_secret:
-            raise RuntimeError("APP_SECRET is not set")
-
-        if not callback_url:
-            raise RuntimeError("CALLBACK_URL is not set")
-
-        logger.info("Initializing Schwab Client")
-        logger.info("Tokens database: %s", tokens_path)
-        logger.info("Tokens database exists: %s", tokens_path.exists())
-
-        tokens_path = str(Path(tokens_path).expanduser())
-        APP_KEY = os.getenv("APP_KEY")
-        APP_SECRET = os.getenv("APP_SECRET")
-        CALLBACK_URL = os.getenv("CALLBACK_URL")
-        logger.info(f"Initializing Schwab Client with tokens at: {tokens_path}")
+        client = schwabdev.Client(
+            app_key,
+            app_secret,
+            callback_url=callback_url,
+            tokens_db=str(tokens_path),
+        )
     except Exception as e:
         logger.error(
-            f"Error occurred while initializing Schwab Client with tokens at '{tokens_path}': {e}"
+            "Failed to initialize Schwab Client with tokens at '%s': %s",
+            tokens_path,
+            e,
         )
         raise
 
-    return schwabdev.Client(
-        APP_KEY,
-        APP_SECRET,
-        callback_url=CALLBACK_URL,
-        tokens_db=str(tokens_path),
-    )
+    logger.info("Schwab Client initialized successfully")
+    return client
 
 
 # ========================= CLEAN TOKENS =========================

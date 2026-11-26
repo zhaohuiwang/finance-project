@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 client = schwabdev.Client(
-    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+    os.getenv("SCHWAB_API_KEY"), os.getenv("SCHWAB_API_SECRET"), os.getenv("SCHWAB_CALLBACK_URL")
 )
 
 streamer = schwabdev.Stream(client)
@@ -222,7 +222,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     client = schwabdev.Client(
-        os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+        os.getenv("SCHWAB_API_KEY"), os.getenv("SCHWAB_API_SECRET"), os.getenv("SCHWAB_CALLBACK_URL")
     )
     streamer = schwabdev.Stream(client)
 

@@ -12,9 +12,9 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-app_key = os.getenv("APP_KEY")
-app_secret = os.getenv("APP_SECRET")
-callback_url = os.getenv("CALLBACK_URL")
+app_key = os.getenv("SCHWAB_API_KEY")
+app_secret = os.getenv("SCHWAB_API_SECRET")
+callback_url = os.getenv("SCHWAB_CALLBACK_URL")
 
 if not all([app_key, app_secret, callback_url]):
     raise ValueError("Missing API credentials.")
@@ -92,9 +92,9 @@ class AsyncSchwabAccountClient:
     ) -> None:
         load_dotenv()
 
-        self.app_key = app_key or os.getenv("APP_KEY")
-        self.app_secret = app_secret or os.getenv("APP_SECRET")
-        self.callback_url = callback_url or os.getenv("CALLBACK_URL")
+        self.app_key = app_key or os.getenv("SCHWAB_API_KEY")
+        self.app_secret = app_secret or os.getenv("SCHWAB_API_SECRET")
+        self.callback_url = callback_url or os.getenv("SCHWAB_CALLBACK_URL")
 
         if not all([self.app_key, self.app_secret, self.callback_url]):
             raise SchwabClientError("Missing API credentials.")

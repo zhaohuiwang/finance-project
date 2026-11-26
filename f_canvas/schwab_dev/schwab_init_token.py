@@ -15,9 +15,9 @@ from dotenv import load_dotenv
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
-app_key = os.getenv("APP_KEY")
-app_secret = os.getenv("APP_SECRET")
-callback_url = os.getenv("CALLBACK_URL")
+app_key = os.getenv("SCHWAB_API_KEY")
+app_secret = os.getenv("SCHWAB_API_SECRET")
+callback_url = os.getenv("SCHWAB_CALLBACK_URL")
 
 
 def construct_init_auth_url() -> tuple[str, str, str]:

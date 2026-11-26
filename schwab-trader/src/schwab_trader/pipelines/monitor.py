@@ -19,9 +19,9 @@ class SchwabBot:
     def __init__(self, config_path="conf/config.yaml"):
         self.config = self.load_config(config_path)
         self.client = schwabdev.Client(
-            os.getenv("APP_KEY"),  # Use the env variables
-            os.getenv("APP_SECRET"),
-            os.getenv("CALLBACK_URL"),
+            os.getenv("SCHWAB_API_KEY"),  # Use the env variables
+            os.getenv("SCHWAB_API_SECRET"),
+            os.getenv("SCHWAB_CALLBACK_URL"),
         )
         self.stream_client = StreamClient(os.getenv("APP_KEY"), os.getenv("APP_SECRET"))
         self.positions = {}

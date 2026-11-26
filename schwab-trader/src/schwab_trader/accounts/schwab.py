@@ -20,9 +20,9 @@ def initialize_client(tokens_path="~/.schwabdev/tokens.db"):
     """Normal initialization using existing tokens.db"""
     try:
         tokens_path = str(Path(tokens_path).expanduser())
-        APP_KEY = os.getenv("APP_KEY")
-        APP_SECRET = os.getenv("APP_SECRET")
-        CALLBACK_URL = os.getenv("CALLBACK_URL")
+        APP_KEY = os.getenv("SCHWAB_API_KEY")
+        APP_SECRET = os.getenv("SCHWAB_API_SECRET")
+        CALLBACK_URL = os.getenv("SCHWAB_CALLBACK_URL")
         logger.info(f"Initializing Schwab Client with tokens at: {tokens_path}")
     except Exception as e:
         logger.error(f"Error occurred while initializing tokens path: {e}")

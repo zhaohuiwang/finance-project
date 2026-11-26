@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 
 # create client
 client = schwabdev.Client(
-    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+    os.getenv("SCHWAB_API_KEY"), os.getenv("SCHWAB_API_SECRET"), os.getenv("SCHWAB_CALLBACK_URL")
 )
 
 print("\nGet account number and hashes for linked accounts")
@@ -248,7 +248,7 @@ import schwabdev
 load_dotenv()
 
 client = schwabdev.Client(
-    os.getenv("APP_KEY"), os.getenv("APP_SECRET"), os.getenv("CALLBACK_URL")
+    os.getenv("SCHWAB_API_KEY"), os.getenv("SCHWAB_API_SECRET"), os.getenv("SCHWAB_CALLBACK_URL")
 )
 
 # Get the dates for the last three trading days

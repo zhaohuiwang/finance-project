@@ -11,6 +11,7 @@ dependencies = [
     "duckdb>=2.0.0",
     "numpy>=2.5.0",
     "pandas>=3.0.2",
+    "prometheus-client>=0.26.0",
     "pyarrow>=25.0.1",
     "python-dotenv>=1.2.4",
     "requests>=2.34.2",

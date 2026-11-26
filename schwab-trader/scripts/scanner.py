@@ -19,9 +19,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-APP_KEY = os.environ["APP_KEY"]
-APP_SECRET = os.environ["APP_SECRET"]
-CALLBACK_URL = os.getenv(
+SCHWAB_API_KEY = os.environ["SCHWAB_API_KEY"]
+SCHWAB_API_SECRET = os.environ["SCHWAB_API_SECRET"]
+SCHWAB_CALLBACK_URL = os.getenv(
     "callback_url",
     "https://127.0.0.1:8182",
 )
@@ -160,9 +160,9 @@ class MarketScanner:
     def __init__(self):
 
         self.client = schwabdev.Client(
-            APP_KEY,
-            APP_SECRET,
-            CALLBACK_URL,
+            SCHWAB_API_KEY,
+            SCHWAB_API_SECRET,
+            SCHWAB_CALLBACK_URL,
         )
 
         self.stream = schwabdev.Stream(self.client)
