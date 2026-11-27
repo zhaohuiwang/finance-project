@@ -9,6 +9,8 @@ Schwabdev tracer + trailing-stop / limit-buy strategy.
 - Restricted to configured days-of-week and time window (America/New_York).
 
 Always paper-trade (DRY_RUN=True) first.
+
+During the regualr trading hours (inside the window) the streamer is on and strategy logic is active and it consume low CPU and network. Outsides the window or weekend, the strategy logic is blocked and CPU/network comsumption is near zero (while the streamer.start_auto(...) manages the websocket lifecycle and stop outside the window. Main thread is in an infinite loop doing time.sleep(30).) so it is safe to leave it running 24/7.
 """
 
 from __future__ import annotations
@@ -35,31 +37,41 @@ CONFIG = {
         "~/.schwabdev/tokens.db"
     ).expanduser(),  # The .expanduser() method replaces a leading tilde (~) or ~user in a file path with the user's home directory.
     # Account
-    "account_Number": None,  # or hard-code the number string
+    "account_Number": "29308909",  # or hard-code the number string
+    # Trading window (America/New_York)
+        # Safety / runtime
+    "DRY_RUN": True,  # True = log only, never send orders
+    "timezone": "America/New_York",
+    "trade_days": (0, 1, 2, 3, 4),  # Mon-Fri (0=Mon … 6=Sun)
+    "start_time": dtime(9, 35),  # after open
+    "stop_time": dtime(15, 55),  # before close
     # Symbols
-    "tracer_symbols": ["QQQ", "$COMPX"],  # symbols we watch for signals
+    "tracer_symbols": [
+        "QQQ",
+        "$COMPX",
+        ],  # symbols we watch for signals
     # "$COMPX" = NASDAQ Composite; change to "$NDX" if you prefer Nasdaq-100
     "holding_symbol": "NBIS",  # the stock we actually trade
     "buy_qty": 1,  # shares per buy
     "sell_qty": 1,  # None = sell entire position
     # Strategy parameters (all percentages are absolute, e.g. 1.5 = 1.5 %)
-    "trail_percent": 1.5,  # trailing-stop distance from high-water mark
-    "tracer_upper_limit_pct": 0.8,  # sell if any tracer net-%-change >= this
-    "tracer_lower_limit_pct": -0.6,  # buy if any tracer net-%-change <= this
+    "trail_percent": 0.1,  # trailing-stop distance from high-water mark
+    # Per-symbol limits
+    "tracer_upper_limit_pct": {
+        "QQQ": 0.1,
+        "$COMPX": .1,
+    },# sell if any tracer net-%-change >= this
+    "tracer_lower_limit_pct": {
+        "QQQ": -0.1,
+        "$COMPX": -0.1,
+    }, # buy if any tracer net-%-change <= this
+
     "min_tracers_for_signal": 1,  # 1 or 2 (how many tracers must confirm)
-    "rebuy_discount_pct": 1.0,  # buy only if price <= last_sell * (1 - this/100)
-    # Trading window (America/New_York)
-    "timezone": "America/New_York",
-    "trade_days": (0, 1, 2, 3, 4),  # Mon-Fri (0=Mon … 6=Sun)
-    "start_time": dtime(9, 35),  # after open
-    "stop_time": dtime(15, 55),  # before close
-    # Safety / runtime
-    "DRY_RUN": True,  # True = log only, never send orders
+    "rebuy_discount_pct": 0.1,  # buy only if price <= last_sell * (1 - this/100)
     "db_path": "trace_trigger_trades.db",
     "log_level": logging.INFO,
     "stream_fields": "0,1,2,3,8,18,42",  # symbol,bid,ask,last,volume,net change,net % chg
 }
-
 # ---------------------------------------------------------------------------
 # Globals / state (thread-safe enough for this use-case)
 # ---------------------------------------------------------------------------
@@ -371,18 +383,29 @@ def check_signals() -> None:
         bid = q.get("bid", last)
         ask = q.get("ask", last)
 
-        # Collect tracer net-%-changes
-        tracer_pcts = []
+        # Collect how many tracers are above/below their own limits
+        n_above, n_below, valid_tracers = 0, 0, 0
+        tracer_details = []
+
         for t in CONFIG["tracer_symbols"]:
             tq = quotes.get(t)
-            if tq and "net_pct" in tq:
-                tracer_pcts.append(tq["net_pct"])
+            if not tq or "net_pct" not in tq:
+                continue
 
-        if len(tracer_pcts) < CONFIG["min_tracers_for_signal"]:
+            pct = tq["net_pct"]
+            valid_tracers += 1
+
+            upper = CONFIG["tracer_upper_limit_pct"].get(t)
+            lower = CONFIG["tracer_lower_limit_pct"].get(t)
+
+            if upper is not None and pct >= upper:
+                n_above += 1
+            if lower is not None and pct <= lower:
+                n_below += 1
+            tracer_details.append(f"{t}:{pct:+.2f}%")
+
+        if valid_tracers < CONFIG["min_tracers_for_signal"]:
             return
-
-        n_above = sum(1 for p in tracer_pcts if p >= CONFIG["tracer_upper_limit_pct"])
-        n_below = sum(1 for p in tracer_pcts if p <= CONFIG["tracer_lower_limit_pct"])
 
         # --- SELL / Trailing stop ---
         if position["qty"] > 0 and position["trailing_stop_active"]:
@@ -391,6 +414,11 @@ def check_signals() -> None:
             )
             # Also force sell if enough tracers are strongly up
             force_sell = n_above >= CONFIG["min_tracers_for_signal"]
+            logger.info(
+                "HOLDING %s | qty=%.0f  last=%.2f  high=%.2f  stop=%.2f  | tracers: %s",
+                holding, position["qty"], last, position["high_water"], stop_price,
+                " | ".join(tracer_details)
+            )
             if last <= stop_price or force_sell:
                 qty = (
                     position["qty"]
@@ -398,6 +426,10 @@ def check_signals() -> None:
                     else min(CONFIG["sell_qty"], position["qty"])
                 )
                 reason = "trailing_stop" if last <= stop_price else "tracer_upper"
+                logger.warning(
+                    ">>> SELL SIGNAL (%s) | %s %.0f @ ~%.2f | high=%.2f stop=%.2f | tracers above limit: %d",
+                    reason, holding, qty, bid, position["high_water"], stop_price, n_above
+                )
                 place_order("SELL", qty, bid, reason)  # use bid for conservative limit
                 # Optimistic local update (real fills would come from account_activity stream)
                 position["qty"] -= qty
@@ -412,16 +444,24 @@ def check_signals() -> None:
         if position["qty"] == 0 and n_below >= CONFIG["min_tracers_for_signal"]:
             # Re-buy guard
             last_sell = position["last_sell_price"]
+            logger.info(
+                "NO POSITION | last=%.2f | tracers: %s | below limit: %d",
+                last, " | ".join(tracer_details), n_below
+            )
             if last_sell is not None:
                 max_buy_price = last_sell * (1.0 - CONFIG["rebuy_discount_pct"] / 100.0)
                 if last > max_buy_price:
-                    logger.debug(
-                        "Buy blocked by rebuy guard: last=%.2f  max_allowed=%.2f (last_sell=%.2f)",
-                        last,
-                        max_buy_price,
-                        last_sell,
+                    logger.info(
+                        "Buy blocked by rebuy guard: last=%.2f > max allowed=%.2f (last_sell=%.2f)",
+                        last, max_buy_price, last_sell
                     )
                     return
+
+                logger.warning(
+                    ">>> BUY SIGNAL (tracer_lower) | %s %.0f @ ~%.2f | tracers below limit: %d",
+                    holding, CONFIG["buy_qty"], ask, n_below
+                )
+
             place_order("BUY", CONFIG["buy_qty"], ask, "tracer_lower")
             # Optimistic local update
             position["qty"] = CONFIG["buy_qty"]
@@ -513,9 +553,6 @@ def main() -> None:
         format="%(asctime)s %(levelname)-8s %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    logger.info("Starting tracer strategy  DRY_RUN=%s", CONFIG["DRY_RUN"])
-
-    init_db(CONFIG["db_path"])
 
     # Client
     client = schwabdev.Client(
@@ -525,13 +562,15 @@ def main() -> None:
         tokens_db=str(CONFIG["token_path"]),
     )
 
-
+    logger.info("Starting tracer strategy  DRY_RUN=%s", CONFIG["DRY_RUN"])
+    
+    init_db(CONFIG["db_path"])
 
     # Resolve account hash
     response = client.linked_accounts()
     data = response.json()
     account_hash = next(
-        (item["hashValue"] for item in data if item["accountNumber"] == account_Number),
+        (item["hashValue"] for item in data if item["accountNumber"] == CONFIG["account_Number"]),
         None,
     )
     logger.info("Using account hash: %s", account_hash)
